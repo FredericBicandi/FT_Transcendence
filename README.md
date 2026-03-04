@@ -1,1 +1,1 @@
-# 42-ft_transcendence
+# FT_Transcendence
