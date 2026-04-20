@@ -1,0 +1,78 @@
+[gd_scene format=3 uid="uid://byeoim577yy55"]
+
+[ext_resource type="Texture2D" uid="uid://blwrdl3bbr42e" path="res://Textures/Pixel Crawler - Free Pack/Entities/Npc's/Wizzard/Idle/Idle-Sheet.png" id="1_xhfnw"]
+
+[sub_resource type="GDScript" id="GDScript_xhfnw"]
+script/source = "extends CharacterBody2D
+
+@export var speed = 200
+
+func get_input():
+	var input_direction = Input.get_vector(\"left\", \"right\", \"up\", \"down\")
+	velocity = input_direction * speed
+
+func _physics_process(delta):
+	get_input()
+	move_and_slide()
+"
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_kpjcp"]
+atlas = ExtResource("1_xhfnw")
+region = Rect2(0, 0, 32, 32)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_kne1u"]
+atlas = ExtResource("1_xhfnw")
+region = Rect2(32, 0, 32, 32)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_e80uo"]
+atlas = ExtResource("1_xhfnw")
+region = Rect2(64, 0, 32, 32)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_cxr5p"]
+atlas = ExtResource("1_xhfnw")
+region = Rect2(96, 0, 32, 32)
+
+[sub_resource type="SpriteFrames" id="SpriteFrames_tdg3f"]
+animations = [{
+"frames": [{
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_kpjcp")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_kne1u")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_e80uo")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_cxr5p")
+}],
+"loop": true,
+"name": &"Idle",
+"speed": 5.0
+}]
+
+[sub_resource type="CapsuleShape2D" id="CapsuleShape2D_dtqjt"]
+radius = 6.0
+height = 14.0
+
+[node name="Node2D" type="Node2D" unique_id=284655760]
+
+[node name="CharacterBody2D" type="CharacterBody2D" parent="." unique_id=902192763]
+position = Vector2(2, 0)
+script = SubResource("GDScript_xhfnw")
+
+[node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="CharacterBody2D" unique_id=644976605]
+position = Vector2(2, 0)
+sprite_frames = SubResource("SpriteFrames_tdg3f")
+animation = &"Idle"
+autoplay = "Idle"
+frame_progress = 0.512835
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="CharacterBody2D" unique_id=1106583318]
+position = Vector2(4, 9)
+shape = SubResource("CapsuleShape2D_dtqjt")
+
+[node name="Camera2D" type="Camera2D" parent="CharacterBody2D" unique_id=464962696]
+zoom = Vector2(3, 3)
+position_smoothing_enabled = true
