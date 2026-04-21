@@ -27,48 +27,34 @@ func _physics_process(_delta: float) -> void:
 	velocity = direction * move_speed
 	move_and_slide()
 
-	_update_facing(direction)
-	_update_animation(direction)
+func _process(_delta: float) -> void:
+	update_head_direction()
 
-func take_damage(amount: int) -> void:
-	if is_dead:
-		return
+func update_head_direction() -> void:
+	var mouse_pos: Vector2 = get_global_mouse_position()
+	var dir: Vector2 = (mouse_pos - global_position).normalized()
+	var angle: float = rad_to_deg(dir.angle())
 
-	health -= amount
-	if health <= 0:
-		die()
+	if angle < 0:
+		angle += 360.0
 
-func heal(amount: int) -> void:
-	if is_dead:
-		return
-
-	health = min(health + amount, max_health)
-
-func die() -> void:
-	is_dead = true
-	velocity = Vector2.ZERO
-	animated_sprite.play(\"idle_\" + facing) # later replace with death anim
-
-func _update_facing(direction: Vector2) -> void:
-	if direction == Vector2.ZERO:
-		return
-
-	if abs(direction.x) > abs(direction.y):
-		if direction.x > 0:
-			facing = \"right\"
-		else:
-			facing = \"left\"
+	# Adjust these frame numbers to match YOUR actual frame order
+	if angle >= 337.5 or angle < 22.5:
+		animated_sprite.frame = 0 # right
+	elif angle < 67.5:
+		animated_sprite.frame = 1 # down-right
+	elif angle < 112.5:
+		animated_sprite.frame = 2 # down
+	elif angle < 157.5:
+		animated_sprite.frame = 3 # down-left
+	elif angle < 202.5:
+		animated_sprite.frame = 4 # left
+	elif angle < 247.5:
+		animated_sprite.frame = 5 # up-left
+	elif angle < 292.5:
+		animated_sprite.frame = 6 # up
 	else:
-		if direction.y > 0:
-			facing = \"down\"
-		else:
-			facing = \"up\"
-
-func _update_animation(direction: Vector2) -> void:
-	if direction == Vector2.ZERO:
-		animated_sprite.play(\"idle_\" + facing)
-	else:
-		animated_sprite.play(\"walk_\" + facing)
+		animated_sprite.frame = 7 # up-right
 "
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_fhpty"]
