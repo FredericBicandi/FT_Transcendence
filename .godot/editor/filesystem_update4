@@ -1,3 +1,2 @@
-res://src/view/Game.tscn
+res://src/View/objects/Player.tscn
 res://Assets/Textures/new_tile_set.tres
-res://src/view/objects/Player.tscn
