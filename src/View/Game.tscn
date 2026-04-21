@@ -1,7 +1,7 @@
 [gd_scene format=3 uid="uid://torw2ug24653"]
 
-[ext_resource type="PackedScene" uid="uid://qgwp8rd0gw8f" path="res://src/View/objects/map.tscn" id="1_24ihw"]
-[ext_resource type="PackedScene" uid="uid://byeoim577yy55" path="res://src/View/objects/Player.tscn" id="2_k8q58"]
+[ext_resource type="PackedScene" uid="uid://qgwp8rd0gw8f" path="res://src/view/objects/map.tscn" id="1_24ihw"]
+[ext_resource type="PackedScene" uid="uid://byeoim577yy55" path="res://src/view/objects/Player.tscn" id="2_k8q58"]
 
 [node name="Node2D" type="Node2D" unique_id=1266203192]
 
@@ -9,4 +9,4 @@
 
 [node name="Player" parent="." unique_id=284655760 instance=ExtResource("2_k8q58")]
 y_sort_enabled = true
-position = Vector2(-21, -63)
+position = Vector2(-19, -60)
