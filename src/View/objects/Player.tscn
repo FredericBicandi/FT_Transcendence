@@ -13,12 +13,14 @@ extends CharacterBody2D
 
 var health: int
 var is_dead: bool = false
-var facing: String = \"down\"
 
-@onready var animated_sprite: AnimatedSprite2D = $AnimatedSprite2D
+@onready var head: AnimatedSprite2D = $Head
+@onready var gun: AnimatedSprite2D = $Gun
 
 func _ready() -> void:
 	health = max_health
+	head.z_index = 1
+	gun.z_index = 0
 
 func _physics_process(_delta: float) -> void:
 	if is_dead:
@@ -39,23 +41,38 @@ func update_head_direction() -> void:
 	if angle < 0:
 		angle += 360.0
 
-	# Adjust these frame numbers to match YOUR actual frame order
 	if angle >= 337.5 or angle < 22.5:
-		animated_sprite.frame = 0 # right
+		head.frame = 0
+		gun.frame = 0
+		gun.position = Vector2(4, 1)
 	elif angle < 67.5:
-		animated_sprite.frame = 1 # down-right
+		head.frame = 1
+		gun.frame = 1
+		gun.position = Vector2(3, 2)
 	elif angle < 112.5:
-		animated_sprite.frame = 2 # down
+		head.frame = 2
+		gun.frame = 2
+		gun.position = Vector2(0, 3)
 	elif angle < 157.5:
-		animated_sprite.frame = 3 # down-left
+		head.frame = 3
+		gun.frame = 3
+		gun.position = Vector2(-3, 2)
 	elif angle < 202.5:
-		animated_sprite.frame = 4 # left
+		head.frame = 4
+		gun.frame = 4
+		gun.position = Vector2(-4, 1)
 	elif angle < 247.5:
-		animated_sprite.frame = 5 # up-left
+		head.frame = 5
+		gun.frame = 5
+		gun.position = Vector2(-3, -1)
 	elif angle < 292.5:
-		animated_sprite.frame = 6 # up
+		head.frame = 6
+		gun.frame = 6
+		gun.position = Vector2(0, -2)
 	else:
-		animated_sprite.frame = 7 # up-right
+		head.frame = 7
+		gun.frame = 7
+		gun.position = Vector2(3, -1)
 "
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_ggyxi"]
@@ -122,10 +139,6 @@ animations = [{
 "speed": 5.0
 }]
 
-[sub_resource type="CapsuleShape2D" id="CapsuleShape2D_t1rct"]
-radius = 7.0
-height = 18.0
-
 [sub_resource type="AtlasTexture" id="AtlasTexture_1b5tg"]
 atlas = ExtResource("2_gl4sb")
 region = Rect2(160, 0, 32, 32)
@@ -190,19 +203,33 @@ animations = [{
 "speed": 5.0
 }]
 
-[node name="player" type="Node2D" unique_id=284655760]
+[sub_resource type="CapsuleShape2D" id="CapsuleShape2D_t1rct"]
+radius = 7.0
+height = 18.0
+
+[node name="Player" type="Node2D" unique_id=284655760]
 
 [node name="CharacterBody2D" type="CharacterBody2D" parent="." unique_id=902192763]
 position = Vector2(2, 0)
+collision_layer = 2
+collision_mask = 3
 script = SubResource("GDScript_t1rct")
 
-[node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="CharacterBody2D" unique_id=644976605]
+[node name="Head" type="AnimatedSprite2D" parent="CharacterBody2D" unique_id=644976605]
+z_index = 1
 position = Vector2(-2, 1.9999995)
 scale = Vector2(1.328125, 1.234375)
 sprite_frames = SubResource("SpriteFrames_tdg3f")
 animation = &"Idle"
 autoplay = "Idle"
 frame_progress = 0.512835
+
+[node name="Gun" type="AnimatedSprite2D" parent="CharacterBody2D" unique_id=1628055247]
+light_mask = 3
+z_index = 1
+position = Vector2(0, 3)
+scale = Vector2(1.0625, 1.0625)
+sprite_frames = SubResource("SpriteFrames_04fcp")
 
 [node name="Camera2D" type="Camera2D" parent="CharacterBody2D" unique_id=464962696]
 zoom = Vector2(3, 3)
@@ -211,8 +238,3 @@ position_smoothing_enabled = true
 [node name="CollisionShape2D" type="CollisionShape2D" parent="CharacterBody2D" unique_id=1807475062]
 position = Vector2(0, 5)
 shape = SubResource("CapsuleShape2D_t1rct")
-
-[node name="AnimatedSprite2D2" type="AnimatedSprite2D" parent="CharacterBody2D" unique_id=1628055247]
-position = Vector2(0, 3)
-scale = Vector2(1.0625, 1.0625)
-sprite_frames = SubResource("SpriteFrames_04fcp")
