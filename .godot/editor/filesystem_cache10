@@ -1,42 +1,48 @@
 63f7b34db8d8cdea90c76aacccf841ec
-::res://::1777212905
-export_presets.cfg::TextFile::-1::1776868836::0::1::::<><><>0<>0<><>::
-::res://Assets/::1776716599
-::res://Assets/Fonts/::1776716599
-::res://Assets/Textures/::1777212991
-new_tile_set.tres::TileSet::6085786065674169349::1777212991::0::1::::<><><>0<>0<><>::uid://b0p2udon286c7::::res://Assets/Textures/Pixel Crawler - Free Pack/Environment/Tilesets/Dungeon_Tiles.png<>uid://ciin2j27e21q3::::res://Assets/Textures/Pixel Crawler - Free Pack/Environment/Tilesets/Floors_Tiles.png<>uid://bdejri3p5wvaq::::res://Assets/Textures/Main/tileSheet.png<>uid://b264pp56walb2::::res://Assets/Textures/Pixel Crawler - Free Pack/Environment/Tilesets/Water_tiles.png
-::res://Assets/Textures/Main/::1777213709
-bullet.png::CompressedTexture2D::3457086329345255954::1777213709::1777213724::1::::<><><>0<>0<>c67aaa87d3ef37231013ffc45d99cbad<>res://.godot/imported/bullet.png-009b678f391e4eed12dccf1f30d4235f.ctex::
-Gun2.png::CompressedTexture2D::5349829056146944390::1776872696::1776872700::1::::<><><>0<>0<>468e88b7015f56a4bd1f0655df11bbfd<>res://.godot/imported/Gun2.png-7ba9c1dc726906db50742e3d5870a727.ctex::
-Gun.png::CompressedTexture2D::2022099884687970342::1776868836::1776868836::1::::<><><>0<>0<>99207974afc5bfb605033c44c15a1812<>res://.godot/imported/Gun.png-4dc892a712554b76acebbab2114c0549.ctex::
-hand.png::CompressedTexture2D::7681961865572151297::1776868836::1776868836::1::::<><><>0<>0<>75513f2696e4e325aacc43a9f89b172b<>res://.godot/imported/hand.png-f91b0838b44863f97f960819b36c0d8d.ctex::
-hands.png::CompressedTexture2D::3232118449330953493::1776715401::1776715401::1::::<><><>0<>0<>6da84fde22dd71e78347832732336553<>res://.godot/imported/hands.png-52a2d243d6e801427f0f72b37843c066.ctex::
-head.png::CompressedTexture2D::7713193577132796911::1776868836::1776868836::1::::<><><>0<>0<>71c068730bf10aa36e8c58591fc48fdc<>res://.godot/imported/head.png-5616852b87a9d065621f2de7f2eff71d.ctex::
-heads.png::CompressedTexture2D::4023389162357342514::1776715401::1776715403::1::::<><><>0<>0<>5d37035d65d924dd53e84ce1b47bb2e2<>res://.godot/imported/heads.png-3a3110111ff55fc4b9d314cf38b58a13.ctex::
-leg.png::CompressedTexture2D::8871552684722620801::1777212601::1777212603::1::::<><><>0<>0<>9514d734c4bcea72da406008e55a0692<>res://.godot/imported/leg.png-0518f7b772bf83d5b8d37c2e15351fd6.ctex::
-legs.png::CompressedTexture2D::8808795681243734623::1776715401::1776715403::1::::<><><>0<>0<>b87988edbdac0809cb465e2c8257cc0c<>res://.godot/imported/legs.png-9a0518047c3ade1b41814d4182c98ab4.ctex::
-tileSheet.png::CompressedTexture2D::2605822001218553940::1776278014::1776715378::1::::<><><>0<>0<>f7c550176039c0d8eb762c3cf45613b4<>res://.godot/imported/tileSheet.png-aa1304ac0cf2fd6f822f1ab1e9f05989.ctex::
-weaponsPlus.png::CompressedTexture2D::4073846297851525841::1776715401::1776715401::1::::<><><>0<>0<>7f6de4698e612f1d86ee3949df1a447e<>res://.godot/imported/weaponsPlus.png-57306cc5cef0364133c405cad2580807.ctex::
-::res://Assets/Textures/Pixel Crawler - Free Pack/::1776716600
-::res://Assets/Textures/Pixel Crawler - Free Pack/Entities/::1776716599
-::res://Assets/Textures/Pixel Crawler - Free Pack/Entities/Npc's/::1776716599
-::res://Assets/Textures/Pixel Crawler - Free Pack/Entities/Npc's/Wizzard/::1776716599
-::res://Assets/Textures/Pixel Crawler - Free Pack/Entities/Npc's/Wizzard/Death/::1776716599
-Death-Sheet.png::CompressedTexture2D::2614524009287436445::1774891940::1776715145::1::::<><><>0<>0<>bad58a3b29cec7cbf4311482a1385184<>res://.godot/imported/Death-Sheet.png-fa422592ee3060db7c6fdc1cacdccfa0.ctex::
-::res://Assets/Textures/Pixel Crawler - Free Pack/Entities/Npc's/Wizzard/Idle/::1776716599
-Idle-Sheet.png::CompressedTexture2D::3204952441618366534::1774891940::1776715145::1::::<><><>0<>0<>99f146279344a0fb37eac8cadc41e1e7<>res://.godot/imported/Idle-Sheet.png-e171401107cd50f5ee8012d9e77dfa53.ctex::
-::res://Assets/Textures/Pixel Crawler - Free Pack/Entities/Npc's/Wizzard/Run/::1776716599
-Run-Sheet.png::CompressedTexture2D::6138021696995173517::1774891940::1776715145::1::::<><><>0<>0<>cb713155535772322cb385b3fdb56914<>res://.godot/imported/Run-Sheet.png-bc3d466e4a8e1aed832d82a87ed703bf.ctex::
-::res://Assets/Textures/Pixel Crawler - Free Pack/Environment/::1776716600
-::res://Assets/Textures/Pixel Crawler - Free Pack/Environment/Tilesets/::1776716600
-Dungeon_Tiles.png::CompressedTexture2D::4173782695462986552::1774891941::1776715144::1::::<><><>0<>0<>36be05ea000d87f3681bf81d990eee0b<>res://.godot/imported/Dungeon_Tiles.png-f4e16ee018444133628dacb7a6cd6d8c.ctex::
-Floors_Tiles.png::CompressedTexture2D::5351705191744576892::1774891941::1776715145::1::::<><><>0<>0<>baf4e44552f38f97574343adfec246a8<>res://.godot/imported/Floors_Tiles.png-1d40ae432f945956870b808b838a5a36.ctex::
-Water_tiles.png::CompressedTexture2D::4347303587626924329::1774891941::1776715145::1::::<><><>0<>0<>73dd711f656db50cb8beb31dc05f7917<>res://.godot/imported/Water_tiles.png-4f7465d249bfae1ae539ca21b3806961.ctex::
-::res://src/::1776716600
-::res://src/Controller/::1776715018
-::res://src/Model/::1776715043
-::res://src/View/::1776868836
-Game.tscn::PackedScene::1363562243358802284::1776868836::0::1::::<><><>0<>0<><>::uid://qgwp8rd0gw8f::::res://src/view/objects/map.tscn<>uid://byeoim577yy55::::res://src/view/objects/Player.tscn
-::res://src/View/objects/::1777212991
-map.tscn::PackedScene::1136772085184519327::1776716579::0::1::::<><><>0<>0<><>::uid://csyaairfww26l::::res://Assets/Textures/new_tile_set.tres
-Player.tscn::PackedScene::4080075444394089658::1777212991::0::1::::<><><>0<>0<><>::uid://dh5lf3a6j5isl::::res://Assets/Textures/Main/head.png<>uid://cihq5x17psahy::::res://Assets/Textures/Main/Gun2.png<>uid://dynpgad2iy322::::res://Assets/Textures/Main/leg.png
+::res://::1777559878
+export_presets.cfg::TextFile::-1::1776793274::0::1::::<><><>0<>0<><>::
+::res://Assets/::1777555909
+::res://Assets/Fonts/::1776717153
+::res://Assets/Textures/::1777557287
+new_tile_set.tres::TileSet::6085786065674169349::1777556109::0::1::::<><><>0<>0<><>::uid://b0p2udon286c7::::res://Assets/Textures/Pixel Crawler - Free Pack/Environment/Tilesets/Dungeon_Tiles.png<>uid://ciin2j27e21q3::::res://Assets/Textures/Pixel Crawler - Free Pack/Environment/Tilesets/Floors_Tiles.png<>uid://bdejri3p5wvaq::::res://Assets/Textures/Main/tileSheet.png<>uid://b264pp56walb2::::res://Assets/Textures/Pixel Crawler - Free Pack/Environment/Tilesets/Water_tiles.png
+Screenshot (24).png::CompressedTexture2D::5017276874616760704::1777557287::1777557287::1::::<><><>0<>0<>de65f281f3dce7357657c3676ff1ff38<>res://.godot/imported/Screenshot (24).png-917f97398d77f0f5562f8f10fc7541da.ctex::
+::res://Assets/Textures/Main/::1777557503
+bullet.png::CompressedTexture2D::3457086329345255954::1777555880::1777555944::1::::<><><>0<>0<>c67aaa87d3ef37231013ffc45d99cbad<>res://.godot/imported/bullet.png-009b678f391e4eed12dccf1f30d4235f.ctex::
+Gun2.png::CompressedTexture2D::5349829056146944390::1777555880::1777555944::1::::<><><>0<>0<>468e88b7015f56a4bd1f0655df11bbfd<>res://.godot/imported/Gun2.png-7ba9c1dc726906db50742e3d5870a727.ctex::
+Gun.png::CompressedTexture2D::2022099884687970342::1777555880::1777555944::1::::<><><>0<>0<>99207974afc5bfb605033c44c15a1812<>res://.godot/imported/Gun.png-4dc892a712554b76acebbab2114c0549.ctex::
+hand.png::CompressedTexture2D::7681961865572151297::1777555880::1777555944::1::::<><><>0<>0<>75513f2696e4e325aacc43a9f89b172b<>res://.godot/imported/hand.png-f91b0838b44863f97f960819b36c0d8d.ctex::
+hands.png::CompressedTexture2D::3232118449330953493::1777555880::1777555944::1::::<><><>0<>0<>6da84fde22dd71e78347832732336553<>res://.godot/imported/hands.png-52a2d243d6e801427f0f72b37843c066.ctex::
+head.png::CompressedTexture2D::7713193577132796911::1777555880::1777555944::1::::<><><>0<>0<>71c068730bf10aa36e8c58591fc48fdc<>res://.godot/imported/head.png-5616852b87a9d065621f2de7f2eff71d.ctex::
+heads.png::CompressedTexture2D::4023389162357342514::1777555880::1777555945::1::::<><><>0<>0<>5d37035d65d924dd53e84ce1b47bb2e2<>res://.godot/imported/heads.png-3a3110111ff55fc4b9d314cf38b58a13.ctex::
+leg.png::CompressedTexture2D::8871552684722620801::1777555880::1777555944::1::::<><><>0<>0<>9514d734c4bcea72da406008e55a0692<>res://.godot/imported/leg.png-0518f7b772bf83d5b8d37c2e15351fd6.ctex::
+legs.png::CompressedTexture2D::8808795681243734623::1777555880::1777555945::1::::<><><>0<>0<>b87988edbdac0809cb465e2c8257cc0c<>res://.godot/imported/legs.png-9a0518047c3ade1b41814d4182c98ab4.ctex::
+tileSheet.png::CompressedTexture2D::2605822001218553940::1777555880::1777555880::1::::<><><>0<>0<>f7c550176039c0d8eb762c3cf45613b4<>res://.godot/imported/tileSheet.png-aa1304ac0cf2fd6f822f1ab1e9f05989.ctex::
+::res://Assets/Textures/Main/Guns/::1777555794
+::res://Assets/Textures/Main/heads/::1777555799
+::res://Assets/Textures/Main/Legs/::1777555809
+::res://Assets/Textures/Pixel Crawler - Free Pack/::1777555926
+::res://Assets/Textures/Pixel Crawler - Free Pack/Entities/::1776717153
+::res://Assets/Textures/Pixel Crawler - Free Pack/Entities/Npc's/::1776717153
+::res://Assets/Textures/Pixel Crawler - Free Pack/Entities/Npc's/Wizzard/::1776717153
+::res://Assets/Textures/Pixel Crawler - Free Pack/Entities/Npc's/Wizzard/Death/::1776717153
+Death-Sheet.png::CompressedTexture2D::2614524009287436445::1776717153::1776717153::1::::<><><>0<>0<>bad58a3b29cec7cbf4311482a1385184<>res://.godot/imported/Death-Sheet.png-fa422592ee3060db7c6fdc1cacdccfa0.ctex::
+::res://Assets/Textures/Pixel Crawler - Free Pack/Entities/Npc's/Wizzard/Idle/::1776717153
+Idle-Sheet.png::CompressedTexture2D::3204952441618366534::1776717153::1776717153::1::::<><><>0<>0<>99f146279344a0fb37eac8cadc41e1e7<>res://.godot/imported/Idle-Sheet.png-e171401107cd50f5ee8012d9e77dfa53.ctex::
+::res://Assets/Textures/Pixel Crawler - Free Pack/Entities/Npc's/Wizzard/Run/::1776717153
+Run-Sheet.png::CompressedTexture2D::6138021696995173517::1776717153::1776717153::1::::<><><>0<>0<>cb713155535772322cb385b3fdb56914<>res://.godot/imported/Run-Sheet.png-bc3d466e4a8e1aed832d82a87ed703bf.ctex::
+::res://Assets/Textures/Pixel Crawler - Free Pack/Environment/::1776717153
+::res://Assets/Textures/Pixel Crawler - Free Pack/Environment/Tilesets/::1776717153
+Dungeon_Tiles.png::CompressedTexture2D::4173782695462986552::1776717153::1776717153::1::::<><><>0<>0<>36be05ea000d87f3681bf81d990eee0b<>res://.godot/imported/Dungeon_Tiles.png-f4e16ee018444133628dacb7a6cd6d8c.ctex::
+Floors_Tiles.png::CompressedTexture2D::5351705191744576892::1776717153::1776717153::1::::<><><>0<>0<>baf4e44552f38f97574343adfec246a8<>res://.godot/imported/Floors_Tiles.png-1d40ae432f945956870b808b838a5a36.ctex::
+Water_tiles.png::CompressedTexture2D::4347303587626924329::1776717153::1776717153::1::::<><><>0<>0<>73dd711f656db50cb8beb31dc05f7917<>res://.godot/imported/Water_tiles.png-4f7465d249bfae1ae539ca21b3806961.ctex::
+::res://Build/::1776793274
+index.apple-touch-icon.png::CompressedTexture2D::4026527737104530511::1776793274::1776792886::1::::<><><>0<>0<>1bc89fb21402310c99cba94fc063a468<>res://.godot/imported/index.apple-touch-icon.png-ccc7937cae61b11a852f576457400daf.ctex::
+index.icon.png::CompressedTexture2D::3666001196739030457::1776793274::1776792886::1::::<><><>0<>0<>4e7b331c64d9d263b9c05aabacf572a4<>res://.godot/imported/index.icon.png-d75a77efda1b266865613220b03a17a0.ctex::
+index.png::CompressedTexture2D::4238898366018873616::1776793274::1776792886::1::::<><><>0<>0<>34d7e5e42da8786691253dbec47e7792<>res://.godot/imported/index.png-cd2d0955ebde61c3e9de7041b8393ffb.ctex::
+::res://src/::1776793208
+::res://src/View/::1777555984
+Game.tscn::PackedScene::1363562243358802284::1777555984::0::1::::<><><>0<>0<><>::uid://qgwp8rd0gw8f::::res://src/view/objects/map.tscn<>uid://byeoim577yy55::::res://src/view/objects/Player.tscn
+::res://src/View/objects/::1777559693
+map.tscn::PackedScene::6144164523277466949::1777555987::0::1::::<><><>0<>0<><>::uid://csyaairfww26l::::res://Assets/Textures/new_tile_set.tres
+Player.tscn::PackedScene::4080075444394089658::1777556929::0::1::::<><><>0<>0<><>::uid://dh5lf3a6j5isl::::res://Assets/Textures/Main/head.png<>uid://savl26evqant::::res://src/View/objects/Weapon.tscn<>uid://dynpgad2iy322::::res://Assets/Textures/Main/leg.png
+Weapon.tscn::PackedScene::1264695352295457373::1777559693::0::1::::<><><>0<>0<><>::uid://cihq5x17psahy::::res://Assets/Textures/Main/Gun2.png<>uid://bpivybany77he::::res://Assets/Textures/Main/bullet.png
