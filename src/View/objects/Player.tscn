@@ -303,7 +303,6 @@ script = SubResource("GDScript_t1rct")
 position = Vector2(-1, 3)
 scale = Vector2(1.0625, 1.0625)
 sprite_frames = SubResource("SpriteFrames_3vd87")
-frame = 15
 
 [node name="Weapons" parent="CharacterBody2D" unique_id=2015572023 instance=ExtResource("2_gl4sb")]
 

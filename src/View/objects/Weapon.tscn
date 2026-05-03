@@ -9,7 +9,7 @@ extends Node2D
 
 const WEAPON_DATA := {
 	\"gun\": {
-		\"fire_rate\": 0.30,
+		\"fire_rate\": 0.18,
 		\"bullet_speed\": 200.0,
 		\"bullet_lifetime\": 1.2,
 		\"move_offset\": 1.5,
@@ -94,8 +94,10 @@ func get_bullet_frame() -> int:
 	var bullet_frames_map: Array = config.get(\"bullet_frames\", [])
 
 	if current_frame_index < bullet_frames_map.size():
+		print(current_frame_index)
 		return int(bullet_frames_map[current_frame_index])
-
+	
+	print(current_frame_index)
 	return current_frame_index
 
 func shoot() -> void:
@@ -246,6 +248,10 @@ animations = [{
 atlas = ExtResource("2_tqjc4")
 region = Rect2(64, 0, 16, 16)
 
+[sub_resource type="AtlasTexture" id="AtlasTexture_3smlm"]
+atlas = ExtResource("2_tqjc4")
+region = Rect2(112, 0, 16, 16)
+
 [sub_resource type="AtlasTexture" id="AtlasTexture_q0e5x"]
 atlas = ExtResource("2_tqjc4")
 region = Rect2(0, 0, 16, 16)
@@ -253,14 +259,6 @@ region = Rect2(0, 0, 16, 16)
 [sub_resource type="AtlasTexture" id="AtlasTexture_17tgs"]
 atlas = ExtResource("2_tqjc4")
 region = Rect2(16, 0, 16, 16)
-
-[sub_resource type="AtlasTexture" id="AtlasTexture_eerv8"]
-atlas = ExtResource("2_tqjc4")
-region = Rect2(32, 0, 16, 16)
-
-[sub_resource type="AtlasTexture" id="AtlasTexture_3m15p"]
-atlas = ExtResource("2_tqjc4")
-region = Rect2(48, 0, 16, 16)
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_vlhi8"]
 atlas = ExtResource("2_tqjc4")
@@ -270,9 +268,13 @@ region = Rect2(80, 0, 16, 16)
 atlas = ExtResource("2_tqjc4")
 region = Rect2(96, 0, 16, 16)
 
-[sub_resource type="AtlasTexture" id="AtlasTexture_3smlm"]
+[sub_resource type="AtlasTexture" id="AtlasTexture_eerv8"]
 atlas = ExtResource("2_tqjc4")
-region = Rect2(112, 0, 16, 16)
+region = Rect2(32, 0, 16, 16)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_3m15p"]
+atlas = ExtResource("2_tqjc4")
+region = Rect2(48, 0, 16, 16)
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_vx10o"]
 atlas = ExtResource("2_tqjc4")
@@ -313,16 +315,13 @@ animations = [{
 "texture": SubResource("AtlasTexture_tqjc4")
 }, {
 "duration": 1.0,
+"texture": SubResource("AtlasTexture_3smlm")
+}, {
+"duration": 1.0,
 "texture": SubResource("AtlasTexture_q0e5x")
 }, {
 "duration": 1.0,
 "texture": SubResource("AtlasTexture_17tgs")
-}, {
-"duration": 1.0,
-"texture": SubResource("AtlasTexture_eerv8")
-}, {
-"duration": 1.0,
-"texture": SubResource("AtlasTexture_3m15p")
 }, {
 "duration": 1.0,
 "texture": SubResource("AtlasTexture_vlhi8")
@@ -331,7 +330,10 @@ animations = [{
 "texture": SubResource("AtlasTexture_n48ne")
 }, {
 "duration": 1.0,
-"texture": SubResource("AtlasTexture_3smlm")
+"texture": SubResource("AtlasTexture_eerv8")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_3m15p")
 }, {
 "duration": 1.0,
 "texture": SubResource("AtlasTexture_vx10o")
