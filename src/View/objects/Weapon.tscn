@@ -21,13 +21,13 @@ const WEAPON_DATA := {
 		# Change Y to move the muzzle up/down.
 		\"frames\": [
 			# 0 = right
-			{ \"gun_position\": Vector2(4, 1), \"muzzle_offset\": Vector2(10, 0) },
+			{ \"gun_position\": Vector2(4, 1), \"muzzle_offset\": Vector2(12, 0) },
 			# 1 = down-right
-			{ \"gun_position\": Vector2(3, 2), \"muzzle_offset\": Vector2(6, 5) },
+			{ \"gun_position\": Vector2(3, 2), \"muzzle_offset\": Vector2(10, 8) },
 			# 2 = down
-			{ \"gun_position\": Vector2(0, 3), \"muzzle_offset\": Vector2(8, 4) },
+			{ \"gun_position\": Vector2(0, 3), \"muzzle_offset\": Vector2(5, 9) },
 			# 3 = down-left
-			{ \"gun_position\": Vector2(-3, 2), \"muzzle_offset\": Vector2(8, 3) },
+			{ \"gun_position\": Vector2(-3, 2), \"muzzle_offset\": Vector2(-10, 8) },
 			# 4 = left
 			{ \"gun_position\": Vector2(-4, 1), \"muzzle_offset\": Vector2(8, 3) },
 			# 5 = up-left
@@ -256,9 +256,9 @@ region = Rect2(224, 0, 16, 16)
 atlas = ExtResource("2_tqjc4")
 region = Rect2(0, 0, 16, 16)
 
-[sub_resource type="AtlasTexture" id="AtlasTexture_17tgs"]
+[sub_resource type="AtlasTexture" id="AtlasTexture_3m15p"]
 atlas = ExtResource("2_tqjc4")
-region = Rect2(16, 0, 16, 16)
+region = Rect2(48, 0, 16, 16)
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_sb3df"]
 atlas = ExtResource("2_tqjc4")
@@ -276,9 +276,9 @@ region = Rect2(128, 0, 16, 16)
 atlas = ExtResource("2_tqjc4")
 region = Rect2(160, 0, 16, 16)
 
-[sub_resource type="AtlasTexture" id="AtlasTexture_3m15p"]
+[sub_resource type="AtlasTexture" id="AtlasTexture_17tgs"]
 atlas = ExtResource("2_tqjc4")
-region = Rect2(48, 0, 16, 16)
+region = Rect2(16, 0, 16, 16)
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_3smlm"]
 atlas = ExtResource("2_tqjc4")
@@ -321,7 +321,7 @@ animations = [{
 "texture": SubResource("AtlasTexture_q0e5x")
 }, {
 "duration": 1.0,
-"texture": SubResource("AtlasTexture_17tgs")
+"texture": SubResource("AtlasTexture_3m15p")
 }, {
 "duration": 1.0,
 "texture": SubResource("AtlasTexture_sb3df")
@@ -336,7 +336,7 @@ animations = [{
 "texture": SubResource("AtlasTexture_smyor")
 }, {
 "duration": 1.0,
-"texture": SubResource("AtlasTexture_3m15p")
+"texture": SubResource("AtlasTexture_17tgs")
 }, {
 "duration": 1.0,
 "texture": SubResource("AtlasTexture_3smlm")
