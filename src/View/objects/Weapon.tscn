@@ -29,13 +29,13 @@ const WEAPON_DATA := {
 			# 3 = down-left
 			{ \"gun_position\": Vector2(-3, 2), \"muzzle_offset\": Vector2(-10, 8) },
 			# 4 = left
-			{ \"gun_position\": Vector2(-4, 1), \"muzzle_offset\": Vector2(8, 3) },
+			{ \"gun_position\": Vector2(-4, 1), \"muzzle_offset\": Vector2(-12, 0) },
 			# 5 = up-left
-			{ \"gun_position\": Vector2(-3, -1), \"muzzle_offset\": Vector2(8, 3) },
+			{ \"gun_position\": Vector2(-3, -1), \"muzzle_offset\": Vector2(-10, -8) },
 			# 6 = up
 			{ \"gun_position\": Vector2(0, -2), \"muzzle_offset\": Vector2(8, 3) },
 			# 7 = up-right
-			{ \"gun_position\": Vector2(3, -1), \"muzzle_offset\": Vector2(8, 3) }
+			{ \"gun_position\": Vector2(3, -1), \"muzzle_offset\": Vector2(10, -8) }
 		]
 	}
 }
