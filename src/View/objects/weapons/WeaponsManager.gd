@@ -1,6 +1,8 @@
 class_name WeaponsManager
 extends Node2D
 
+signal active_weapon_changed(weapon: BaseWeapon)
+
 @export var default_weapon_node: StringName = &"Assult_rifle"
 
 var active_weapon: BaseWeapon
@@ -35,6 +37,7 @@ func equip_weapon(weapon_key: StringName) -> bool:
 
 	active_weapon = next_weapon
 	active_weapon.set_active(true)
+	active_weapon_changed.emit(active_weapon)
 	return true
 
 func equip_weapon_by_id(next_weapon_id: String) -> bool:

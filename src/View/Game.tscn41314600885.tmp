@@ -3,7 +3,6 @@
 [ext_resource type="PackedScene" uid="uid://ctsjqy1slixm8" path="res://src/View/objects/map.tscn" id="1_24ihw"]
 [ext_resource type="Script" uid="uid://bwl5ecpiq1c3i" path="res://src/View/Game.gd" id="1_nk2wq"]
 [ext_resource type="PackedScene" uid="uid://byeoim577yy55" path="res://src/View/objects/Player.tscn" id="2_k8q58"]
-[ext_resource type="Texture2D" uid="uid://d14uvjamk8tnx" path="res://Assets/Textures/Main/Guns/AFRifle/image.png" id="4_e3nbc"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_weapon_hud"]
 bg_color = Color(0.054902, 0.0666667, 0.0980392, 0.88)
@@ -31,46 +30,41 @@ position = Vector2(173, -307)
 [node name="CanvasLayer" type="CanvasLayer" parent="." unique_id=2042464968]
 
 [node name="WeaponHud" type="PanelContainer" parent="CanvasLayer" unique_id=584902926]
-anchors_preset = 3
-anchor_left = 1.0
-anchor_top = 1.0
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = -150.0
-offset_top = -108.0
-offset_right = -20.0
-offset_bottom = -20.0
+offset_left = 20.0
+offset_top = 560.0
+offset_right = 190.0
+offset_bottom = 700.0
+grow_vertical = 2
 theme_override_styles/panel = SubResource("StyleBoxFlat_weapon_hud")
 
 [node name="MarginContainer" type="MarginContainer" parent="CanvasLayer/WeaponHud" unique_id=318061307]
 layout_mode = 2
-theme_override_constants/margin_left = 10
-theme_override_constants/margin_top = 10
-theme_override_constants/margin_right = 10
-theme_override_constants/margin_bottom = 10
+theme_override_constants/margin_left = 14
+theme_override_constants/margin_top = 14
+theme_override_constants/margin_right = 14
+theme_override_constants/margin_bottom = 14
 
 [node name="VBoxContainer" type="VBoxContainer" parent="CanvasLayer/WeaponHud/MarginContainer" unique_id=1507466592]
 layout_mode = 2
-theme_override_constants/separation = 4
+theme_override_constants/separation = 6
 
 [node name="WeaponIcon" type="TextureRect" parent="CanvasLayer/WeaponHud/MarginContainer/VBoxContainer" unique_id=392773705]
 texture_filter = 1
-custom_minimum_size = Vector2(72, 32)
+custom_minimum_size = Vector2(96, 48)
 layout_mode = 2
 size_flags_horizontal = 4
-texture = ExtResource("4_e3nbc")
 stretch_mode = 5
 
 [node name="WeaponName" type="Label" parent="CanvasLayer/WeaponHud/MarginContainer/VBoxContainer" unique_id=697808728]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.901961, 0.921569, 0.980392, 1)
-theme_override_font_sizes/font_size = 13
+theme_override_font_sizes/font_size = 16
 text = "Weapon"
 horizontal_alignment = 1
 
 [node name="AmmoLabel" type="Label" parent="CanvasLayer/WeaponHud/MarginContainer/VBoxContainer" unique_id=2021529147]
 layout_mode = 2
 theme_override_colors/font_color = Color(1, 0.862745, 0.486275, 1)
-theme_override_font_sizes/font_size = 16
+theme_override_font_sizes/font_size = 20
 text = "0/0"
 horizontal_alignment = 1

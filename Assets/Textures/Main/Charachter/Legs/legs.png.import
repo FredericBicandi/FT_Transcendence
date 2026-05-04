@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://dxl8uwerta3sl"
-path="res://.godot/imported/RL.png-b97a3ee025cff586712954dfa91b069f.ctex"
+uid="uid://dxrbtwbl1raxj"
+path="res://.godot/imported/legs.png-b8309d9111ffc13def6256abb6c570fc.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://Assets/Textures/Main/RL.png"
-dest_files=["res://.godot/imported/RL.png-b97a3ee025cff586712954dfa91b069f.ctex"]
+source_file="res://Assets/Textures/Main/Charachter/Legs/legs.png"
+dest_files=["res://.godot/imported/legs.png-b8309d9111ffc13def6256abb6c570fc.ctex"]
 
 [params]
 

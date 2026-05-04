@@ -2,8 +2,8 @@
 
 [ext_resource type="Script" uid="uid://bi2axethsr1o4" path="res://src/View/objects/weapons/WeaponsManager.gd" id="1_gtq4q"]
 [ext_resource type="Script" uid="uid://26aiqruxv5hq" path="res://src/View/objects/weapons/AFRifle.gd" id="2_he2y2"]
-[ext_resource type="Texture2D" uid="uid://dxl8uwerta3sl" path="res://Assets/Textures/Main/RL.png" id="3_gtq4q"]
-[ext_resource type="Texture2D" uid="uid://bpivybany77he" path="res://Assets/Textures/Main/bullet.png" id="4_uxq7e"]
+[ext_resource type="Texture2D" uid="uid://dxl8uwerta3sl" path="res://Assets/Textures/Main/Guns/RocketLuncher/positions.png" id="3_gtq4q"]
+[ext_resource type="Texture2D" uid="uid://bpivybany77he" path="res://Assets/Textures/Main/Guns/AFRifle/bullet.png" id="4_uxq7e"]
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_he2y2"]
 atlas = ExtResource("3_gtq4q")

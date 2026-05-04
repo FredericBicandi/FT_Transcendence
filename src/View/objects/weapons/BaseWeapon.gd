@@ -3,6 +3,8 @@ extends Node2D
 
 const WeaponData = preload("res://src/View/objects/weapons/WeaponData.gd")
 
+signal ammo_changed(current_ammo: int, max_ammo: int)
+
 @export var weapon_id: String = WeaponData.DEFAULT_WEAPON_ID
 
 var active_bullets: Array[Dictionary] = []
@@ -11,6 +13,8 @@ var fire_cooldown: float = 0.0
 var reload_cooldown: float = 0.0
 var reload_duration: float = 0.0
 var base_position: Vector2
+var movement_offset: Vector2 = Vector2.ZERO
+var recoil_offset: Vector2 = Vector2.ZERO
 var bullet_frames: SpriteFrames
 var bullet_exclude_rids: Array[RID] = []
 var current_ammo: int = 0
@@ -36,13 +40,18 @@ func _ready() -> void:
 	current_ammo = get_magazine_size()
 	apply_frame_data(0)
 	set_active(false)
+	emit_ammo_changed()
 
 func _process(delta: float) -> void:
 	fire_cooldown = maxf(fire_cooldown - delta, 0.0)
 	reload_cooldown = maxf(reload_cooldown - delta, 0.0)
+	var recoil_recover_speed: float = float(get_weapon_config().get("recoil_recover_speed", 18.0))
+	recoil_offset = recoil_offset.lerp(Vector2.ZERO, clampf(delta * recoil_recover_speed, 0.0, 1.0))
+	position = base_position + movement_offset + recoil_offset
 
 	if reload_cooldown == 0.0 and current_ammo <= 0:
 		current_ammo = get_magazine_size()
+		emit_ammo_changed()
 
 	update_aim(get_global_mouse_position())
 	update_bullets(delta)
@@ -62,10 +71,10 @@ func update_movement(direction: Vector2) -> void:
 	var move_offset: float = config.get("move_offset", 0.0)
 
 	if direction == Vector2.ZERO:
-		position = base_position
+		movement_offset = Vector2.ZERO
 		return
 
-	position = base_position + direction.normalized() * move_offset
+	movement_offset = direction.normalized() * move_offset
 
 func update_aim(target_position: Vector2) -> void:
 	var dir: Vector2 = (target_position - global_position).normalized()
@@ -100,9 +109,11 @@ func shoot() -> void:
 
 	fire_cooldown = config.get("fire_rate", 0.2)
 	current_ammo -= 1
+	emit_ammo_changed()
 	var mouse_position := get_global_mouse_position()
 	var bullet_offset := mouse_position - muzzle_marker.global_position
 	var bullet_direction := bullet_offset.normalized() if bullet_offset != Vector2.ZERO else Vector2.RIGHT
+	apply_recoil(bullet_direction, config)
 
 	var bullet := AnimatedSprite2D.new()
 	bullet.sprite_frames = bullet_frames
@@ -125,6 +136,12 @@ func shoot() -> void:
 
 	if current_ammo <= 0:
 		reload()
+
+func apply_recoil(direction: Vector2, config: Dictionary) -> void:
+	var recoil_distance: float = float(config.get("recoil_distance", 2.5))
+	var recoil_jitter: float = float(config.get("recoil_jitter", 0.35))
+	var sideways := direction.orthogonal() * randf_range(-recoil_jitter, recoil_jitter)
+	recoil_offset = (-direction + sideways).normalized() * recoil_distance
 
 func update_bullets(delta: float) -> void:
 	var space_state := get_world_2d().direct_space_state
@@ -181,6 +198,15 @@ func get_reload_time() -> float:
 func get_current_ammo() -> int:
 	return current_ammo
 
+func get_weapon_name() -> String:
+	return weapon_id
+
+func get_weapon_icon() -> Texture2D:
+	if gun == null or gun.sprite_frames == null:
+		return null
+
+	return gun.sprite_frames.get_frame_texture(&"default", 0)
+
 func is_reloading() -> bool:
 	return reload_cooldown > 0.0
 
@@ -220,4 +246,8 @@ func apply_frame_data(frame_index: int) -> void:
 	var config := get_weapon_config()
 	var frame_data: Dictionary = config["frames"][frame_index]
 	gun.position = frame_data["gun_position"]
+	print(frame_index)
 	muzzle_marker.position = frame_data["muzzle_offset"]
+
+func emit_ammo_changed() -> void:
+	ammo_changed.emit(current_ammo, get_magazine_size())

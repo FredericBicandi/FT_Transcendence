@@ -12,6 +12,9 @@ const WEAPON_DATA := {
 		"bullet_lifetime": 0.55,
 		"bullet_collision_mask": 1,
 		"move_offset": 1.5,
+		"recoil_distance": 2.5,
+		"recoil_jitter": 0.35,
+		"recoil_recover_speed": 18.0,
 		# bullet_frames maps weapon aim frame -> bullet sprite frame.
 		# Example: if weapon frame 1 should use bullet frame 9, set index 1 to 9.
 		"bullet_frames": [0, 1, 2, 3, 4, 5, 6, 7],

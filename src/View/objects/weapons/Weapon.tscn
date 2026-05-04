@@ -1,68 +1,64 @@
 [gd_scene format=3 uid="uid://savl26evqant"]
 
-[ext_resource type="Texture2D" uid="uid://cihq5x17psahy" path="res://Assets/Textures/Main/Gun2.png" id="1_bs3kf"]
-[ext_resource type="Texture2D" uid="uid://bpivybany77he" path="res://Assets/Textures/Main/bullet.png" id="2_tqjc4"]
+[ext_resource type="Texture2D" uid="uid://bpivybany77he" path="res://Assets/Textures/Main/Guns/AFRifle/bullet.png" id="2_tqjc4"]
 [ext_resource type="Script" uid="uid://bi2axethsr1o4" path="res://src/View/objects/weapons/WeaponsManager.gd" id="3_bjwph"]
+[ext_resource type="Texture2D" uid="uid://32rxpiyus5r3" path="res://Assets/Textures/Main/Guns/AFRifle/positions.png" id="3_jox2y"]
 [ext_resource type="Script" uid="uid://26aiqruxv5hq" path="res://src/View/objects/weapons/AFRifle.gd" id="4_q1gk6"]
 
-[sub_resource type="AtlasTexture" id="AtlasTexture_1b5tg"]
-atlas = ExtResource("1_bs3kf")
+[sub_resource type="AtlasTexture" id="AtlasTexture_a0xt0"]
+atlas = ExtResource("3_jox2y")
 region = Rect2(160, 0, 32, 32)
 
-[sub_resource type="AtlasTexture" id="AtlasTexture_7qnnq"]
-atlas = ExtResource("1_bs3kf")
+[sub_resource type="AtlasTexture" id="AtlasTexture_blhel"]
+atlas = ExtResource("3_jox2y")
 region = Rect2(192, 0, 32, 32)
 
-[sub_resource type="AtlasTexture" id="AtlasTexture_sxmrj"]
-atlas = ExtResource("1_bs3kf")
+[sub_resource type="AtlasTexture" id="AtlasTexture_hh7td"]
+atlas = ExtResource("3_jox2y")
 region = Rect2(0, 0, 32, 32)
 
-[sub_resource type="AtlasTexture" id="AtlasTexture_c8w2g"]
-atlas = ExtResource("1_bs3kf")
+[sub_resource type="AtlasTexture" id="AtlasTexture_ssn77"]
+atlas = ExtResource("3_jox2y")
 region = Rect2(32, 0, 32, 32)
 
-[sub_resource type="AtlasTexture" id="AtlasTexture_kah2g"]
-atlas = ExtResource("1_bs3kf")
+[sub_resource type="AtlasTexture" id="AtlasTexture_w4ncs"]
+atlas = ExtResource("3_jox2y")
 region = Rect2(64, 0, 32, 32)
 
-[sub_resource type="AtlasTexture" id="AtlasTexture_re24c"]
-atlas = ExtResource("1_bs3kf")
+[sub_resource type="AtlasTexture" id="AtlasTexture_gk3y6"]
+atlas = ExtResource("3_jox2y")
 region = Rect2(96, 0, 32, 32)
 
-[sub_resource type="AtlasTexture" id="AtlasTexture_qvjrp"]
-atlas = ExtResource("1_bs3kf")
-region = Rect2(224, 0, 32, 32)
-
-[sub_resource type="AtlasTexture" id="AtlasTexture_04fcp"]
-atlas = ExtResource("1_bs3kf")
+[sub_resource type="AtlasTexture" id="AtlasTexture_wb3kk"]
+atlas = ExtResource("3_jox2y")
 region = Rect2(128, 0, 32, 32)
 
 [sub_resource type="SpriteFrames" id="SpriteFrames_tqjc4"]
 animations = [{
 "frames": [{
 "duration": 1.0,
-"texture": SubResource("AtlasTexture_1b5tg")
+"texture": SubResource("AtlasTexture_a0xt0")
 }, {
 "duration": 1.0,
-"texture": SubResource("AtlasTexture_7qnnq")
+"texture": SubResource("AtlasTexture_blhel")
 }, {
 "duration": 1.0,
-"texture": SubResource("AtlasTexture_sxmrj")
+"texture": SubResource("AtlasTexture_hh7td")
 }, {
 "duration": 1.0,
-"texture": SubResource("AtlasTexture_c8w2g")
+"texture": SubResource("AtlasTexture_ssn77")
 }, {
 "duration": 1.0,
-"texture": SubResource("AtlasTexture_kah2g")
+"texture": SubResource("AtlasTexture_w4ncs")
 }, {
 "duration": 1.0,
-"texture": SubResource("AtlasTexture_re24c")
+"texture": SubResource("AtlasTexture_gk3y6")
 }, {
 "duration": 1.0,
-"texture": SubResource("AtlasTexture_qvjrp")
+"texture": SubResource("AtlasTexture_hh7td")
 }, {
 "duration": 1.0,
-"texture": SubResource("AtlasTexture_04fcp")
+"texture": SubResource("AtlasTexture_wb3kk")
 }],
 "loop": true,
 "name": &"default",
@@ -198,8 +194,8 @@ script = ExtResource("4_q1gk6")
 [node name="Gun" type="AnimatedSprite2D" parent="Assult_rifle" unique_id=926366635]
 light_mask = 3
 z_index = 1
-position = Vector2(2, 4)
-scale = Vector2(1, 1.03125)
+position = Vector2(25, 23)
+scale = Vector2(1.59375, 1.4648438)
 sprite_frames = SubResource("SpriteFrames_tqjc4")
 
 [node name="Marker2D" type="Marker2D" parent="Assult_rifle/Gun" unique_id=1071207320]
@@ -207,6 +203,6 @@ position = Vector2(10, 0)
 scale = Vector2(1, 0.969697)
 
 [node name="Bullets" type="AnimatedSprite2D" parent="Assult_rifle/Gun/Marker2D" unique_id=1169231093]
-position = Vector2(3, 0)
-scale = Vector2(0.5625, 0.375)
+position = Vector2(2.5490196, 1.1920929e-07)
+scale = Vector2(0.3707108, 0.1875)
 sprite_frames = SubResource("SpriteFrames_jpkcq")

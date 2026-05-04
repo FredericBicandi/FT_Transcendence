@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://bpivybany77he"
-path="res://.godot/imported/bullet.png-009b678f391e4eed12dccf1f30d4235f.ctex"
+uid="uid://32rxpiyus5r3"
+path="res://.godot/imported/positions.png-ed1343e876096350cde83c271e40958f.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://Assets/Textures/Main/bullet.png"
-dest_files=["res://.godot/imported/bullet.png-009b678f391e4eed12dccf1f30d4235f.ctex"]
+source_file="res://Assets/Textures/Main/Guns/AFRifle/positions.png"
+dest_files=["res://.godot/imported/positions.png-ed1343e876096350cde83c271e40958f.ctex"]
 
 [params]
 

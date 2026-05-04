@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://dynpgad2iy322"
-path="res://.godot/imported/leg.png-0518f7b772bf83d5b8d37c2e15351fd6.ctex"
+uid="uid://d14uvjamk8tnx"
+path="res://.godot/imported/image.png-de9cf11ed3929f2458cb58de2d4c660c.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://Assets/Textures/Main/leg.png"
-dest_files=["res://.godot/imported/leg.png-0518f7b772bf83d5b8d37c2e15351fd6.ctex"]
+source_file="res://Assets/Textures/Main/Guns/AFRifle/image.png"
+dest_files=["res://.godot/imported/image.png-de9cf11ed3929f2458cb58de2d4c660c.ctex"]
 
 [params]
 

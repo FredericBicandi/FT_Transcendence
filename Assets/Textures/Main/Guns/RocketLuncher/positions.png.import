@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://bxk7vqhscp6io"
-path="res://.godot/imported/heads.png-3a3110111ff55fc4b9d314cf38b58a13.ctex"
+uid="uid://dxl8uwerta3sl"
+path="res://.godot/imported/positions.png-6e7e8fa6115df97ab705e5b6710a9e02.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://Assets/Textures/Main/heads.png"
-dest_files=["res://.godot/imported/heads.png-3a3110111ff55fc4b9d314cf38b58a13.ctex"]
+source_file="res://Assets/Textures/Main/Guns/RocketLuncher/positions.png"
+dest_files=["res://.godot/imported/positions.png-6e7e8fa6115df97ab705e5b6710a9e02.ctex"]
 
 [params]
 

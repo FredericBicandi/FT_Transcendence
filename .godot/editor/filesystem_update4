@@ -1,3 +1,5 @@
-res://src/View/objects/weapons/Weapon2.tscn
-res://src/View/objects/weapons/Sniper.tscn
-res://src/View/objects/weapons/RocketLauncher.tscn
+res://src/View/objects/weapons/Weapon.tscn
+res://Assets/Textures/new_tile_set.tres
+res://src/View/Game.tscn
+res://src/View/objects/Player.tscn
+res://src/View/objects/weapons/BaseWeapon.gd
