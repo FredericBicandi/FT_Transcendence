@@ -1,0 +1,402 @@
+[gd_scene format=3 uid="uid://savl26evqant"]
+
+[ext_resource type="Texture2D" uid="uid://cihq5x17psahy" path="res://Assets/Textures/Main/Gun2.png" id="1_bs3kf"]
+[ext_resource type="Texture2D" uid="uid://bpivybany77he" path="res://Assets/Textures/Main/bullet.png" id="2_tqjc4"]
+
+[sub_resource type="GDScript" id="GDScript_q0e5x"]
+script/source = "class_name WeaponData
+extends RefCounted
+
+const WEAPON_DATA := {
+	\"Assult rifle\": {
+		\"fire_rate\": 0.18,
+		\"bullet_speed\": 200.0,
+		\"bullet_lifetime\": 1.2,
+		\"move_offset\": 1.5,
+		# bullet_frames maps weapon aim frame -> bullet sprite frame.
+		# Example: if weapon frame 1 should use bullet frame 9, set index 1 to 9.
+		\"bullet_frames\": [0, 1, 2, 3, 4, 5, 6, 7],
+		# muzzle_offset is added to gun_position.
+		# Change X to move the muzzle left/right.
+		# Change Y to move the muzzle up/down.
+		\"frames\": [
+			# 0 = right
+			{ \"gun_position\": Vector2(4, 1), \"muzzle_offset\": Vector2(12, 0) },
+			# 1 = down-right
+			{ \"gun_position\": Vector2(3, 2), \"muzzle_offset\": Vector2(10, 8) },
+			# 2 = down
+			{ \"gun_position\": Vector2(0, 3), \"muzzle_offset\": Vector2(5, 9) },
+			# 3 = down-left
+			{ \"gun_position\": Vector2(-3, 2), \"muzzle_offset\": Vector2(-10, 8) },
+			# 4 = left
+			{ \"gun_position\": Vector2(-4, 1), \"muzzle_offset\": Vector2(-12, 0) },
+			# 5 = up-left
+			{ \"gun_position\": Vector2(-3, -1), \"muzzle_offset\": Vector2(-10, -8) },
+			# 6 = up
+			{ \"gun_position\": Vector2(0, -2), \"muzzle_offset\": Vector2(4, -7) },
+			# 7 = up-right
+			{ \"gun_position\": Vector2(3, -1), \"muzzle_offset\": Vector2(10, -8) }
+		]
+	}
+}
+"
+
+[sub_resource type="GDScript" id="GDScript_tqjc4"]
+script/source = "class_name Weapon
+extends Node2D
+
+const WeaponData = preload(\"res://src/View/objects/WeaponData.gd\")
+
+@export var weapon_id: String = \"Assult rifle\"
+
+var active_bullets: Array[Dictionary] = []
+var current_frame_index: int = 0
+var fire_cooldown: float = 0.0
+var base_position: Vector2
+var bullet_frames: SpriteFrames
+
+var weapon_root: Node
+var gun: AnimatedSprite2D
+var muzzle_marker: Marker2D
+var bullet_template: AnimatedSprite2D
+
+func _ready() -> void:
+	base_position = position
+	weapon_root = get_node_or_null(weapon_id)
+	gun = weapon_root.get_node_or_null(\"Gun\") as AnimatedSprite2D if weapon_root else null
+	muzzle_marker = gun.get_node_or_null(\"Marker2D\") as Marker2D if gun else null
+	bullet_template = muzzle_marker.get_node_or_null(\"Bullets\") as AnimatedSprite2D if muzzle_marker else null
+
+	if bullet_template == null:
+		push_error(\"Weapon scene is missing required nodes for %s.\" % weapon_id)
+		set_process(false)
+		set_physics_process(false)
+		return
+
+	bullet_frames = bullet_template.sprite_frames
+	bullet_template.queue_free()
+	apply_frame_data(0)
+
+func _process(delta: float) -> void:
+	fire_cooldown = maxf(fire_cooldown - delta, 0.0)
+	update_aim(get_global_mouse_position())
+	update_bullets(delta)
+
+	if Input.is_action_pressed(\"click\"):
+		shoot()
+
+func update_movement(direction: Vector2) -> void:
+	var config := get_weapon_config()
+	var move_offset: float = config.get(\"move_offset\", 0.0)
+
+	if direction == Vector2.ZERO:
+		position = base_position
+		return
+
+	position = base_position + direction.normalized() * move_offset
+
+func update_aim(target_position: Vector2) -> void:
+	var dir: Vector2 = (target_position - global_position).normalized()
+	var angle: float = rad_to_deg(dir.angle())
+
+	if angle < 0.0:
+		angle += 360.0
+
+	apply_frame_data(angle_to_frame(angle))
+
+func get_aim_frame() -> int:
+	return current_frame_index
+
+func get_bullet_frame() -> int:
+	var config := get_weapon_config()
+	var bullet_frames_map: Array = config.get(\"bullet_frames\", [])
+
+	if current_frame_index < bullet_frames_map.size():
+		return int(bullet_frames_map[current_frame_index])
+
+	return current_frame_index
+
+func shoot() -> void:
+	if fire_cooldown > 0.0:
+		return
+
+	var config := get_weapon_config()
+	fire_cooldown = config.get(\"fire_rate\", 0.2)
+	var mouse_position := get_global_mouse_position()
+	var bullet_offset := mouse_position - muzzle_marker.global_position
+	var bullet_direction := bullet_offset.normalized() if bullet_offset != Vector2.ZERO else Vector2.RIGHT
+
+	var bullet := AnimatedSprite2D.new()
+	bullet.sprite_frames = bullet_frames
+	bullet.animation = &\"default\"
+	bullet.frame = get_bullet_frame()
+	bullet.global_position = muzzle_marker.global_position
+	bullet.z_index = gun.z_index
+	bullet.scale = gun.scale
+
+	get_tree().current_scene.add_child(bullet)
+
+	active_bullets.append({
+		\"node\": bullet,
+		\"direction\": bullet_direction,
+		\"speed\": config.get(\"bullet_speed\", 300.0),
+		\"lifetime\": config.get(\"bullet_lifetime\", 1.0)
+	})
+
+func update_bullets(delta: float) -> void:
+	for i in range(active_bullets.size() - 1, -1, -1):
+		var bullet_data := active_bullets[i]
+		var bullet: AnimatedSprite2D = bullet_data[\"node\"]
+
+		if not is_instance_valid(bullet):
+			active_bullets.remove_at(i)
+			continue
+
+		bullet.global_position += bullet_data[\"direction\"] * bullet_data[\"speed\"] * delta
+		bullet_data[\"lifetime\"] -= delta
+
+		if bullet_data[\"lifetime\"] <= 0.0:
+			bullet.queue_free()
+			active_bullets.remove_at(i)
+			continue
+
+		active_bullets[i] = bullet_data
+
+func get_weapon_config() -> Dictionary:
+	if WeaponData.WEAPON_DATA.has(weapon_id):
+		return WeaponData.WEAPON_DATA[weapon_id]
+
+	return WeaponData.WEAPON_DATA[\"Assult rifle\"]
+
+func angle_to_frame(angle: float) -> int:
+	if angle >= 337.5 or angle < 22.5:
+		return 0
+	if angle < 67.5:
+		return 1
+	if angle < 112.5:
+		return 2
+	if angle < 157.5:
+		return 3
+	if angle < 202.5:
+		return 4
+	if angle < 247.5:
+		return 5
+	if angle < 292.5:
+		return 6
+	return 7
+
+func apply_frame_data(frame_index: int) -> void:
+	current_frame_index = frame_index
+	gun.frame = frame_index
+
+	var config := get_weapon_config()
+	var frame_data: Dictionary = config[\"frames\"][frame_index]
+	gun.position = frame_data[\"gun_position\"]
+	muzzle_marker.position = frame_data[\"muzzle_offset\"]
+"
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_1b5tg"]
+atlas = ExtResource("1_bs3kf")
+region = Rect2(160, 0, 32, 32)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_7qnnq"]
+atlas = ExtResource("1_bs3kf")
+region = Rect2(192, 0, 32, 32)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_sxmrj"]
+atlas = ExtResource("1_bs3kf")
+region = Rect2(0, 0, 32, 32)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_c8w2g"]
+atlas = ExtResource("1_bs3kf")
+region = Rect2(32, 0, 32, 32)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_kah2g"]
+atlas = ExtResource("1_bs3kf")
+region = Rect2(64, 0, 32, 32)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_re24c"]
+atlas = ExtResource("1_bs3kf")
+region = Rect2(96, 0, 32, 32)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_qvjrp"]
+atlas = ExtResource("1_bs3kf")
+region = Rect2(224, 0, 32, 32)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_04fcp"]
+atlas = ExtResource("1_bs3kf")
+region = Rect2(128, 0, 32, 32)
+
+[sub_resource type="SpriteFrames" id="SpriteFrames_tqjc4"]
+animations = [{
+"frames": [{
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_1b5tg")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_7qnnq")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_sxmrj")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_c8w2g")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_kah2g")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_re24c")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_qvjrp")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_04fcp")
+}],
+"loop": true,
+"name": &"default",
+"speed": 5.0
+}]
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_tqjc4"]
+atlas = ExtResource("2_tqjc4")
+region = Rect2(64, 0, 16, 16)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_kgvfn"]
+atlas = ExtResource("2_tqjc4")
+region = Rect2(224, 0, 16, 16)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_q0e5x"]
+atlas = ExtResource("2_tqjc4")
+region = Rect2(0, 0, 16, 16)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_eerv8"]
+atlas = ExtResource("2_tqjc4")
+region = Rect2(32, 0, 16, 16)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_sb3df"]
+atlas = ExtResource("2_tqjc4")
+region = Rect2(192, 0, 16, 16)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_n48ne"]
+atlas = ExtResource("2_tqjc4")
+region = Rect2(96, 0, 16, 16)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_vx10o"]
+atlas = ExtResource("2_tqjc4")
+region = Rect2(128, 0, 16, 16)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_smyor"]
+atlas = ExtResource("2_tqjc4")
+region = Rect2(160, 0, 16, 16)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_vlhi8"]
+atlas = ExtResource("2_tqjc4")
+region = Rect2(80, 0, 16, 16)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_3m15p"]
+atlas = ExtResource("2_tqjc4")
+region = Rect2(48, 0, 16, 16)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_17tgs"]
+atlas = ExtResource("2_tqjc4")
+region = Rect2(16, 0, 16, 16)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_3smlm"]
+atlas = ExtResource("2_tqjc4")
+region = Rect2(112, 0, 16, 16)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_lcye7"]
+atlas = ExtResource("2_tqjc4")
+region = Rect2(208, 0, 16, 16)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_53wqc"]
+atlas = ExtResource("2_tqjc4")
+region = Rect2(144, 0, 16, 16)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_c7ww3"]
+atlas = ExtResource("2_tqjc4")
+region = Rect2(176, 0, 16, 16)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_pkak2"]
+atlas = ExtResource("2_tqjc4")
+region = Rect2(240, 0, 16, 16)
+
+[sub_resource type="SpriteFrames" id="SpriteFrames_jpkcq"]
+animations = [{
+"frames": [{
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_tqjc4")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_kgvfn")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_q0e5x")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_eerv8")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_sb3df")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_n48ne")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_vx10o")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_smyor")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_vlhi8")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_3m15p")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_17tgs")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_3smlm")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_lcye7")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_53wqc")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_c7ww3")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_pkak2")
+}],
+"loop": true,
+"name": &"default",
+"speed": 5.0
+}]
+
+[node name="Weapons" type="Node2D" unique_id=2015572023]
+script = SubResource("GDScript_q0e5x")
+
+[node name="Assult_rifle" type="Node2D" parent="." unique_id=993310818]
+script = SubResource("GDScript_tqjc4")
+
+[node name="Gun" type="AnimatedSprite2D" parent="Assult_rifle" unique_id=926366635]
+light_mask = 3
+z_index = 1
+position = Vector2(2, 4)
+scale = Vector2(1, 1.03125)
+sprite_frames = SubResource("SpriteFrames_tqjc4")
+
+[node name="Marker2D" type="Marker2D" parent="Assult_rifle/Gun" unique_id=1071207320]
+position = Vector2(10, 0)
+scale = Vector2(1, 0.969697)
+
+[node name="Bullets" type="AnimatedSprite2D" parent="Assult_rifle/Gun/Marker2D" unique_id=1169231093]
+position = Vector2(3, 0)
+scale = Vector2(0.5625, 0.375)
+sprite_frames = SubResource("SpriteFrames_jpkcq")

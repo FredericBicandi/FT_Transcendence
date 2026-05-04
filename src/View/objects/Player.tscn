@@ -1,7 +1,7 @@
 [gd_scene format=3 uid="uid://byeoim577yy55"]
 
 [ext_resource type="Texture2D" uid="uid://dh5lf3a6j5isl" path="res://Assets/Textures/Main/head.png" id="2_fhpty"]
-[ext_resource type="PackedScene" uid="uid://savl26evqant" path="res://src/View/objects/Weapon.tscn" id="2_gl4sb"]
+[ext_resource type="PackedScene" uid="uid://savl26evqant" path="res://src/View/objects/weapons/Weapon.tscn" id="2_gl4sb"]
 [ext_resource type="Texture2D" uid="uid://dynpgad2iy322" path="res://Assets/Textures/Main/leg.png" id="3_gl4sb"]
 
 [sub_resource type="GDScript" id="GDScript_t1rct"]
@@ -10,7 +10,7 @@ script/source = "class_name Player
 extends CharacterBody2D
 
 @export var move_speed: float = 120.0
-@export var max_health: int = 100
+@export var max_health: int = 200
 @export var leg_animation_speed: float = 12.0
 
 var health: int
@@ -20,11 +20,15 @@ var leg_animation_time: float = 0.0
 @onready var head: AnimatedSprite2D = $Head
 @onready var legs: AnimatedSprite2D = $Leg
 @onready var weapon = $Weapons
+@onready var health_bar: ProgressBar = $HealthBar
+@onready var reload_bar: ProgressBar = $ReloadBar
 
 func _ready() -> void:
 	health = max_health
 	legs.frame = 0
 	head.z_index = 1
+	update_health_bar()
+	update_reload_bar()
 
 func _physics_process(delta: float) -> void:
 	if is_dead:
@@ -38,6 +42,7 @@ func _physics_process(delta: float) -> void:
 
 func _process(_delta: float) -> void:
 	update_head_direction_from_weapon()
+	update_reload_bar()
 
 func update_legs(direction: Vector2, delta: float) -> void:
 	var frame_range := Vector2i(15, 21)
@@ -59,6 +64,26 @@ func update_legs(direction: Vector2, delta: float) -> void:
 
 func update_head_direction_from_weapon() -> void:
 	head.frame = weapon.get_aim_frame()
+
+func set_health(value: int) -> void:
+	health = clampi(value, 0, max_health)
+	update_health_bar()
+
+func update_health_bar() -> void:
+	health_bar.max_value = max_health
+	health_bar.value = health
+
+func update_reload_bar() -> void:
+	var active_weapon = weapon.get_active_weapon()
+
+	if active_weapon == null or not active_weapon.is_reloading():
+		reload_bar.visible = false
+		reload_bar.value = 0.0
+		return
+
+	reload_bar.visible = true
+	reload_bar.max_value = 1.0
+	reload_bar.value = active_weapon.get_reload_progress()
 "
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_gh0nf"]
@@ -223,6 +248,15 @@ animations = [{
 "speed": 5.0
 }]
 
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_bg"]
+bg_color = Color(0.109804, 0.109804, 0.109804, 0.85)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_fill"]
+bg_color = Color(0.160784, 0.776471, 0.286275, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_reload_fill"]
+bg_color = Color(0.207843, 0.494118, 0.921569, 1)
+
 [sub_resource type="AtlasTexture" id="AtlasTexture_ggyxi"]
 atlas = ExtResource("2_fhpty")
 region = Rect2(192, 0, 32, 32)
@@ -305,6 +339,29 @@ scale = Vector2(1.0625, 1.0625)
 sprite_frames = SubResource("SpriteFrames_3vd87")
 
 [node name="Weapons" parent="CharacterBody2D" unique_id=2015572023 instance=ExtResource("2_gl4sb")]
+
+[node name="HealthBar" type="ProgressBar" parent="CharacterBody2D" unique_id=157230094]
+z_index = 2
+offset_left = -11.0
+offset_top = -11.0
+offset_right = 11.0
+offset_bottom = -8.0
+mouse_filter = 2
+theme_override_styles/background = SubResource("StyleBoxFlat_bg")
+theme_override_styles/fill = SubResource("StyleBoxFlat_fill")
+show_percentage = false
+
+[node name="ReloadBar" type="ProgressBar" parent="CharacterBody2D" unique_id=1050789520]
+visible = false
+z_index = 2
+offset_left = -11.0
+offset_top = -16.0
+offset_right = 11.0
+offset_bottom = -12.0
+mouse_filter = 2
+theme_override_styles/background = SubResource("StyleBoxFlat_bg")
+theme_override_styles/fill = SubResource("StyleBoxFlat_reload_fill")
+show_percentage = false
 
 [node name="Head" type="AnimatedSprite2D" parent="CharacterBody2D" unique_id=644976605]
 z_index = 1

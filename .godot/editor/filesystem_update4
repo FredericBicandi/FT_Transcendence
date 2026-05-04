@@ -1,0 +1,7 @@
+res://src/View/objects/Weapon.tscn
+res://src/View/objects/WeaponData.gd
+res://src/View/objects/Player.tscn
+res://src/View/objects/weapons/Weapon.tscn
+res://src/View/objects/weapons/BaseWeapon.gd
+res://src/View/objects/weapons/AFRifle.gd
+res://src/View/objects/weapons/WeaponData.gd

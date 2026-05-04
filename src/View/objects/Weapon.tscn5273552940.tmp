@@ -3,12 +3,12 @@
 [ext_resource type="Texture2D" uid="uid://cihq5x17psahy" path="res://Assets/Textures/Main/Gun2.png" id="1_bs3kf"]
 [ext_resource type="Texture2D" uid="uid://bpivybany77he" path="res://Assets/Textures/Main/bullet.png" id="2_tqjc4"]
 
-[sub_resource type="GDScript" id="GDScript_bs3kf"]
-script/source = "class_name Weapon
-extends Node2D
+[sub_resource type="GDScript" id="GDScript_q0e5x"]
+script/source = "class_name WeaponData
+extends RefCounted
 
 const WEAPON_DATA := {
-	\"gun\": {
+	\"Assult rifle\": {
 		\"fire_rate\": 0.18,
 		\"bullet_speed\": 200.0,
 		\"bullet_lifetime\": 1.2,
@@ -33,14 +33,21 @@ const WEAPON_DATA := {
 			# 5 = up-left
 			{ \"gun_position\": Vector2(-3, -1), \"muzzle_offset\": Vector2(-10, -8) },
 			# 6 = up
-			{ \"gun_position\": Vector2(0, -2), \"muzzle_offset\": Vector2(8, 3) },
+			{ \"gun_position\": Vector2(0, -2), \"muzzle_offset\": Vector2(4, -7) },
 			# 7 = up-right
 			{ \"gun_position\": Vector2(3, -1), \"muzzle_offset\": Vector2(10, -8) }
 		]
 	}
 }
+"
 
-@export var weapon_id: String = \"gun\"
+[sub_resource type="GDScript" id="GDScript_tqjc4"]
+script/source = "class_name Weapon
+extends Node2D
+
+const WeaponData = preload(\"res://src/View/objects/WeaponData.gd\")
+
+@export var weapon_id: String = \"Assult rifle\"
 
 var active_bullets: Array[Dictionary] = []
 var current_frame_index: int = 0
@@ -48,12 +55,24 @@ var fire_cooldown: float = 0.0
 var base_position: Vector2
 var bullet_frames: SpriteFrames
 
-@onready var gun: AnimatedSprite2D = $Gun
-@onready var muzzle_marker: Marker2D = $Marker2D
-@onready var bullet_template: AnimatedSprite2D = $Marker2D/Bullets
+var weapon_root: Node
+var gun: AnimatedSprite2D
+var muzzle_marker: Marker2D
+var bullet_template: AnimatedSprite2D
 
 func _ready() -> void:
 	base_position = position
+	weapon_root = get_node_or_null(weapon_id)
+	gun = weapon_root.get_node_or_null(\"Gun\") as AnimatedSprite2D if weapon_root else null
+	muzzle_marker = gun.get_node_or_null(\"Marker2D\") as Marker2D if gun else null
+	bullet_template = muzzle_marker.get_node_or_null(\"Bullets\") as AnimatedSprite2D if muzzle_marker else null
+
+	if bullet_template == null:
+		push_error(\"Weapon scene is missing required nodes for %s.\" % weapon_id)
+		set_process(false)
+		set_physics_process(false)
+		return
+
 	bullet_frames = bullet_template.sprite_frames
 	bullet_template.queue_free()
 	apply_frame_data(0)
@@ -83,8 +102,7 @@ func update_aim(target_position: Vector2) -> void:
 	if angle < 0.0:
 		angle += 360.0
 
-	var frame_index := angle_to_frame(angle)
-	apply_frame_data(frame_index)
+	apply_frame_data(angle_to_frame(angle))
 
 func get_aim_frame() -> int:
 	return current_frame_index
@@ -94,10 +112,8 @@ func get_bullet_frame() -> int:
 	var bullet_frames_map: Array = config.get(\"bullet_frames\", [])
 
 	if current_frame_index < bullet_frames_map.size():
-		print(current_frame_index)
 		return int(bullet_frames_map[current_frame_index])
-	
-	print(current_frame_index)
+
 	return current_frame_index
 
 func shoot() -> void:
@@ -147,10 +163,10 @@ func update_bullets(delta: float) -> void:
 		active_bullets[i] = bullet_data
 
 func get_weapon_config() -> Dictionary:
-	if WEAPON_DATA.has(weapon_id):
-		return WEAPON_DATA[weapon_id]
+	if WeaponData.WEAPON_DATA.has(weapon_id):
+		return WeaponData.WEAPON_DATA[weapon_id]
 
-	return WEAPON_DATA[\"gun\"]
+	return WeaponData.WEAPON_DATA[\"Assult rifle\"]
 
 func angle_to_frame(angle: float) -> int:
 	if angle >= 337.5 or angle < 22.5:
@@ -176,8 +192,7 @@ func apply_frame_data(frame_index: int) -> void:
 	var config := get_weapon_config()
 	var frame_data: Dictionary = config[\"frames\"][frame_index]
 	gun.position = frame_data[\"gun_position\"]
-	# Tune muzzle_offset until Marker2D sits on the barrel tip for this frame.
-	muzzle_marker.position = gun.position + frame_data[\"muzzle_offset\"]
+	muzzle_marker.position = frame_data[\"muzzle_offset\"]
 "
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_1b5tg"]
@@ -264,9 +279,9 @@ region = Rect2(32, 0, 16, 16)
 atlas = ExtResource("2_tqjc4")
 region = Rect2(192, 0, 16, 16)
 
-[sub_resource type="AtlasTexture" id="AtlasTexture_vlhi8"]
+[sub_resource type="AtlasTexture" id="AtlasTexture_n48ne"]
 atlas = ExtResource("2_tqjc4")
-region = Rect2(80, 0, 16, 16)
+region = Rect2(96, 0, 16, 16)
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_vx10o"]
 atlas = ExtResource("2_tqjc4")
@@ -275,6 +290,10 @@ region = Rect2(128, 0, 16, 16)
 [sub_resource type="AtlasTexture" id="AtlasTexture_smyor"]
 atlas = ExtResource("2_tqjc4")
 region = Rect2(160, 0, 16, 16)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_vlhi8"]
+atlas = ExtResource("2_tqjc4")
+region = Rect2(80, 0, 16, 16)
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_3m15p"]
 atlas = ExtResource("2_tqjc4")
@@ -291,10 +310,6 @@ region = Rect2(112, 0, 16, 16)
 [sub_resource type="AtlasTexture" id="AtlasTexture_lcye7"]
 atlas = ExtResource("2_tqjc4")
 region = Rect2(208, 0, 16, 16)
-
-[sub_resource type="AtlasTexture" id="AtlasTexture_n48ne"]
-atlas = ExtResource("2_tqjc4")
-region = Rect2(96, 0, 16, 16)
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_53wqc"]
 atlas = ExtResource("2_tqjc4")
@@ -327,13 +342,16 @@ animations = [{
 "texture": SubResource("AtlasTexture_sb3df")
 }, {
 "duration": 1.0,
-"texture": SubResource("AtlasTexture_vlhi8")
+"texture": SubResource("AtlasTexture_n48ne")
 }, {
 "duration": 1.0,
 "texture": SubResource("AtlasTexture_vx10o")
 }, {
 "duration": 1.0,
 "texture": SubResource("AtlasTexture_smyor")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_vlhi8")
 }, {
 "duration": 1.0,
 "texture": SubResource("AtlasTexture_3m15p")
@@ -346,9 +364,6 @@ animations = [{
 }, {
 "duration": 1.0,
 "texture": SubResource("AtlasTexture_lcye7")
-}, {
-"duration": 1.0,
-"texture": SubResource("AtlasTexture_n48ne")
 }, {
 "duration": 1.0,
 "texture": SubResource("AtlasTexture_53wqc")
@@ -365,19 +380,23 @@ animations = [{
 }]
 
 [node name="Weapons" type="Node2D" unique_id=2015572023]
-script = SubResource("GDScript_bs3kf")
+script = SubResource("GDScript_q0e5x")
 
-[node name="Gun" type="AnimatedSprite2D" parent="." unique_id=926366635]
+[node name="Assult_rifle" type="Node2D" parent="." unique_id=993310818]
+script = SubResource("GDScript_tqjc4")
+
+[node name="Gun" type="AnimatedSprite2D" parent="Assult_rifle" unique_id=926366635]
 light_mask = 3
 z_index = 1
 position = Vector2(2, 4)
 scale = Vector2(1, 1.03125)
 sprite_frames = SubResource("SpriteFrames_tqjc4")
 
-[node name="Marker2D" type="Marker2D" parent="." unique_id=1071207320]
-position = Vector2(12, 4)
+[node name="Marker2D" type="Marker2D" parent="Assult_rifle/Gun" unique_id=1071207320]
+position = Vector2(10, 0)
+scale = Vector2(1, 0.969697)
 
-[node name="Bullets" type="AnimatedSprite2D" parent="Marker2D" unique_id=1169231093]
+[node name="Bullets" type="AnimatedSprite2D" parent="Assult_rifle/Gun/Marker2D" unique_id=1169231093]
 position = Vector2(3, 0)
 scale = Vector2(0.5625, 0.375)
 sprite_frames = SubResource("SpriteFrames_jpkcq")
