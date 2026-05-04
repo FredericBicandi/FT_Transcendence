@@ -1,9 +1,24 @@
 [gd_scene format=3 uid="uid://savl26evqant"]
 
-[ext_resource type="Texture2D" uid="uid://bpivybany77he" path="res://Assets/Textures/Main/Guns/AFRifle/bullet.png" id="2_tqjc4"]
+[ext_resource type="Texture2D" uid="uid://bpivybany77he" path="res://Assets/Textures/Guns/AFRifle/bullet.png" id="2_tqjc4"]
 [ext_resource type="Script" uid="uid://bi2axethsr1o4" path="res://src/View/objects/weapons/WeaponsManager.gd" id="3_bjwph"]
-[ext_resource type="Texture2D" uid="uid://32rxpiyus5r3" path="res://Assets/Textures/Main/Guns/AFRifle/positions.png" id="3_jox2y"]
-[ext_resource type="Script" uid="uid://26aiqruxv5hq" path="res://src/View/objects/weapons/AFRifle.gd" id="4_q1gk6"]
+[ext_resource type="Texture2D" uid="uid://daved8slk8gbf" path="res://Assets/Textures/Guns/AFRifle/positions.png" id="3_jox2y"]
+[ext_resource type="Texture2D" uid="uid://dnxc0otdken3e" path="res://Assets/Textures/Guns/Sniper/positions.png" id="5_hh7td"]
+[ext_resource type="Texture2D" uid="uid://dxl8uwerta3sl" path="res://Assets/Textures/Guns/RocketLuncher/positions.png" id="6_ssn77"]
+
+[sub_resource type="GDScript" id="GDScript_ssn77"]
+resource_name = "Assult_Riifle"
+script/source = "class_name AFRifle
+extends BaseWeapon
+
+# The weapon scene reuses BaseWeapon for behavior; this tiny built-in script only selects the data entry to use.
+const WeaponDataRef = preload(\"res://src/View/objects/weapons/WeaponData.gd\")
+
+func _ready() -> void:
+	# Bind this node to the default assault rifle config before BaseWeapon initializes visuals and ammo.
+	weapon_id = WeaponDataRef.DEFAULT_WEAPON_ID
+	super._ready()
+"
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_a0xt0"]
 atlas = ExtResource("3_jox2y")
@@ -28,6 +43,10 @@ region = Rect2(64, 0, 32, 32)
 [sub_resource type="AtlasTexture" id="AtlasTexture_gk3y6"]
 atlas = ExtResource("3_jox2y")
 region = Rect2(96, 0, 32, 32)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_otg38"]
+atlas = ExtResource("3_jox2y")
+region = Rect2(224, 0, 32, 32)
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_wb3kk"]
 atlas = ExtResource("3_jox2y")
@@ -55,7 +74,7 @@ animations = [{
 "texture": SubResource("AtlasTexture_gk3y6")
 }, {
 "duration": 1.0,
-"texture": SubResource("AtlasTexture_hh7td")
+"texture": SubResource("AtlasTexture_otg38")
 }, {
 "duration": 1.0,
 "texture": SubResource("AtlasTexture_wb3kk")
@@ -185,16 +204,412 @@ animations = [{
 "speed": 5.0
 }]
 
+[sub_resource type="GDScript" id="GDScript_hh7td"]
+resource_name = "Sniper"
+script/source = "class_name SniperRifle
+extends BaseWeapon
+
+# This built-in script exists only to point the shared BaseWeapon logic at the sniper data row.
+const WeaponDataRef = preload(\"res://src/View/objects/weapons/WeaponData.gd\")
+
+func _ready() -> void:
+	# Assign the sniper id so BaseWeapon reads the correct damage, reload, recoil, and frame offsets.
+	weapon_id = \"Sniper\"
+	super._ready()
+"
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_of6b7"]
+atlas = ExtResource("5_hh7td")
+region = Rect2(192, 0, 32, 32)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_78rqb"]
+atlas = ExtResource("5_hh7td")
+region = Rect2(224, 0, 32, 32)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_3tvmi"]
+atlas = ExtResource("5_hh7td")
+region = Rect2(0, 0, 32, 32)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_l4shp"]
+atlas = ExtResource("5_hh7td")
+region = Rect2(32, 0, 32, 32)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_8gvx3"]
+atlas = ExtResource("5_hh7td")
+region = Rect2(64, 0, 32, 32)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_jlctn"]
+atlas = ExtResource("5_hh7td")
+region = Rect2(96, 0, 32, 32)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_xsu0d"]
+atlas = ExtResource("5_hh7td")
+region = Rect2(128, 0, 32, 32)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_7h4dq"]
+atlas = ExtResource("5_hh7td")
+region = Rect2(160, 0, 32, 32)
+
+[sub_resource type="SpriteFrames" id="SpriteFrames_ssn77"]
+animations = [{
+"frames": [{
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_of6b7")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_78rqb")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_3tvmi")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_l4shp")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_8gvx3")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_jlctn")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_xsu0d")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_7h4dq")
+}],
+"loop": true,
+"name": &"default",
+"speed": 5.0
+}]
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_hkj38"]
+atlas = ExtResource("2_tqjc4")
+region = Rect2(64, 0, 16, 16)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_n4kph"]
+atlas = ExtResource("2_tqjc4")
+region = Rect2(224, 0, 16, 16)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_xyg2o"]
+atlas = ExtResource("2_tqjc4")
+region = Rect2(0, 0, 16, 16)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_yht2t"]
+atlas = ExtResource("2_tqjc4")
+region = Rect2(32, 0, 16, 16)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_koos2"]
+atlas = ExtResource("2_tqjc4")
+region = Rect2(192, 0, 16, 16)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_jxfih"]
+atlas = ExtResource("2_tqjc4")
+region = Rect2(96, 0, 16, 16)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_bu0vp"]
+atlas = ExtResource("2_tqjc4")
+region = Rect2(128, 0, 16, 16)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_amjou"]
+atlas = ExtResource("2_tqjc4")
+region = Rect2(160, 0, 16, 16)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_t0s2s"]
+atlas = ExtResource("2_tqjc4")
+region = Rect2(80, 0, 16, 16)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_sugv7"]
+atlas = ExtResource("2_tqjc4")
+region = Rect2(48, 0, 16, 16)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_udjvp"]
+atlas = ExtResource("2_tqjc4")
+region = Rect2(16, 0, 16, 16)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_74ftc"]
+atlas = ExtResource("2_tqjc4")
+region = Rect2(112, 0, 16, 16)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_33ded"]
+atlas = ExtResource("2_tqjc4")
+region = Rect2(208, 0, 16, 16)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_750vt"]
+atlas = ExtResource("2_tqjc4")
+region = Rect2(144, 0, 16, 16)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_qx33n"]
+atlas = ExtResource("2_tqjc4")
+region = Rect2(176, 0, 16, 16)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_sskvs"]
+atlas = ExtResource("2_tqjc4")
+region = Rect2(240, 0, 16, 16)
+
+[sub_resource type="SpriteFrames" id="SpriteFrames_0omna"]
+animations = [{
+"frames": [{
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_hkj38")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_n4kph")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_xyg2o")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_yht2t")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_koos2")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_jxfih")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_bu0vp")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_amjou")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_t0s2s")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_sugv7")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_udjvp")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_74ftc")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_33ded")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_750vt")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_qx33n")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_sskvs")
+}],
+"loop": true,
+"name": &"default",
+"speed": 5.0
+}]
+
+[sub_resource type="GDScript" id="GDScript_w4ncs"]
+resource_name = "Rocket_Laucnher"
+script/source = "class_name RocketLauncher
+extends BaseWeapon
+
+# This built-in script selects the rocket launcher config while reusing all generic weapon behavior.
+const WeaponDataRef = preload(\"res://src/View/objects/weapons/WeaponData.gd\")
+
+func _ready() -> void:
+	# Set the data id before BaseWeapon boots so this weapon gets the correct stats and sprite offsets.
+	weapon_id = \"Rocket Launcher\"
+	super._ready()
+"
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_he2y2"]
+atlas = ExtResource("6_ssn77")
+region = Rect2(192, 0, 32, 32)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_ad0bg"]
+atlas = ExtResource("6_ssn77")
+region = Rect2(96, 0, 32, 32)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_uxq7e"]
+atlas = ExtResource("6_ssn77")
+region = Rect2(0, 0, 32, 32)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_f77lk"]
+atlas = ExtResource("6_ssn77")
+region = Rect2(32, 0, 32, 32)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_een7c"]
+atlas = ExtResource("6_ssn77")
+region = Rect2(64, 0, 32, 32)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_75syy"]
+atlas = ExtResource("6_ssn77")
+region = Rect2(224, 0, 32, 32)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_6u1jl"]
+atlas = ExtResource("6_ssn77")
+region = Rect2(128, 0, 32, 32)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_oyh8l"]
+atlas = ExtResource("6_ssn77")
+region = Rect2(160, 0, 32, 32)
+
+[sub_resource type="SpriteFrames" id="SpriteFrames_w4ncs"]
+animations = [{
+"frames": [{
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_he2y2")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_ad0bg")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_uxq7e")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_f77lk")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_een7c")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_75syy")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_6u1jl")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_oyh8l")
+}],
+"loop": true,
+"name": &"default",
+"speed": 5.0
+}]
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_0omna"]
+atlas = ExtResource("2_tqjc4")
+region = Rect2(64, 0, 16, 16)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_ocyr1"]
+atlas = ExtResource("2_tqjc4")
+region = Rect2(224, 0, 16, 16)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_n45kl"]
+atlas = ExtResource("2_tqjc4")
+region = Rect2(0, 0, 16, 16)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_4dcku"]
+atlas = ExtResource("2_tqjc4")
+region = Rect2(32, 0, 16, 16)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_qee8s"]
+atlas = ExtResource("2_tqjc4")
+region = Rect2(192, 0, 16, 16)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_aj8ba"]
+atlas = ExtResource("2_tqjc4")
+region = Rect2(96, 0, 16, 16)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_vu48x"]
+atlas = ExtResource("2_tqjc4")
+region = Rect2(128, 0, 16, 16)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_jfcs3"]
+atlas = ExtResource("2_tqjc4")
+region = Rect2(160, 0, 16, 16)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_drud2"]
+atlas = ExtResource("2_tqjc4")
+region = Rect2(80, 0, 16, 16)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_vhxiv"]
+atlas = ExtResource("2_tqjc4")
+region = Rect2(48, 0, 16, 16)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_ywx3e"]
+atlas = ExtResource("2_tqjc4")
+region = Rect2(16, 0, 16, 16)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_1w0sd"]
+atlas = ExtResource("2_tqjc4")
+region = Rect2(112, 0, 16, 16)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_14sii"]
+atlas = ExtResource("2_tqjc4")
+region = Rect2(208, 0, 16, 16)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_2lq33"]
+atlas = ExtResource("2_tqjc4")
+region = Rect2(144, 0, 16, 16)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_6amrg"]
+atlas = ExtResource("2_tqjc4")
+region = Rect2(176, 0, 16, 16)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_46iev"]
+atlas = ExtResource("2_tqjc4")
+region = Rect2(240, 0, 16, 16)
+
+[sub_resource type="SpriteFrames" id="SpriteFrames_otg38"]
+animations = [{
+"frames": [{
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_0omna")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_ocyr1")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_n45kl")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_4dcku")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_qee8s")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_aj8ba")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_vu48x")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_jfcs3")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_drud2")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_vhxiv")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_ywx3e")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_1w0sd")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_14sii")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_2lq33")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_6amrg")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_46iev")
+}],
+"loop": true,
+"name": &"default",
+"speed": 5.0
+}]
+
 [node name="Weapons" type="Node2D" unique_id=2015572023]
 script = ExtResource("3_bjwph")
 
 [node name="Assult_rifle" type="Node2D" parent="." unique_id=993310818]
-script = ExtResource("4_q1gk6")
+script = SubResource("GDScript_ssn77")
 
 [node name="Gun" type="AnimatedSprite2D" parent="Assult_rifle" unique_id=926366635]
 light_mask = 3
 z_index = 1
-position = Vector2(25, 23)
+position = Vector2(26, 24)
 scale = Vector2(1.59375, 1.4648438)
 sprite_frames = SubResource("SpriteFrames_tqjc4")
 
@@ -203,6 +618,44 @@ position = Vector2(10, 0)
 scale = Vector2(1, 0.969697)
 
 [node name="Bullets" type="AnimatedSprite2D" parent="Assult_rifle/Gun/Marker2D" unique_id=1169231093]
-position = Vector2(2.5490196, 1.1920929e-07)
-scale = Vector2(0.3707108, 0.1875)
+position = Vector2(6.9411764, 0.70400023)
+scale = Vector2(1.5240502, 0.81687486)
 sprite_frames = SubResource("SpriteFrames_jpkcq")
+
+[node name="Sniper" type="Node2D" parent="." unique_id=1353379110]
+script = SubResource("GDScript_hh7td")
+
+[node name="Gun" type="AnimatedSprite2D" parent="Sniper" unique_id=869848126]
+light_mask = 3
+z_index = 1
+position = Vector2(17.25, 66)
+scale = Vector2(1.046875, 1.25)
+sprite_frames = SubResource("SpriteFrames_ssn77")
+
+[node name="Marker2D" type="Marker2D" parent="Sniper/Gun" unique_id=1696902783]
+position = Vector2(10, 0)
+scale = Vector2(1, 0.969697)
+
+[node name="Bullets" type="AnimatedSprite2D" parent="Sniper/Gun/Marker2D" unique_id=756715100]
+position = Vector2(9.249999, -1.2500001)
+scale = Vector2(0.7187499, 0.40625)
+sprite_frames = SubResource("SpriteFrames_0omna")
+
+[node name="Rocket_Launcher" type="Node2D" parent="." unique_id=869868688]
+script = SubResource("GDScript_w4ncs")
+
+[node name="Gun" type="AnimatedSprite2D" parent="Rocket_Launcher" unique_id=326254036]
+light_mask = 3
+z_index = 1
+position = Vector2(25, 101)
+scale = Vector2(1.5625, 1.2656249)
+sprite_frames = SubResource("SpriteFrames_w4ncs")
+
+[node name="Marker2D" type="Marker2D" parent="Rocket_Launcher/Gun" unique_id=1894524141]
+position = Vector2(10, 0)
+scale = Vector2(1, 0.969697)
+
+[node name="Bullets" type="AnimatedSprite2D" parent="Rocket_Launcher/Gun/Marker2D" unique_id=492653320]
+position = Vector2(8, -0.99999976)
+scale = Vector2(0.5625, 0.43750003)
+sprite_frames = SubResource("SpriteFrames_otg38")

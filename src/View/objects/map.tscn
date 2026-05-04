@@ -1,6 +1,6 @@
 [gd_scene format=4 uid="uid://ctsjqy1slixm8"]
 
-[ext_resource type="TileSet" uid="uid://csyaairfww26l" path="res://Assets/Textures/new_tile_set.tres" id="1_5bwnj"]
+[ext_resource type="TileSet" uid="uid://csyaairfww26l" path="res://Assets/Textures/Environment/new_tile_set.tres" id="1_5bwnj"]
 
 [node name="Node2D" type="Node2D" unique_id=433046130]
 y_sort_enabled = true
