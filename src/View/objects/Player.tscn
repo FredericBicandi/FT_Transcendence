@@ -211,9 +211,9 @@ func respawn() -> void:
 
 func update_auto_attack() -> void:
 	# AI characters lock onto the first node in the player group and keep aiming at it.
-	if attack_target == null or not is_instance_valid(attack_target):
+	if not is_valid_attack_target(attack_target):
 		attack_target = get_tree().get_first_node_in_group(\"player\")
-		if attack_target == null:
+		if not is_valid_attack_target(attack_target):
 			return
 
 	var target_body := attack_target as Node2D
@@ -231,6 +231,13 @@ func update_auto_attack() -> void:
 		return
 
 	active_weapon.shoot()
+
+func is_valid_attack_target(target: Node) -> bool:
+	# Ignore missing, freed, or dead targets so AI can reacquire a live player.
+	if target == null or not is_instance_valid(target):
+		return false
+
+	return not bool(target.get(\"is_dead\"))
 "
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_gh0nf"]

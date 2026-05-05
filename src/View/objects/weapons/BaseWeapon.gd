@@ -27,6 +27,7 @@ var accepts_player_input: bool = true
 var has_aim_target_override: bool = false
 var aim_target_override: Vector2 = Vector2.ZERO
 var collision_mask_override: int = -1
+var reload_pending: bool = false
 
 @onready var gun: AnimatedSprite2D = $Gun
 @onready var muzzle_marker: Marker2D = $Gun/Marker2D
@@ -69,8 +70,9 @@ func _process(delta: float) -> void:
 	position = base_position + movement_offset + recoil_offset
 
 	# Finish the reload the moment the timer reaches zero.
-	if reload_cooldown == 0.0 and current_ammo <= 0:
+	if reload_pending and reload_cooldown == 0.0:
 		current_ammo = get_magazine_size()
+		reload_pending = false
 		emit_ammo_changed()
 
 	# Aim either at a forced target or at the mouse cursor for player-controlled weapons.
@@ -258,6 +260,7 @@ func reload() -> void:
 
 	reload_duration = get_reload_time()
 	reload_cooldown = reload_duration
+	reload_pending = true
 
 func get_magazine_size() -> int:
 	return int(get_weapon_config().get("ammo_mag_size", 1))
@@ -292,6 +295,7 @@ func reset_state() -> void:
 	fire_cooldown = 0.0
 	reload_cooldown = 0.0
 	reload_duration = 0.0
+	reload_pending = false
 	current_ammo = get_magazine_size()
 	movement_offset = Vector2.ZERO
 	recoil_offset = Vector2.ZERO
