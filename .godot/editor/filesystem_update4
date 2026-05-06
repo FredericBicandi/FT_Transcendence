@@ -1,5 +1,2 @@
-res://src/View/Game.tscn
+res://src/View/objects/map.tscn
 res://Assets/Textures/Environment/new_tile_set.tres
-res://src/View/objects/Player.tscn
-res://src/View/objects/weapons/BaseWeapon.gd
-res://src/View/objects/weapons/WeaponsManager.gd
