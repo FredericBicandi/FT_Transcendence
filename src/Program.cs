@@ -7,7 +7,6 @@ var app = builder.Build();
 
 var clients = new ConcurrentDictionary<string, ClientConnection>();
 var webSocketApp = new Ws(clients);
-    `
 app.UseWebSockets();
 
 app.MapGet("/", () => "Game server running");
