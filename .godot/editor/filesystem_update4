@@ -1,2 +1,8 @@
-res://src/View/objects/map.tscn
+res://src/View/Game.tscn
 res://Assets/Textures/Environment/new_tile_set.tres
+res://src/Network/NetworkClient.gd
+res://src/View/ConnectionGate.gd
+res://src/View/objects/map.tscn
+res://src/View/objects/Player.gd
+res://src/View/objects/Player.tscn
+res://src/View/ConnectionGate.tscn
