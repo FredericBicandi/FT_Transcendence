@@ -2,7 +2,7 @@ class_name BaseWeapon
 extends Node2D
 
 # Shared weapon stats and per-angle sprite setup live in WeaponData.
-const WeaponData = preload("res://src/View/objects/weapons/WeaponData.gd")
+const WeaponData = preload("res://src/Scripts/Weapons/weapon_data.gd")
 
 # UI and game systems can listen to this to refresh ammo counters.
 signal ammo_changed(current_ammo: int, max_ammo: int)

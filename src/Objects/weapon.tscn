@@ -1,7 +1,7 @@
 [gd_scene format=3 uid="uid://savl26evqant"]
 
 [ext_resource type="Texture2D" uid="uid://bpivybany77he" path="res://Assets/Textures/Guns/AFRifle/bullet.png" id="2_tqjc4"]
-[ext_resource type="Script" uid="uid://bi2axethsr1o4" path="res://src/View/objects/weapons/WeaponsManager.gd" id="3_bjwph"]
+[ext_resource type="Script" uid="uid://bi2axethsr1o4" path="res://src/Scripts/Weapons/weapons_manager.gd" id="3_bjwph"]
 [ext_resource type="Texture2D" uid="uid://daved8slk8gbf" path="res://Assets/Textures/Guns/AFRifle/positions.png" id="3_jox2y"]
 [ext_resource type="Texture2D" uid="uid://dnxc0otdken3e" path="res://Assets/Textures/Guns/Sniper/positions.png" id="5_hh7td"]
 [ext_resource type="Texture2D" uid="uid://dxl8uwerta3sl" path="res://Assets/Textures/Guns/RocketLuncher/positions.png" id="6_ssn77"]
@@ -12,7 +12,7 @@ script/source = "class_name AFRifle
 extends BaseWeapon
 
 # The weapon scene reuses BaseWeapon for behavior; this tiny built-in script only selects the data entry to use.
-const WeaponDataRef = preload(\"res://src/View/objects/weapons/WeaponData.gd\")
+const WeaponDataRef = preload(\"res://src/Scripts/Weapons/weapon_data.gd\")
 
 func _ready() -> void:
 	# Bind this node to the default assault rifle config before BaseWeapon initializes visuals and ammo.
@@ -210,7 +210,7 @@ script/source = "class_name SniperRifle
 extends BaseWeapon
 
 # This built-in script exists only to point the shared BaseWeapon logic at the sniper data row.
-const WeaponDataRef = preload(\"res://src/View/objects/weapons/WeaponData.gd\")
+const WeaponDataRef = preload(\"res://src/Scripts/Weapons/weapon_data.gd\")
 
 func _ready() -> void:
 	# Assign the sniper id so BaseWeapon reads the correct damage, reload, recoil, and frame offsets.
@@ -408,7 +408,7 @@ script/source = "class_name RocketLauncher
 extends BaseWeapon
 
 # This built-in script selects the rocket launcher config while reusing all generic weapon behavior.
-const WeaponDataRef = preload(\"res://src/View/objects/weapons/WeaponData.gd\")
+const WeaponDataRef = preload(\"res://src/Scripts/Weapons/weapon_data.gd\")
 
 func _ready() -> void:
 	# Set the data id before BaseWeapon boots so this weapon gets the correct stats and sprite offsets.
@@ -605,6 +605,7 @@ script = ExtResource("3_bjwph")
 
 [node name="Assult_rifle" type="Node2D" parent="." unique_id=993310818]
 script = SubResource("GDScript_ssn77")
+weapon_id = null
 
 [node name="Gun" type="AnimatedSprite2D" parent="Assult_rifle" unique_id=926366635]
 light_mask = 3

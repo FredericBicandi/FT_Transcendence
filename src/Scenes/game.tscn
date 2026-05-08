@@ -1,0 +1,24 @@
+[gd_scene format=3 uid="uid://torw2ug24653"]
+
+[ext_resource type="Script" uid="uid://ddhwolxoyra8n" path="res://src/Scripts/game.gd" id="1_dc36d"]
+[ext_resource type="PackedScene" uid="uid://ctsjqy1slixm8" path="res://src/Scenes/map.tscn" id="1_f4gu5"]
+[ext_resource type="PackedScene" uid="uid://byeoim577yy55" path="res://src/Objects/player.tscn" id="2_mdaci"]
+[ext_resource type="PackedScene" uid="uid://cb1oo8a7q1m3f" path="res://src/Objects/target_dummy.tscn" id="3_4vy1m"]
+[ext_resource type="PackedScene" uid="uid://d2656rq6f72ub" path="res://src/Scenes/equipments.tscn" id="4_3rp81"]
+[ext_resource type="PackedScene" uid="uid://daaxgnf8jlf6p" path="res://src/Scenes/respawn.tscn" id="5_b2r7h"]
+
+[node name="Game" type="Node2D" unique_id=1266203192]
+script = ExtResource("1_dc36d")
+
+[node name="Map" parent="." unique_id=433046130 instance=ExtResource("1_f4gu5")]
+
+[node name="Player" parent="." unique_id=284655760 instance=ExtResource("2_mdaci")]
+y_sort_enabled = true
+position = Vector2(173, -307)
+
+[node name="TargetDummy" parent="." unique_id=1192526111 instance=ExtResource("3_4vy1m")]
+position = Vector2(268, -388)
+
+[node name="WeaponSwitcher" parent="." unique_id=427891286 instance=ExtResource("4_3rp81")]
+
+[node name="RespawnUi" parent="." unique_id=1627112034 instance=ExtResource("5_b2r7h")]

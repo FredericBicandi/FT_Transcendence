@@ -1,8 +1,8 @@
 [gd_scene format=3 uid="uid://torw2ug24653"]
 
-[ext_resource type="PackedScene" uid="uid://ctsjqy1slixm8" path="res://src/View/objects/map.tscn" id="1_24ihw"]
-[ext_resource type="PackedScene" uid="uid://byeoim577yy55" path="res://src/View/objects/Player.tscn" id="2_k8q58"]
-[ext_resource type="PackedScene" uid="uid://cb1oo8a7q1m3f" path="res://src/View/objects/TargetDummy.tscn" id="3_p4s6u"]
+[ext_resource type="PackedScene" uid="uid://ctsjqy1slixm8" path="res://src/View/map.tscn" id="1_24ihw"]
+[ext_resource type="PackedScene" uid="uid://byeoim577yy55" path="res://src/model/Player.tscn" id="2_k8q58"]
+[ext_resource type="PackedScene" uid="uid://cb1oo8a7q1m3f" path="res://src/model/TargetDummy.tscn" id="3_p4s6u"]
 
 [sub_resource type="GDScript" id="GDScript_k8q58"]
 script/source = "extends Node2D

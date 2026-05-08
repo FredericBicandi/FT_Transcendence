@@ -1,6 +1,6 @@
 extends Node
 
-const GAME_SCENE: PackedScene = preload("res://src/View/Game.tscn")
+const GAME_SCENE: PackedScene = preload("res://src/Scenes/game.tscn")
 
 @onready var status_label: Label = $CanvasLayer/Overlay/CenterContainer/PanelContainer/MarginContainer/VBoxContainer/StatusLabel
 @onready var network_client: NetworkClient = $NetworkClient

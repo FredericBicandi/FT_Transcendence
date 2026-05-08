@@ -1,7 +1,7 @@
 [gd_scene format=3 uid="uid://vs4jvq30jo6l"]
 
-[ext_resource type="Script" uid="uid://bjspcko4fexmw" path="res://src/View/ConnectionGate.gd" id="1_p5ln1"]
-[ext_resource type="Script" uid="uid://ctmym8s10fkba" path="res://src/Network/NetworkClient.gd" id="2_t7q2y"]
+[ext_resource type="Script" uid="uid://ctmym8s10fkba" path="res://src/Scripts/Networks/network_client.gd" id="1_5v8gu"]
+[ext_resource type="Script" uid="uid://qtm6y4tdoh7y" path="res://src/Scripts/Networks/connection.gd" id="1_23con"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_panel"]
 bg_color = Color(0.0627451, 0.0784314, 0.117647, 0.92)
@@ -15,11 +15,11 @@ corner_radius_top_right = 16
 corner_radius_bottom_right = 16
 corner_radius_bottom_left = 16
 
-[node name="ConnectionGate" type="Node" unique_id=873768806]
-script = ExtResource("1_p5ln1")
+[node name="Connection" type="Node" unique_id=873768806]
+script = ExtResource("1_23con")
 
 [node name="NetworkClient" type="Node" parent="." unique_id=1560488283]
-script = ExtResource("2_t7q2y")
+script = ExtResource("1_5v8gu")
 
 [node name="CanvasLayer" type="CanvasLayer" parent="." unique_id=104228190]
 

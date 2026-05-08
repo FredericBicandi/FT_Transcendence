@@ -1,0 +1,187 @@
+[gd_scene format=3 uid="uid://torw2ug24653"]
+
+[ext_resource type="PackedScene" uid="uid://ctsjqy1slixm8" path="res://src/View/map.tscn" id="1_24ihw"]
+[ext_resource type="PackedScene" uid="uid://byeoim577yy55" path="res://src/model/Player.tscn" id="2_k8q58"]
+[ext_resource type="PackedScene" uid="uid://cb1oo8a7q1m3f" path="res://src/model/TargetDummy.tscn" id="3_p4s6u"]
+
+[sub_resource type="GDScript" id="GDScript_k8q58"]
+script/source = "extends Node2D
+
+# Cache the player, weapons, and HUD nodes once so the scene can update UI cheaply.
+@onready var player = $Player
+@onready var player_body = $Player/CharacterBody2D
+@onready var weapons: WeaponsManager = $Player/CharacterBody2D/Weapons
+@onready var weapon_panel: Control = $CanvasLayer/WeaponHud
+@onready var weapon_icon: TextureRect = $CanvasLayer/WeaponHud/MarginContainer/VBoxContainer/WeaponIcon
+@onready var weapon_name: Label = $CanvasLayer/WeaponHud/MarginContainer/VBoxContainer/WeaponName
+@onready var ammo_label: Label = $CanvasLayer/WeaponHud/MarginContainer/VBoxContainer/AmmoLabel
+@onready var respawn_overlay: ColorRect = $CanvasLayer/RespawnOverlay
+@onready var respawn_message: Label = $CanvasLayer/RespawnOverlay/CenterContainer/VBoxContainer/RespawnMessage
+@onready var respawn_countdown: Label = $CanvasLayer/RespawnOverlay/CenterContainer/VBoxContainer/RespawnCountdown
+
+var observed_weapon: BaseWeapon
+
+func _ready() -> void:
+	# Listen for weapon swaps so the HUD can follow whichever weapon is currently equipped.
+	weapons.active_weapon_changed.connect(_on_active_weapon_changed)
+	_on_active_weapon_changed(weapons.get_active_weapon())
+	update_respawn_overlay()
+
+func _process(_delta: float) -> void:
+	# The respawn overlay depends on runtime player state, so refresh it every frame.
+	update_respawn_overlay()
+
+func _on_active_weapon_changed(weapon: BaseWeapon) -> void:
+	# Stop listening to the old weapon before tracking the newly equipped one.
+	if observed_weapon != null and observed_weapon.ammo_changed.is_connected(_on_ammo_changed):
+		observed_weapon.ammo_changed.disconnect(_on_ammo_changed)
+
+	observed_weapon = weapon
+
+	# If no weapon is active, hide the HUD instead of showing stale data.
+	if observed_weapon == null:
+		weapon_panel.visible = false
+		weapon_icon.texture = null
+		return
+
+	# Fill the HUD from the new weapon and subscribe to future ammo updates.
+	weapon_panel.visible = true
+	weapon_icon.texture = observed_weapon.get_weapon_icon()
+	weapon_name.text = observed_weapon.get_weapon_name()
+	observed_weapon.ammo_changed.connect(_on_ammo_changed)
+	_on_ammo_changed(observed_weapon.get_current_ammo(), observed_weapon.get_magazine_size())
+
+func _on_ammo_changed(current_ammo: int, max_ammo: int) -> void:
+	# Show current magazine ammo in a compact weapon HUD format.
+	ammo_label.text = \"%d/%d\" % [current_ammo, max_ammo]
+
+func update_respawn_overlay() -> void:
+	# Read death and respawn state directly from the player body script.
+	var is_dead: bool = bool(player_body.get(\"is_dead\"))
+	respawn_overlay.visible = is_dead
+
+	if not is_dead:
+		return
+
+	# While dead, show a simple countdown until the player becomes active again.
+	var respawn_timer: float = float(player_body.get(\"respawn_timer\"))
+	respawn_message.text = \"Respawning\"
+	respawn_countdown.text = \"%.1f\" % maxf(respawn_timer, 0.0)
+"
+
+[sub_resource type="LabelSettings" id="LabelSettings_respawn_title"]
+font_size = 28
+outline_size = 4
+outline_color = Color(0, 0, 0, 0.75)
+
+[sub_resource type="LabelSettings" id="LabelSettings_respawn_countdown"]
+font_size = 22
+font_color = Color(0.862745, 0.921569, 1, 1)
+outline_size = 4
+outline_color = Color(0, 0, 0, 0.75)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_weapon_hud"]
+bg_color = Color(0.054902, 0.0666667, 0.0980392, 0.88)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.576471, 0.654902, 0.823529, 0.35)
+corner_radius_top_left = 18
+corner_radius_top_right = 18
+corner_radius_bottom_right = 18
+corner_radius_bottom_left = 18
+shadow_color = Color(0, 0, 0, 0.3)
+shadow_size = 8
+
+[node name="Game" type="Node2D" unique_id=1266203192]
+script = SubResource("GDScript_k8q58")
+
+[node name="Map" parent="." unique_id=433046130 instance=ExtResource("1_24ihw")]
+
+[node name="Player" parent="." unique_id=284655760 instance=ExtResource("2_k8q58")]
+y_sort_enabled = true
+position = Vector2(173, -307)
+
+[node name="TargetDummy" parent="." unique_id=1192526111 instance=ExtResource("3_p4s6u")]
+position = Vector2(268, -388)
+
+[node name="CanvasLayer" type="CanvasLayer" parent="." unique_id=2042464968]
+
+[node name="RespawnOverlay" type="ColorRect" parent="CanvasLayer" unique_id=159853646]
+visible = false
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0, 0, 0, 0.45)
+
+[node name="CenterContainer" type="CenterContainer" parent="CanvasLayer/RespawnOverlay" unique_id=980700955]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="VBoxContainer" type="VBoxContainer" parent="CanvasLayer/RespawnOverlay/CenterContainer" unique_id=1738722389]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="RespawnMessage" type="Label" parent="CanvasLayer/RespawnOverlay/CenterContainer/VBoxContainer" unique_id=1536316379]
+layout_mode = 2
+text = "Respawning"
+label_settings = SubResource("LabelSettings_respawn_title")
+horizontal_alignment = 1
+
+[node name="RespawnCountdown" type="Label" parent="CanvasLayer/RespawnOverlay/CenterContainer/VBoxContainer" unique_id=1282187500]
+layout_mode = 2
+text = "5.0"
+label_settings = SubResource("LabelSettings_respawn_countdown")
+horizontal_alignment = 1
+
+[node name="WeaponHud" type="PanelContainer" parent="CanvasLayer" unique_id=584902926]
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -150.0
+offset_top = -108.0
+offset_right = -20.0
+offset_bottom = -20.0
+theme_override_styles/panel = SubResource("StyleBoxFlat_weapon_hud")
+
+[node name="MarginContainer" type="MarginContainer" parent="CanvasLayer/WeaponHud" unique_id=318061307]
+layout_mode = 2
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_top = 10
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_bottom = 10
+
+[node name="VBoxContainer" type="VBoxContainer" parent="CanvasLayer/WeaponHud/MarginContainer" unique_id=1507466592]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="WeaponIcon" type="TextureRect" parent="CanvasLayer/WeaponHud/MarginContainer/VBoxContainer" unique_id=392773705]
+texture_filter = 1
+custom_minimum_size = Vector2(72, 32)
+layout_mode = 2
+size_flags_horizontal = 4
+stretch_mode = 5
+
+[node name="WeaponName" type="Label" parent="CanvasLayer/WeaponHud/MarginContainer/VBoxContainer" unique_id=697808728]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.901961, 0.921569, 0.980392, 1)
+theme_override_font_sizes/font_size = 13
+text = "Weapon"
+horizontal_alignment = 1
+
+[node name="AmmoLabel" type="Label" parent="CanvasLayer/WeaponHud/MarginContainer/VBoxContainer" unique_id=2021529147]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.862745, 0.486275, 1)
+theme_override_font_sizes/font_size = 16
+text = "0/0"
+horizontal_alignment = 1
