@@ -5,7 +5,7 @@ signal connection_established
 signal connection_failed
 
 # Keep the server endpoint editable from the scene inspector.
-@export var server_url: String = "ws://34.165.214.228:5000/ws"
+@export var server_url: String = "ws://34.165.205.140:5000/ws"
 
 var socket: WebSocketPeer = WebSocketPeer.new()
 var has_sent_initial_ping: bool = false

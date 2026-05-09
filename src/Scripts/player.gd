@@ -3,7 +3,7 @@ extends CharacterBody2D
 
 # Tuning values for movement, health, control mode, respawn, and optional AI behavior.
 @export var move_speed: float = 120.0
-@export var max_health: int = 200
+@export var max_health: int = 100
 @export var leg_animation_speed: float = 12.0
 @export var accepts_input: bool = true
 @export var register_as_player_target: bool = true
