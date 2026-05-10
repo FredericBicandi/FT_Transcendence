@@ -1,2 +1,6 @@
-res://src/Scenes/game.tscn
+res://src/Scenes/connection.tscn
 res://Assets/Textures/Environment/new_tile_set.tres
+res://src/Scripts/Networks/network_client.gd
+res://src/Scenes/game.tscn
+res://src/Scripts/player.gd
+res://src/Scripts/Weapons/weapon_data.gd
