@@ -50,7 +50,7 @@ const WEAPON_DATA := {
 	"Sniper": {
 		# Gameplay tuning for the sniper: slow fire rate, heavy damage, small magazine.
 		"image": preload("res://Assets/Textures/Guns/Sniper/image.png"),
-		"damage": 45,
+		"damage": 50,
 		"fire_rate": 0.9,
 		"ammo_mag_size": 5,
 		"reload_time": 2.2,
