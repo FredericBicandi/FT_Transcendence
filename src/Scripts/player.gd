@@ -1,6 +1,8 @@
 class_name Player
 extends CharacterBody2D
 
+const POSITION_HEARTBEAT_INTERVAL: float = 5.0
+
 # Tuning values for movement, health, control mode, respawn, and optional AI behavior.
 @export var move_speed: float = 120.0
 @export var max_health: int = 100
@@ -22,6 +24,7 @@ var respawn_timer: float = 0.0
 var spawn_position: Vector2
 var attack_target: Node = null
 var network_client: NetworkClient = null
+var idle_position_heartbeat_time: float = 0.0
 
 @onready var head: AnimatedSprite2D = $Head
 @onready var legs: AnimatedSprite2D = $Leg
@@ -71,7 +74,7 @@ func _physics_process(delta: float) -> void:
 	# Keep movement animation and equipped weapon sway in sync with the body direction.
 	update_legs(direction, delta)
 	weapon.update_movement(direction)
-	_report_position_change(previous_position)
+	_report_position_sync(previous_position, delta)
 
 func _process(delta: float) -> void:
 	# Death state counts down to respawn; alive AI-controlled dummies can auto-attack player targets.
@@ -170,6 +173,7 @@ func die() -> void:
 	# Enter the dead state, stop interacting with the world, and hide body/UI visuals until respawn.
 	is_dead = true
 	respawn_timer = respawn_delay
+	idle_position_heartbeat_time = 0.0
 	velocity = Vector2.ZERO
 	hit_flash_time = 0.0
 	attack_target = null
@@ -192,6 +196,7 @@ func respawn() -> void:
 	respawn_timer = 0.0
 	health = max_health
 	global_position = spawn_position
+	idle_position_heartbeat_time = 0.0
 	update_health_bar()
 	legs.frame = 0
 	leg_animation_time = 0.0
@@ -206,6 +211,9 @@ func respawn() -> void:
 	if active_weapon != null:
 		active_weapon.set_input_enabled(accepts_input)
 		active_weapon.set_active(true)
+
+	if accepts_input and network_client != null:
+		_send_move_position()
 
 func update_auto_attack() -> void:
 	# AI characters lock onto the first node in the player group and keep aiming at it.
@@ -237,12 +245,25 @@ func is_valid_attack_target(target: Node) -> bool:
 
 	return not bool(target.get("is_dead"))
 
-func _report_position_change(previous_position: Vector2) -> void:
-	# Only the locally controlled character reports movement to the websocket server.
+func _report_position_sync(previous_position: Vector2, delta: float) -> void:
+	# Only the locally controlled character reports movement or idle heartbeats to the websocket server.
 	if not accepts_input or network_client == null:
 		return
 
-	if global_position.is_equal_approx(previous_position):
+	if not global_position.is_equal_approx(previous_position):
+		idle_position_heartbeat_time = 0.0
+		_send_move_position()
 		return
 
+	idle_position_heartbeat_time += delta
+	if idle_position_heartbeat_time < POSITION_HEARTBEAT_INTERVAL:
+		return
+
+	idle_position_heartbeat_time = 0.0
+	_send_ping_position()
+
+func _send_move_position() -> void:
 	network_client.send_move(global_position.x, global_position.y)
+
+func _send_ping_position() -> void:
+	network_client.send_ping(global_position.x, global_position.y)

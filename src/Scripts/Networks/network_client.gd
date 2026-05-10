@@ -71,6 +71,18 @@ func send_move(x: float, y: float) -> void:
 		}
 	)
 
+func send_ping(x: float, y: float) -> void:
+	if socket.get_ready_state() != WebSocketPeer.STATE_OPEN:
+		return
+
+	_send_json(
+		{
+			"type": "ping",
+			"x": x,
+			"y": y
+		}
+	)
+
 func _handle_state_changes(state: int) -> void:
 	if state == WebSocketPeer.STATE_OPEN and not was_open_last_frame:
 		was_open_last_frame = true
