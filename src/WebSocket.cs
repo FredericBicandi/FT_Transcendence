@@ -5,6 +5,9 @@ using System.Text.Json;
 
 public sealed class Ws
 {
+    private static readonly TimeSpan HeartbeatTimeout = TimeSpan.FromMinutes(1);
+    private static readonly TimeSpan HeartbeatCheckInterval = TimeSpan.FromSeconds(5);
+
     private readonly ConcurrentDictionary<string, ClientConnection> clients;
 
     public Ws(ConcurrentDictionary<string, ClientConnection> clients)
@@ -17,23 +20,26 @@ public sealed class Ws
     {
         if (!context.WebSockets.IsWebSocketRequest)
         {
-            context.Response.StatusCode = 400;
+            context.Response.StatusCode = StatusCodes.Status400BadRequest;
             await context.Response.WriteAsync("Expected WebSocket request");
             return;
         }
 
         var socket = await context.WebSockets.AcceptWebSocketAsync();
-        var playerId = Guid.NewGuid().ToString("N");
-        var client = new ClientConnection(playerId, socket);
+        var playerId = Helper.GetPlayerId();
+        var client = Helper.AcceptPlayer(playerId, socket);
 
         clients[playerId] = client;
         Console.WriteLine($"Client connected: {playerId}");
+
+        using var connectionLifetime = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
+        var heartbeatTask = MonitorHeartbeatAsync(client, connectionLifetime.Token);
 
         try
         {
             while (socket.State == WebSocketState.Open)
             {
-                var message = await ReceiveTextMessageAsync(socket, context.RequestAborted);
+                var message = await ReceiveTextMessageAsync(socket, connectionLifetime.Token);
 
                 if (message is null)
                     break;
@@ -47,7 +53,16 @@ public sealed class Ws
         }
         finally
         {
-            clients.TryRemove(playerId, out _);
+            connectionLifetime.Cancel();
+            Helper.RemovePlayer(clients, playerId);
+
+            try
+            {
+                await heartbeatTask;
+            }
+            catch (Exception ex) when (IsExpectedWebSocketDisconnect(ex))
+            {
+            }
 
             try
             {
@@ -73,6 +88,33 @@ public sealed class Ws
                 type = "player_left",
                 playerId
             });
+        }
+    }
+
+    // Closes stale sockets when the client stops sending movement or heartbeat pings.
+    private async Task MonitorHeartbeatAsync(ClientConnection client, CancellationToken cancellationToken)
+    {
+        using var timer = new PeriodicTimer(HeartbeatCheckInterval);
+
+        while (await timer.WaitForNextTickAsync(cancellationToken))
+        {
+            if (client.Socket.State != WebSocketState.Open)
+                return;
+
+            var idleFor = DateTimeOffset.UtcNow - client.LastActivityUtc;
+
+            if (idleFor < HeartbeatTimeout)
+                continue;
+
+            Console.WriteLine($"Heartbeat timeout for {client.PlayerId}: idle for {idleFor.TotalSeconds:F0}s");
+
+            await client.Socket.CloseAsync(
+                WebSocketCloseStatus.PolicyViolation,
+                "Heartbeat timeout",
+                CancellationToken.None
+            );
+
+            return;
         }
     }
 
@@ -178,19 +220,29 @@ public sealed class Ws
             var type = typeElement.GetString();
             if (type == "ping")
             {
-                await SendJsonAsync(client, new { type = "pong" });
+                if (!TryReadCoordinates(root, message, client.PlayerId, "ping", out var x, out var y))
+                    return;
+
+                client.MarkActivity(x, y);
+                Console.WriteLine($"player {client.PlayerId} standing at : x={x}, y={y}");
+
+                await SendJsonAsync(client, new
+                {
+                    type = "pong",
+                    playerId = client.PlayerId,
+                    x,
+                    y
+                });
+
                 return;
             }
 
             if (type == "move")
             {
-                if (!JsonHelpers.TryGetNumber(root, "x", out var x) ||
-                    !JsonHelpers.TryGetNumber(root, "y", out var y))
-                {
-                    Console.WriteLine($"Invalid move from {client.PlayerId}: {message}");
+                if (!TryReadCoordinates(root, message, client.PlayerId, "move", out var x, out var y))
                     return;
-                }
 
+                client.MarkActivity(x, y);
                 Console.WriteLine($"Move from {client.PlayerId}: x={x}, y={y}");
 
                 await BroadcastAsync(new
@@ -208,6 +260,27 @@ public sealed class Ws
         }
     }
 
+    private static bool TryReadCoordinates(
+        JsonElement root,
+        string message,
+        string playerId,
+        string messageType,
+        out double x,
+        out double y)
+    {
+        x = default;
+        y = default;
+
+        if (!Helper.TryGetNumber(root, "x", out x) ||
+            !Helper.TryGetNumber(root, "y", out y))
+        {
+            Console.WriteLine($"Invalid {messageType} from {playerId}: {message}");
+            return false;
+        }
+
+        return true;
+    }
+
     // Sends a payload to the clients connected at this moment.
     public async Task BroadcastAsync(object payload)
     {
@@ -219,4 +292,18 @@ public sealed class Ws
 public sealed record ClientConnection(string PlayerId, WebSocket Socket)
 {
     public SemaphoreSlim SendLock { get; } = new(1, 1);
+    private long lastActivityUtcTicks = DateTimeOffset.UtcNow.UtcTicks;
+
+    public DateTimeOffset LastActivityUtc =>
+        new(Interlocked.Read(ref lastActivityUtcTicks), TimeSpan.Zero);
+
+    public double X { get; private set; }
+    public double Y { get; private set; }
+
+    public void MarkActivity(double x, double y)
+    {
+        X = x;
+        Y = y;
+        Interlocked.Exchange(ref lastActivityUtcTicks, DateTimeOffset.UtcNow.UtcTicks);
+    }
 }
