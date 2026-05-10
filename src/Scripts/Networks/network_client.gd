@@ -5,7 +5,9 @@ signal connection_established
 signal connection_failed
 
 # Keep the server endpoint editable from the scene inspector.
-@export var server_url: String = "ws://34.165.214.228:5000/ws"
+
+@export var server_url: String = "wss://34.165.205.140:5000/ws"
+@export var bypass_tls_validation: bool = true
 
 var socket: WebSocketPeer = WebSocketPeer.new()
 var has_sent_initial_ping: bool = false
@@ -39,22 +41,35 @@ func connect_to_server() -> Error:
 	has_reported_closed_state = false
 	has_connected_once = false
 
-	var error := socket.connect_to_url(server_url)
+	var error := socket.connect_to_url(server_url, _create_tls_options())
 	if error != OK:
 		push_error("NetworkClient: failed to connect to %s (error %d)" % [server_url, error])
 		connection_failed.emit()
 
 	return error
 
+func _create_tls_options() -> TLSOptions:
+	if not server_url.begins_with("wss://"):
+		return null
+
+	if bypass_tls_validation:
+		# Skip certificate and hostname verification for development servers using self-signed certs.
+		print("NetworkClient: TLS certificate verification bypass enabled for %s" % server_url)
+		return TLSOptions.client_unsafe()
+
+	return TLSOptions.client()
+
 func send_move(x: float, y: float) -> void:
 	if socket.get_ready_state() != WebSocketPeer.STATE_OPEN:
 		return
 
-	_send_json({
-		"type": "move",
-		"x": x,
-		"y": y
-	})
+	_send_json(
+		{
+			"type": "move",
+			"x": x,
+			"y": y
+		}
+	)
 
 func _handle_state_changes(state: int) -> void:
 	if state == WebSocketPeer.STATE_OPEN and not was_open_last_frame:
