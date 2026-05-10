@@ -19,6 +19,7 @@ func _ready() -> void:
 	weapons.active_weapon_changed.connect(_on_active_weapon_changed)
 	_on_active_weapon_changed(weapons.get_active_weapon())
 	update_respawn_overlay()
+	Input.set_mouse_mode(Input.MOUSE_MODE_HIDDEN)
 
 func _process(_delta: float) -> void:
 	# The respawn overlay depends on runtime player state, so refresh it every frame.

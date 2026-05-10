@@ -1,6 +1,8 @@
-res://src/Scenes/connection.tscn
+res://src/Scenes/map.tscn
 res://Assets/Textures/Environment/new_tile_set.tres
-res://src/Scripts/Networks/network_client.gd
+res://src/Objects/weapon.tscn
 res://src/Scenes/game.tscn
-res://src/Scripts/player.gd
 res://src/Scripts/Weapons/weapon_data.gd
+res://src/Scripts/Weapons/base_weapon.gd
+res://src/Scripts/game.gd
+res://src/Scripts/cursor.gd
