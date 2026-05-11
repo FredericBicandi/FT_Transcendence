@@ -32,6 +32,23 @@ position = Vector2(268, -388)
 
 [node name="RespawnUi" parent="." unique_id=1627112034 instance=ExtResource("5_b2r7h")]
 
+[node name="MatchUi" type="Node" parent="." unique_id=397145728]
+
+[node name="CanvasLayer" type="CanvasLayer" parent="MatchUi" unique_id=210770445]
+
+[node name="TimerLabel" type="Label" parent="MatchUi/CanvasLayer" unique_id=2065873522]
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -80.0
+offset_top = 16.0
+offset_right = 80.0
+offset_bottom = 72.0
+grow_horizontal = 2
+theme_override_font_sizes/font_size = 48
+text = "10:00"
+horizontal_alignment = 1
+
 [node name="ShootingDummy" parent="." unique_id=1753781520 instance=ExtResource("7_v1g0a")]
 position = Vector2(-203, -549)
 scale = Vector2(0.5, 0.5)

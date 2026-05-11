@@ -3,6 +3,10 @@ extends CharacterBody2D
 
 const POSITION_HEARTBEAT_INTERVAL: float = 5.0
 const DAMAGE_NUMBER_LIFETIME: float = 0.45
+const REMOTE_SNAPSHOT_REACHED_DISTANCE: float = 0.5
+const REMOTE_AIM_DISTANCE: float = 32.0
+const MAX_REMOTE_SNAPSHOTS: int = 60
+const REMOTE_WALK_ANIMATION_HOLD_TIME: float = 0.12
 
 # Tuning values for movement, health, control mode, respawn, and optional AI behavior.
 @export var move_speed: float = 120.0
@@ -42,6 +46,16 @@ var listener_sound_time: float = 0.0
 var active_shot_voices: Array[Dictionary] = []
 var last_shot_time_by_stream: Dictionary = {}
 var damage_number_settings: LabelSettings
+var match_controls_enabled: bool = true
+var is_remote_proxy: bool = false
+var has_received_remote_snapshot: bool = false
+var remote_snapshot_queue: Array[Dictionary] = []
+var remote_facing_direction: Vector2 = Vector2.RIGHT
+var last_sent_angle: float = 0.0
+var last_sent_aim_frame: int = -1
+var remote_latest_angle_degrees: float = NAN
+var remote_last_move_direction: Vector2 = Vector2.ZERO
+var remote_walk_animation_hold_remaining: float = 0.0
 
 @onready var head: AnimatedSprite2D = $Head
 @onready var legs: AnimatedSprite2D = $Leg
@@ -80,16 +94,22 @@ func _ready() -> void:
 	update_health_bar()
 	update_reload_bar()
 	_configure_damage_numbers()
+	last_sent_angle = _get_current_aim_angle()
+	last_sent_aim_frame = weapon.get_aim_frame()
 
 func _physics_process(delta: float) -> void:
 	# Dead characters stop moving entirely until respawn.
 	if is_dead:
 		return
 
+	if is_remote_proxy:
+		_process_remote_movement(delta)
+		return
+
 	var previous_position := global_position
 
 	# Human-controlled players read movement input here; AI characters stay still and only aim/shoot.
-	var direction := Input.get_vector("left", "right", "up", "down") if accepts_input else Vector2.ZERO
+	var direction := Input.get_vector("left", "right", "up", "down") if accepts_input and match_controls_enabled else Vector2.ZERO
 	velocity = direction * move_speed
 	move_and_slide()
 
@@ -101,6 +121,7 @@ func _physics_process(delta: float) -> void:
 func _process(delta: float) -> void:
 	shoot_sound_cooldown_remaining = maxf(shoot_sound_cooldown_remaining - delta, 0.0)
 	listener_sound_time += delta
+	_report_angle_on_frame_change()
 	if accepts_input:
 		_update_active_shot_mix()
 
@@ -196,6 +217,9 @@ func _on_active_weapon_changed(active_weapon: BaseWeapon) -> void:
 		return
 
 	active_weapon.set_input_enabled(accepts_input)
+
+	if is_remote_proxy:
+		active_weapon.set_aim_target(global_position + remote_facing_direction * REMOTE_AIM_DISTANCE)
 
 func _configure_damage_numbers() -> void:
 	damage_number_settings = LabelSettings.new()
@@ -443,7 +467,7 @@ func respawn() -> void:
 	weapon.clear_all_projectiles()
 	var active_weapon := weapon.get_active_weapon()
 	if active_weapon != null:
-		active_weapon.set_input_enabled(accepts_input)
+		active_weapon.set_input_enabled(accepts_input and match_controls_enabled)
 		active_weapon.set_active(true)
 
 	if accepts_input and network_client != null:
@@ -511,7 +535,7 @@ func is_valid_attack_target(target: Node) -> bool:
 
 func _report_position_sync(previous_position: Vector2, delta: float) -> void:
 	# Only the locally controlled character reports movement or idle heartbeats to the websocket server.
-	if not accepts_input or network_client == null:
+	if not accepts_input or not match_controls_enabled or network_client == null:
 		return
 
 	if not global_position.is_equal_approx(previous_position):
@@ -527,7 +551,153 @@ func _report_position_sync(previous_position: Vector2, delta: float) -> void:
 	_send_ping_position()
 
 func _send_move_position() -> void:
-	network_client.send_move(global_position.x, global_position.y)
+	last_sent_angle = _get_current_aim_angle()
+	network_client.send_move(global_position.x, global_position.y, last_sent_angle)
 
 func _send_ping_position() -> void:
-	network_client.send_ping(global_position.x, global_position.y)
+	last_sent_angle = _get_current_aim_angle()
+	network_client.send_idle(global_position.x, global_position.y, last_sent_angle)
+
+func set_match_controls_enabled(is_enabled: bool) -> void:
+	match_controls_enabled = is_enabled
+	velocity = Vector2.ZERO
+	idle_position_heartbeat_time = 0.0
+
+	if weapon != null:
+		weapon.set_input_enabled(accepts_input and match_controls_enabled)
+		last_sent_aim_frame = weapon.get_aim_frame()
+
+func configure_as_remote_proxy() -> void:
+	is_remote_proxy = true
+	accepts_input = false
+	enable_player_camera = false
+	register_as_player_target = false
+	collision_layer = 0
+	collision_mask = 0
+	velocity = Vector2.ZERO
+	remote_snapshot_queue.clear()
+	has_received_remote_snapshot = false
+	remote_facing_direction = Vector2.RIGHT
+	remote_latest_angle_degrees = NAN
+	remote_last_move_direction = Vector2.ZERO
+	remote_walk_animation_hold_remaining = 0.0
+
+	if collision_shape != null:
+		collision_shape.disabled = true
+
+	if weapon != null:
+		weapon.set_input_enabled(false)
+		var active_weapon := weapon.get_active_weapon()
+		if active_weapon != null:
+			active_weapon.set_aim_target(global_position + remote_facing_direction * REMOTE_AIM_DISTANCE)
+
+func enqueue_remote_snapshot(position: Vector2, aim_angle_degrees: float = NAN) -> void:
+	if not is_nan(aim_angle_degrees):
+		remote_latest_angle_degrees = aim_angle_degrees
+
+	if not has_received_remote_snapshot:
+		has_received_remote_snapshot = true
+		global_position = position
+		_apply_remote_aim(position, remote_latest_angle_degrees)
+		return
+
+	if remote_snapshot_queue.size() >= MAX_REMOTE_SNAPSHOTS:
+		remote_snapshot_queue.remove_at(0)
+
+	remote_snapshot_queue.append({
+		"position": position,
+		"aim_angle_degrees": remote_latest_angle_degrees
+	})
+
+func update_remote_angle(aim_angle_degrees: float) -> void:
+	remote_latest_angle_degrees = aim_angle_degrees
+	_apply_remote_aim(global_position + remote_facing_direction, remote_latest_angle_degrees)
+
+func _process_remote_movement(delta: float) -> void:
+	while not remote_snapshot_queue.is_empty():
+		var queued_snapshot := remote_snapshot_queue[0]
+		var queued_position: Vector2 = queued_snapshot["position"]
+		var queued_offset := queued_position - global_position
+		var queued_distance := queued_offset.length()
+		if queued_distance > REMOTE_SNAPSHOT_REACHED_DISTANCE:
+			break
+
+		if queued_distance > 0.001:
+			remote_last_move_direction = queued_offset / queued_distance
+			remote_walk_animation_hold_remaining = REMOTE_WALK_ANIMATION_HOLD_TIME
+
+		global_position = queued_position
+		_apply_remote_aim(queued_position, float(queued_snapshot.get("aim_angle_degrees", NAN)))
+		remote_snapshot_queue.remove_at(0)
+
+	if remote_snapshot_queue.is_empty():
+		velocity = Vector2.ZERO
+		if remote_walk_animation_hold_remaining > 0.0 and remote_last_move_direction != Vector2.ZERO:
+			remote_walk_animation_hold_remaining = maxf(remote_walk_animation_hold_remaining - delta, 0.0)
+			update_legs(remote_last_move_direction, delta)
+			weapon.update_movement(remote_last_move_direction)
+		else:
+			update_legs(Vector2.ZERO, delta)
+			weapon.update_movement(Vector2.ZERO)
+		_apply_remote_aim(global_position + remote_facing_direction, NAN)
+		return
+
+	var next_snapshot := remote_snapshot_queue[0]
+	var target_position: Vector2 = next_snapshot["position"]
+	var offset := target_position - global_position
+	var direction := offset.normalized()
+	var step_distance := move_speed * delta
+	if offset.length() <= step_distance:
+		global_position = target_position
+		remote_snapshot_queue.remove_at(0)
+	else:
+		# Remote replicas should never resolve local collisions; they only smooth server snapshots.
+		global_position = global_position.move_toward(target_position, step_distance)
+
+	remote_last_move_direction = direction
+	remote_walk_animation_hold_remaining = REMOTE_WALK_ANIMATION_HOLD_TIME
+	velocity = Vector2.ZERO
+	update_legs(direction, delta)
+	weapon.update_movement(direction)
+	_apply_remote_aim(target_position, float(next_snapshot.get("aim_angle_degrees", NAN)))
+
+func _apply_remote_aim(target_position: Vector2, aim_angle_degrees: float) -> void:
+	var aim_direction := remote_facing_direction
+
+	if not is_nan(aim_angle_degrees):
+		aim_direction = Vector2.RIGHT.rotated(deg_to_rad(aim_angle_degrees))
+	else:
+		var movement_direction := target_position - global_position
+		if movement_direction != Vector2.ZERO:
+			aim_direction = movement_direction.normalized()
+
+	if aim_direction == Vector2.ZERO:
+		aim_direction = Vector2.RIGHT
+
+	remote_facing_direction = aim_direction.normalized()
+	var active_weapon := weapon.get_active_weapon()
+	if active_weapon != null:
+		active_weapon.set_aim_target(global_position + remote_facing_direction * REMOTE_AIM_DISTANCE)
+
+func _get_current_aim_angle() -> float:
+	var aim_direction := get_global_mouse_position() - global_position
+	if aim_direction == Vector2.ZERO:
+		return 0.0
+
+	var angle := rad_to_deg(aim_direction.angle())
+	if angle < 0.0:
+		angle += 360.0
+
+	return angle
+
+func _report_angle_on_frame_change() -> void:
+	if not accepts_input or not match_controls_enabled or network_client == null or weapon == null:
+		return
+
+	var current_aim_frame := weapon.get_aim_frame()
+	if current_aim_frame == last_sent_aim_frame:
+		return
+
+	last_sent_aim_frame = current_aim_frame
+	last_sent_angle = _get_current_aim_angle()
+	network_client.send_angle(last_sent_angle)

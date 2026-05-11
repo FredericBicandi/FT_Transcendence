@@ -1,5 +1,7 @@
 extends Node2D
 
+const PLAYER_SCENE: PackedScene = preload("res://src/Objects/player.tscn")
+
 # Cache the player, weapons, and HUD nodes once so the scene can update UI cheaply.
 @onready var player = $Player
 @onready var player_body = $Player/CharacterBody2D
@@ -11,19 +13,33 @@ extends Node2D
 @onready var respawn_overlay: ColorRect = $RespawnUi/CanvasLayer/RespawnOverlay
 @onready var respawn_message: Label = $RespawnUi/CanvasLayer/RespawnOverlay/CenterContainer/VBoxContainer/RespawnMessage
 @onready var respawn_countdown: Label = $RespawnUi/CanvasLayer/RespawnOverlay/CenterContainer/VBoxContainer/RespawnCountdown
+@onready var timer_label: Label = $MatchUi/CanvasLayer/TimerLabel
+@onready var network_client: NetworkClient = get_tree().get_first_node_in_group("network_client") as NetworkClient
 
 var observed_weapon: BaseWeapon
+var remote_players: Dictionary = {}
+var local_player_id: String = ""
+var room_id: String = ""
+var remaining_match_seconds: float = 0.0
+var match_has_ended: bool = false
 
 func _ready() -> void:
 	# Listen for weapon swaps so the HUD can follow whichever weapon is currently equipped.
 	weapons.active_weapon_changed.connect(_on_active_weapon_changed)
 	_on_active_weapon_changed(weapons.get_active_weapon())
+	_connect_network_signals()
+	apply_network_snapshot()
 	update_respawn_overlay()
+	update_match_ui()
 	Input.set_mouse_mode(Input.MOUSE_MODE_HIDDEN)
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	# The respawn overlay depends on runtime player state, so refresh it every frame.
+	if not match_has_ended and remaining_match_seconds > 0.0:
+		remaining_match_seconds = maxf(remaining_match_seconds - delta, 0.0)
+
 	update_respawn_overlay()
+	update_match_ui()
 
 func _on_active_weapon_changed(weapon: BaseWeapon) -> void:
 	# Stop listening to the old weapon before tracking the newly equipped one.
@@ -61,3 +77,138 @@ func update_respawn_overlay() -> void:
 	var respawn_timer: float = float(player_body.get("respawn_timer"))
 	respawn_message.text = "Respawning"
 	respawn_countdown.text = "%.1f" % maxf(respawn_timer, 0.0)
+
+func _connect_network_signals() -> void:
+	if network_client == null:
+		return
+
+	if not network_client.room_joined.is_connected(_on_room_joined):
+		network_client.room_joined.connect(_on_room_joined)
+
+	if not network_client.time_synced.is_connected(_on_time_synced):
+		network_client.time_synced.connect(_on_time_synced)
+
+	if not network_client.player_move_received.is_connected(_on_player_move_received):
+		network_client.player_move_received.connect(_on_player_move_received)
+
+	if not network_client.player_angle_received.is_connected(_on_player_angle_received):
+		network_client.player_angle_received.connect(_on_player_angle_received)
+
+	if not network_client.player_left_received.is_connected(_on_player_left_received):
+		network_client.player_left_received.connect(_on_player_left_received)
+
+	if not network_client.match_ended.is_connected(_on_match_ended):
+		network_client.match_ended.connect(_on_match_ended)
+
+func apply_network_snapshot() -> void:
+	if network_client == null:
+		return
+
+	local_player_id = network_client.local_player_id
+	room_id = network_client.local_room_id
+	remaining_match_seconds = maxf(network_client.remaining_seconds, 0.0)
+	match_has_ended = network_client.match_finished
+	player_body.set_match_controls_enabled(not match_has_ended)
+
+func update_match_ui() -> void:
+	timer_label.text = _format_match_time(remaining_match_seconds)
+
+func _format_match_time(total_seconds: float) -> String:
+	var clamped_seconds := maxi(int(ceil(maxf(total_seconds, 0.0))), 0)
+	var minutes := clamped_seconds / 60
+	var seconds := clamped_seconds % 60
+	return "%02d:%02d" % [minutes, seconds]
+
+func _on_room_joined(message: Dictionary) -> void:
+	local_player_id = str(message.get("playerId", ""))
+	room_id = str(message.get("roomId", ""))
+	remaining_match_seconds = maxf(float(message.get("remainingSeconds", 0.0)), 0.0)
+	match_has_ended = false
+	player_body.set_match_controls_enabled(true)
+	update_match_ui()
+
+func _on_time_synced(message: Dictionary) -> void:
+	var synced_room_id := str(message.get("roomId", ""))
+	if room_id != "" and synced_room_id != "" and synced_room_id != room_id:
+		return
+
+	remaining_match_seconds = maxf(float(message.get("remainingSeconds", remaining_match_seconds)), 0.0)
+	update_match_ui()
+
+func _on_player_move_received(message: Dictionary) -> void:
+	var player_id := str(message.get("playerId", ""))
+	if player_id == "" or player_id == local_player_id:
+		return
+
+	var remote_body := _get_or_create_remote_player(player_id)
+	if remote_body == null:
+		return
+
+	var aim_angle_degrees := NAN
+	if message.has("angle"):
+		aim_angle_degrees = float(message["angle"])
+	elif message.has("rotation"):
+		aim_angle_degrees = rad_to_deg(float(message["rotation"]))
+	elif message.has("aimAngle"):
+		aim_angle_degrees = float(message["aimAngle"])
+
+	remote_body.enqueue_remote_snapshot(
+		Vector2(
+			float(message.get("x", remote_body.global_position.x)),
+			float(message.get("y", remote_body.global_position.y))
+		),
+		aim_angle_degrees
+	)
+
+func _on_player_left_received(player_id: String) -> void:
+	_remove_remote_player(player_id)
+
+func _on_player_angle_received(message: Dictionary) -> void:
+	var player_id := str(message.get("playerId", ""))
+	if player_id == "" or player_id == local_player_id or not message.has("angle"):
+		return
+
+	var remote_body := _get_or_create_remote_player(player_id)
+	if remote_body == null:
+		return
+
+	remote_body.update_remote_angle(float(message["angle"]))
+
+func _on_match_ended(message: Dictionary) -> void:
+	var ended_room_id := str(message.get("roomId", ""))
+	if room_id != "" and ended_room_id != "" and ended_room_id != room_id:
+		return
+
+	match_has_ended = true
+	remaining_match_seconds = 0.0
+	player_body.set_match_controls_enabled(false)
+	update_match_ui()
+
+func _get_or_create_remote_player(player_id: String) -> Player:
+	var existing_wrapper := remote_players.get(player_id) as Node2D
+	if existing_wrapper != null and is_instance_valid(existing_wrapper):
+		return existing_wrapper.get_node("CharacterBody2D") as Player
+
+	var remote_wrapper := PLAYER_SCENE.instantiate() as Node2D
+	if remote_wrapper == null:
+		return null
+
+	remote_wrapper.name = "RemotePlayer_%s" % player_id
+	var remote_body := remote_wrapper.get_node("CharacterBody2D") as Player
+	if remote_body == null:
+		remote_wrapper.queue_free()
+		return null
+
+	remote_body.configure_as_remote_proxy()
+	add_child(remote_wrapper)
+	remote_players[player_id] = remote_wrapper
+	return remote_body
+
+func _remove_remote_player(player_id: String) -> void:
+	var remote_wrapper := remote_players.get(player_id) as Node2D
+	if remote_wrapper == null:
+		return
+
+	remote_players.erase(player_id)
+	if is_instance_valid(remote_wrapper):
+		remote_wrapper.queue_free()

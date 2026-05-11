@@ -1,6 +1,4 @@
-res://src/Objects/weapon.tscn
-res://src/Scripts/player.gd
-res://src/Scenes/map.tscn
-res://Assets/Textures/Environment/new_tile_set.tres
 res://src/Scenes/game.tscn
-res://src/Objects/player.tscn
+res://Assets/Textures/Environment/new_tile_set.tres
+res://src/Scripts/game.gd
+res://src/Scripts/player.gd
