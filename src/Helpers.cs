@@ -21,11 +21,12 @@ public static class Helper
     public static string GetPlayerId() =>
         Guid.NewGuid().ToString("N");
     
-    public static ClientConnection AcceptPlayer(string playerId, WebSocket clientSocket)
+    public static ClientConnection AcceptPlayer(string playerId, WebSocket clientSocket, string roomId)
     {
         return new ClientConnection(
             playerId,
-            clientSocket
+            clientSocket,
+            roomId
         );
     }
     
