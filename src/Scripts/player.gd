@@ -2,6 +2,7 @@ class_name Player
 extends CharacterBody2D
 
 const POSITION_HEARTBEAT_INTERVAL: float = 5.0
+const DAMAGE_NUMBER_LIFETIME: float = 0.45
 
 # Tuning values for movement, health, control mode, respawn, and optional AI behavior.
 @export var move_speed: float = 120.0
@@ -23,6 +24,8 @@ const POSITION_HEARTBEAT_INTERVAL: float = 5.0
 @export var shoot_sound_listener_cooldown: float = 0.06
 @export var shoot_sound_pitch_randomness: float = 0.04
 @export var shoot_sound_volume_jitter_db: float = 1.5
+@export var damage_number_rise_distance: float = 22.0
+@export var damage_number_spread: float = 10.0
 
 # Runtime state for health, death flow, leg animation, hit flash, respawn timing, and AI target tracking.
 var health: int
@@ -38,12 +41,14 @@ var shoot_sound_cooldown_remaining: float = 0.0
 var listener_sound_time: float = 0.0
 var active_shot_voices: Array[Dictionary] = []
 var last_shot_time_by_stream: Dictionary = {}
+var damage_number_settings: LabelSettings
 
 @onready var head: AnimatedSprite2D = $Head
 @onready var legs: AnimatedSprite2D = $Leg
 @onready var weapon: WeaponsManager = $Weapons
 @onready var health_bar: ProgressBar = $HealthBar
 @onready var reload_bar: ProgressBar = $ReloadBar
+@onready var damage_numbers: Node2D = $DamageNumbers
 @onready var player_camera: Camera2D = $Camera2D
 @onready var collision_shape: CollisionShape2D = $CollisionShape2D
 @onready var shoot_sound: AudioStreamPlayer2D = $ShootSound
@@ -74,6 +79,7 @@ func _ready() -> void:
 	_on_active_weapon_changed(weapon.get_active_weapon())
 	update_health_bar()
 	update_reload_bar()
+	_configure_damage_numbers()
 
 func _physics_process(delta: float) -> void:
 	# Dead characters stop moving entirely until respawn.
@@ -140,7 +146,7 @@ func set_health(value: int) -> void:
 	health = clampi(value, 0, max_health)
 	update_health_bar()
 
-func apply_damage(amount: int, _hit_position: Vector2 = Vector2.ZERO, _source_weapon: Node = null) -> void:
+func apply_damage(amount: int, hit_position: Vector2 = Vector2.ZERO, _source_weapon: Node = null) -> void:
 	# Ignore invalid damage and damage received while already dead.
 	if is_dead or amount <= 0:
 		return
@@ -149,6 +155,7 @@ func apply_damage(amount: int, _hit_position: Vector2 = Vector2.ZERO, _source_we
 	health = maxi(health - amount, 0)
 	hit_flash_time = 0.12
 	update_health_bar()
+	_show_damage_number(amount, hit_position)
 
 	if health == 0:
 		die()
@@ -189,6 +196,38 @@ func _on_active_weapon_changed(active_weapon: BaseWeapon) -> void:
 		return
 
 	active_weapon.set_input_enabled(accepts_input)
+
+func _configure_damage_numbers() -> void:
+	damage_number_settings = LabelSettings.new()
+	damage_number_settings.font_size = 14
+	damage_number_settings.font_color = Color(1.0, 0.92, 0.35, 1.0)
+	damage_number_settings.outline_size = 4
+	damage_number_settings.outline_color = Color(0.18, 0.05, 0.05, 0.95)
+
+func _show_damage_number(amount: int, hit_position: Vector2) -> void:
+	if damage_numbers == null:
+		return
+
+	var label := Label.new()
+	label.text = str(amount)
+	label.label_settings = damage_number_settings
+	label.z_index = 3
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	var base_position := Vector2(-6.0, -18.0)
+	if hit_position != Vector2.ZERO:
+		base_position = to_local(hit_position) + Vector2(-6.0, -12.0)
+
+	base_position.x += randf_range(-damage_number_spread, damage_number_spread)
+	label.position = base_position
+	damage_numbers.add_child(label)
+
+	var end_position := label.position + Vector2(randf_range(-4.0, 4.0), -damage_number_rise_distance)
+	var tween := create_tween()
+	tween.set_parallel(true)
+	tween.tween_property(label, "position", end_position, DAMAGE_NUMBER_LIFETIME).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	tween.tween_property(label, "modulate:a", 0.0, DAMAGE_NUMBER_LIFETIME).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	tween.finished.connect(label.queue_free)
 
 func play_shoot_sound(stream: AudioStream) -> void:
 	if stream == null or shoot_sound_cooldown_remaining > 0.0:

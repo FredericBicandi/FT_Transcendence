@@ -283,6 +283,9 @@ theme_override_styles/background = SubResource("StyleBoxFlat_bg")
 theme_override_styles/fill = SubResource("StyleBoxFlat_reload_fill")
 show_percentage = false
 
+[node name="DamageNumbers" type="Node2D" parent="CharacterBody2D"]
+z_index = 3
+
 [node name="Head" type="AnimatedSprite2D" parent="CharacterBody2D" unique_id=644976605]
 z_index = 1
 position = Vector2(-1, 6)

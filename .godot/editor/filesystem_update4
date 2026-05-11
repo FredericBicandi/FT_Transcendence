@@ -1,4 +1,2 @@
 res://src/Objects/weapon.tscn
-res://src/Scripts/Weapons/weapon_data.gd
-res://Assets/Textures/Environment/new_tile_set.tres
 res://src/Scripts/player.gd

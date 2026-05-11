@@ -1,5 +1,5 @@
 63f7b34db8d8cdea90c76aacccf841ec
-::res://::1778499608
+::res://::1778517766
 export_presets.cfg::TextFile::-1::1778007352::0::1::::<><><>0<>0<><>::
 ::res://Assets/::1778443391
 ::res://Assets/Audio/::1778443391
@@ -23,8 +23,8 @@ heads.png::CompressedTexture2D::4023389162357342514::1778007352::1778007361::1::
 image.png::CompressedTexture2D::853513053732432239::1778007352::1778007359::1::::<><><>0<>0<>62905c152f1e32facf9c5044c7cedb30<>res://.godot/imported/image.png-66b58e4d18514e0dad22e44c952259df.ctex::
 leg.png::CompressedTexture2D::8871552684722620801::1778007352::1778007359::1::::<><><>0<>0<>2e85df3e8e69b2256a098f789002bfd4<>res://.godot/imported/leg.png-aaf084576d0f6b5d56345d6dda900b80.ctex::
 legs.png::CompressedTexture2D::8808795681243734623::1778007352::1778007360::1::::<><><>0<>0<>f64ab3715b84970e6f1e44eaa49a564d<>res://.godot/imported/legs.png-24543e269cba8a8efc55538ce709a037.ctex::
-::res://Assets/Textures/Environment/::1778499314
-new_tile_set.tres::TileSet::6085786065674169349::1778499314::0::1::::<><><>0<>0<><>::uid://b0p2udon286c7::::res://Assets/Textures/Environment/Tilesets/Dungeon_Tiles.png<>uid://ciin2j27e21q3::::res://Assets/Textures/Environment/Tilesets/Floors_Tiles.png<>uid://bdejri3p5wvaq::::res://Assets/Textures/Environment/tileSheet.png<>uid://b264pp56walb2::::res://Assets/Textures/Environment/Tilesets/Water_tiles.png
+::res://Assets/Textures/Environment/::1778499691
+new_tile_set.tres::TileSet::6085786065674169349::1778499691::0::1::::<><><>0<>0<><>::uid://b0p2udon286c7::::res://Assets/Textures/Environment/Tilesets/Dungeon_Tiles.png<>uid://ciin2j27e21q3::::res://Assets/Textures/Environment/Tilesets/Floors_Tiles.png<>uid://bdejri3p5wvaq::::res://Assets/Textures/Environment/tileSheet.png<>uid://b264pp56walb2::::res://Assets/Textures/Environment/Tilesets/Water_tiles.png
 tileSheet.png::CompressedTexture2D::2605822001218553940::1778251159::1778251193::1::::<><><>0<>0<>9b3a57ed1c27fc6064e8cb59bca721af<>res://.godot/imported/tileSheet.png-62e7a7de5eca0b6d4f949a90e0932c87.ctex::
 ::res://Assets/Textures/Environment/Tilesets/::1778007359
 Dungeon_Tiles.png::CompressedTexture2D::4173782695462986552::1778007352::1778007359::1::::<><><>0<>0<>ffd92774fef5084e0bfbd57643dceb3b<>res://.godot/imported/Dungeon_Tiles.png-6e6aa9a67f702eb714b9b3a74d63e9e5.ctex::
@@ -46,11 +46,11 @@ positions.png::CompressedTexture2D::8119364550378283088::1778007352::1778007359:
 ::res://drivers/gles3/::1778251160
 ::res://drivers/gles3/storage/::1778251160
 ::res://src/::1778255818
-::res://src/Objects/::1778499595
+::res://src/Objects/::1778500217
 player.tscn::PackedScene::4080075444394089658::1778494426::0::1::::<><><>0<>0<><>::uid://cu0wn1o8g36r::::res://src/Scripts/player.gd<>uid://dh5lf3a6j5isl::::res://Assets/Textures/Character/heads/head.png<>uid://savl26evqant::::res://src/Objects/weapon.tscn<>uid://dynpgad2iy322::::res://Assets/Textures/Character/Legs/leg.png
 shooting_dummy.tscn::PackedScene::8470558423212898609::1778498682::0::1::::<><><>0<>0<><>::uid://byeoim577yy55::::res://src/Objects/player.tscn
 target_dummy.tscn::PackedScene::4897580806390094141::1778255342::0::1::::<><><>0<>0<><>::uid://byeoim577yy55::::res://src/Objects/player.tscn
-weapon.tscn::PackedScene::1264695352295457373::1778495002::0::1::::<><><>0<>0<><>::uid://bobj7i75645as::::res://Assets/Audio/Weapons/rifleshot.mp3<>uid://bpivybany77he::::res://Assets/Textures/Guns/AFRifle/bullet.png<>uid://bi2axethsr1o4::::res://src/Scripts/Weapons/weapons_manager.gd<>uid://daved8slk8gbf::::res://Assets/Textures/Guns/AFRifle/positions.png<>uid://b7o5w0iwwxudy::::res://Assets/Audio/Weapons/snipershot.mp3<>uid://dnxc0otdken3e::::res://Assets/Textures/Guns/Sniper/positions.png<>uid://du3qp6vg6kcq0::::res://Assets/Audio/Weapons/rpgexplosion.mp3<>uid://vfyl3pwendds::::res://Assets/Textures/Guns/RocketLuncher/rocket.png<>uid://dxl8uwerta3sl::::res://Assets/Textures/Guns/RocketLuncher/positions.png
+weapon.tscn::PackedScene::1264695352295457373::1778500217::0::1::::<><><>0<>0<><>::uid://ca8v4ua53u5r0::::res://Assets/Audio/Weapons/rifleshot.ogg<>uid://bpivybany77he::::res://Assets/Textures/Guns/AFRifle/bullet.png<>uid://bi2axethsr1o4::::res://src/Scripts/Weapons/weapons_manager.gd<>uid://daved8slk8gbf::::res://Assets/Textures/Guns/AFRifle/positions.png<>uid://dbfmwnp4csu7b::::res://Assets/Audio/Weapons/snipershot.ogg<>uid://dnxc0otdken3e::::res://Assets/Textures/Guns/Sniper/positions.png<>uid://1s4gdny6ui8c::::res://Assets/Audio/Weapons/rpgexplosion.ogg<>uid://vfyl3pwendds::::res://Assets/Textures/Guns/RocketLuncher/rocket.png<>uid://dxl8uwerta3sl::::res://Assets/Textures/Guns/RocketLuncher/positions.png
 ::res://src/Scenes/::1778499548
 connection.tscn::PackedScene::1512902509920322489::1778443341::0::1::::<><><>0<>0<><>::uid://ctmym8s10fkba::::res://src/Scripts/Networks/network_client.gd<>uid://qtm6y4tdoh7y::::res://src/Scripts/Networks/connection.gd
 equipments.tscn::PackedScene::9120234328106368837::1778255483::0::1::::<><><>0<>0<><>::
@@ -60,11 +60,11 @@ respawn.tscn::PackedScene::7160669948715770377::1778255262::0::1::::<><><>0<>0<>
 ::res://src/Scripts/::1778443391
 cursor.gd::GDScript::29077715516524760::1778495631::0::1::::<>Node2D<><>0<>0<><>::
 game.gd::GDScript::7385640615183539959::1778443391::0::1::::<>Node2D<><>0<>0<><>::
-player.gd::GDScript::183223178291260575::1778499195::0::1::::Player<>CharacterBody2D<><>0<>0<><>::
+player.gd::GDScript::183223178291260575::1778500066::0::1::::Player<>CharacterBody2D<><>0<>0<><>::
 ::res://src/Scripts/Networks/::1778444124
 connection.gd::GDScript::1163029945287476276::1778256326::0::1::::<>Node<><>0<>0<><>::
 network_client.gd::GDScript::6132682329202760386::1778498743::0::1::::NetworkClient<>Node<><>0<>0<><>::
 ::res://src/Scripts/Weapons/::1778443391
 base_weapon.gd::GDScript::7426597152444703785::1778498597::0::1::::BaseWeapon<>Node2D<><>0<>0<><>::
 weapons_manager.gd::GDScript::3003710945204271913::1778008493::0::1::::WeaponsManager<>Node2D<><>0<>0<><>::
-weapon_data.gd::GDScript::5293369728956138699::1778443391::0::1::::WeaponData<>RefCounted<><>0<>0<><>::
+weapon_data.gd::GDScript::5293369728956138699::1778499646::0::1::::WeaponData<>RefCounted<><>0<>0<><>::
