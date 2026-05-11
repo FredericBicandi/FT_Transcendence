@@ -1,9 +1,12 @@
 [gd_scene format=3 uid="uid://savl26evqant"]
 
+[ext_resource type="AudioStream" uid="uid://ca8v4ua53u5r0" path="res://Assets/Audio/Weapons/rifleshot.ogg" id="2_o8h48"]
 [ext_resource type="Texture2D" uid="uid://bpivybany77he" path="res://Assets/Textures/Guns/AFRifle/bullet.png" id="2_tqjc4"]
 [ext_resource type="Script" uid="uid://bi2axethsr1o4" path="res://src/Scripts/Weapons/weapons_manager.gd" id="3_bjwph"]
 [ext_resource type="Texture2D" uid="uid://daved8slk8gbf" path="res://Assets/Textures/Guns/AFRifle/positions.png" id="3_jox2y"]
+[ext_resource type="AudioStream" uid="uid://dbfmwnp4csu7b" path="res://Assets/Audio/Weapons/snipershot.ogg" id="5_16nc3"]
 [ext_resource type="Texture2D" uid="uid://dnxc0otdken3e" path="res://Assets/Textures/Guns/Sniper/positions.png" id="5_hh7td"]
+[ext_resource type="AudioStream" uid="uid://1s4gdny6ui8c" path="res://Assets/Audio/Weapons/rpgexplosion.ogg" id="6_7eos3"]
 [ext_resource type="Texture2D" uid="uid://vfyl3pwendds" path="res://Assets/Textures/Guns/RocketLuncher/rocket.png" id="6_bfnx5"]
 [ext_resource type="Texture2D" uid="uid://dxl8uwerta3sl" path="res://Assets/Textures/Guns/RocketLuncher/positions.png" id="6_ssn77"]
 
@@ -606,7 +609,9 @@ script = ExtResource("3_bjwph")
 
 [node name="Assult_rifle" type="Node2D" parent="." unique_id=993310818]
 script = SubResource("GDScript_ssn77")
-weapon_id = null
+
+[node name="AudioStreamPlayer2D" type="AudioStreamPlayer2D" parent="Assult_rifle" unique_id=303167151]
+stream = ExtResource("2_o8h48")
 
 [node name="Gun" type="AnimatedSprite2D" parent="Assult_rifle" unique_id=926366635]
 light_mask = 3
@@ -627,6 +632,10 @@ sprite_frames = SubResource("SpriteFrames_jpkcq")
 [node name="Sniper" type="Node2D" parent="." unique_id=1353379110]
 script = SubResource("GDScript_hh7td")
 
+[node name="AudioStreamPlayer2D" type="AudioStreamPlayer2D" parent="Sniper" unique_id=1930238852]
+position = Vector2(-3.8146973e-06, 0)
+stream = ExtResource("5_16nc3")
+
 [node name="Gun" type="AnimatedSprite2D" parent="Sniper" unique_id=869848126]
 light_mask = 3
 z_index = 1
@@ -645,6 +654,9 @@ sprite_frames = SubResource("SpriteFrames_0omna")
 
 [node name="Rocket_Launcher" type="Node2D" parent="." unique_id=869868688]
 script = SubResource("GDScript_w4ncs")
+
+[node name="AudioStreamPlayer2D" type="AudioStreamPlayer2D" parent="Rocket_Launcher" unique_id=2113824659]
+stream = ExtResource("6_7eos3")
 
 [node name="Gun" type="AnimatedSprite2D" parent="Rocket_Launcher" unique_id=326254036]
 light_mask = 3

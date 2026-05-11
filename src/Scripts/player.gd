@@ -14,6 +14,15 @@ const POSITION_HEARTBEAT_INTERVAL: float = 5.0
 @export var auto_attack_players: bool = false
 @export var attack_range: float = 120.0
 @export var default_weapon_id: String = ""
+@export var shoot_sound_attenuation: float = 1.5
+@export var shoot_sound_volume_db: float = -6.0
+@export var shoot_sound_cooldown: float = 0.05
+@export var shoot_sound_fade_margin: float = 96.0
+@export var shoot_sound_silent_volume_db: float = -60.0
+@export var shoot_sound_max_simultaneous_per_stream: int = 4
+@export var shoot_sound_listener_cooldown: float = 0.06
+@export var shoot_sound_pitch_randomness: float = 0.04
+@export var shoot_sound_volume_jitter_db: float = 1.5
 
 # Runtime state for health, death flow, leg animation, hit flash, respawn timing, and AI target tracking.
 var health: int
@@ -25,6 +34,10 @@ var spawn_position: Vector2
 var attack_target: Node = null
 var network_client: NetworkClient = null
 var idle_position_heartbeat_time: float = 0.0
+var shoot_sound_cooldown_remaining: float = 0.0
+var listener_sound_time: float = 0.0
+var active_shot_voices: Array[Dictionary] = []
+var last_shot_time_by_stream: Dictionary = {}
 
 @onready var head: AnimatedSprite2D = $Head
 @onready var legs: AnimatedSprite2D = $Leg
@@ -33,6 +46,7 @@ var idle_position_heartbeat_time: float = 0.0
 @onready var reload_bar: ProgressBar = $ReloadBar
 @onready var player_camera: Camera2D = $Camera2D
 @onready var collision_shape: CollisionShape2D = $CollisionShape2D
+@onready var shoot_sound: AudioStreamPlayer2D = $ShootSound
 
 func _ready() -> void:
 	# Initialize health, remember where this player should respawn, and register for AI targeting if needed.
@@ -49,6 +63,8 @@ func _ready() -> void:
 	weapon.active_weapon_changed.connect(_on_active_weapon_changed)
 	legs.frame = 0
 	head.z_index = 1
+	_configure_shoot_sound()
+	get_viewport().size_changed.connect(_on_viewport_size_changed)
 
 	# Let the scene force a starting weapon without changing the weapon scene itself.
 	if default_weapon_id != "":
@@ -77,6 +93,11 @@ func _physics_process(delta: float) -> void:
 	_report_position_sync(previous_position, delta)
 
 func _process(delta: float) -> void:
+	shoot_sound_cooldown_remaining = maxf(shoot_sound_cooldown_remaining - delta, 0.0)
+	listener_sound_time += delta
+	if accepts_input:
+		_update_active_shot_mix()
+
 	# Death state counts down to respawn; alive AI-controlled dummies can auto-attack player targets.
 	if is_dead:
 		respawn_timer = maxf(respawn_timer - delta, 0.0)
@@ -169,6 +190,179 @@ func _on_active_weapon_changed(active_weapon: BaseWeapon) -> void:
 
 	active_weapon.set_input_enabled(accepts_input)
 
+func play_shoot_sound(stream: AudioStream) -> void:
+	if stream == null or shoot_sound_cooldown_remaining > 0.0:
+		return
+
+	shoot_sound_cooldown_remaining = shoot_sound_cooldown
+	var listener := _get_listener_player()
+	if listener == null:
+		return
+
+	listener._queue_shoot_sound(stream, global_position)
+
+func _configure_shoot_sound() -> void:
+	if shoot_sound == null:
+		push_error("Player node %s is missing ShootSound." % name)
+		return
+
+	shoot_sound.max_distance = _get_camera_hearing_radius()
+	shoot_sound.attenuation = shoot_sound_attenuation
+	shoot_sound.volume_db = shoot_sound_volume_db
+
+func _queue_shoot_sound(stream: AudioStream, shot_position: Vector2) -> void:
+	if not accepts_input:
+		return
+
+	var stream_key := _get_stream_key(stream)
+	if _is_stream_rate_limited(stream_key):
+		return
+
+	var hearing_radius := _get_camera_hearing_radius()
+	var distance := global_position.distance_to(shot_position)
+	if distance > hearing_radius:
+		return
+
+	var same_stream_voices := _get_same_stream_voice_indices(stream_key)
+	if same_stream_voices.size() >= shoot_sound_max_simultaneous_per_stream:
+		var farthest_voice_index := _find_farthest_voice_index(same_stream_voices)
+		if farthest_voice_index == -1:
+			return
+
+		var farthest_distance: float = active_shot_voices[farthest_voice_index]["distance"]
+		if distance >= farthest_distance:
+			return
+
+		_stop_shot_voice(farthest_voice_index)
+
+	last_shot_time_by_stream[stream_key] = listener_sound_time
+	_spawn_shot_voice(stream, stream_key, shot_position)
+
+func _spawn_shot_voice(stream: AudioStream, stream_key: String, shot_position: Vector2) -> void:
+	var voice := AudioStreamPlayer2D.new()
+	voice.stream = stream
+	voice.global_position = shot_position
+	voice.attenuation = shoot_sound_attenuation
+	voice.max_distance = _get_camera_hearing_radius()
+	voice.pitch_scale = randf_range(1.0 - shoot_sound_pitch_randomness, 1.0 + shoot_sound_pitch_randomness)
+	add_child(voice)
+
+	active_shot_voices.append({
+		"player": voice,
+		"stream_key": stream_key,
+		"position": shot_position,
+		"distance": global_position.distance_to(shot_position),
+		"volume_jitter_db": randf_range(-shoot_sound_volume_jitter_db, 0.0)
+	})
+
+	var voice_index := active_shot_voices.size() - 1
+	_update_shot_voice_volume(voice_index)
+	voice.play()
+
+func _update_active_shot_mix() -> void:
+	for i in range(active_shot_voices.size() - 1, -1, -1):
+		var voice_variant: Variant = active_shot_voices[i].get("player")
+		var voice := voice_variant as AudioStreamPlayer2D
+		if voice == null or not is_instance_valid(voice):
+			active_shot_voices.remove_at(i)
+			continue
+
+		if not voice.playing:
+			voice.queue_free()
+			active_shot_voices.remove_at(i)
+			continue
+
+		_update_shot_voice_volume(i)
+
+func _update_shot_voice_volume(voice_index: int) -> void:
+	var voice_data := active_shot_voices[voice_index]
+	var voice := voice_data["player"] as AudioStreamPlayer2D
+	if voice == null:
+		return
+
+	var shot_position: Vector2 = voice_data["position"]
+	var distance := global_position.distance_to(shot_position)
+	voice.global_position = shot_position
+	voice.max_distance = _get_camera_hearing_radius()
+	voice.volume_db = _get_shot_volume_for_distance(distance, float(voice_data["volume_jitter_db"]))
+	voice_data["distance"] = distance
+	active_shot_voices[voice_index] = voice_data
+
+func _get_shot_volume_for_distance(distance: float, volume_jitter_db: float) -> float:
+	var hearing_radius := _get_camera_hearing_radius()
+	var fade_margin := clampf(shoot_sound_fade_margin, 0.0, hearing_radius)
+	if fade_margin == 0.0:
+		return shoot_sound_volume_db + volume_jitter_db
+
+	var fade_start := hearing_radius - fade_margin
+	if distance <= fade_start:
+		return shoot_sound_volume_db + volume_jitter_db
+
+	var fade_progress := inverse_lerp(fade_start, hearing_radius, minf(distance, hearing_radius))
+	return lerpf(shoot_sound_volume_db + volume_jitter_db, shoot_sound_silent_volume_db, fade_progress)
+
+func _is_stream_rate_limited(stream_key: String) -> bool:
+	var last_time := float(last_shot_time_by_stream.get(stream_key, -INF))
+	return listener_sound_time - last_time < shoot_sound_listener_cooldown
+
+func _get_same_stream_voice_indices(stream_key: String) -> Array[int]:
+	var indices: Array[int] = []
+
+	for i in range(active_shot_voices.size()):
+		if str(active_shot_voices[i].get("stream_key", "")) == stream_key:
+			indices.append(i)
+
+	return indices
+
+func _find_farthest_voice_index(indices: Array[int]) -> int:
+	var farthest_index := -1
+	var farthest_distance := -1.0
+
+	for index in indices:
+		var distance := float(active_shot_voices[index].get("distance", 0.0))
+		if distance > farthest_distance:
+			farthest_distance = distance
+			farthest_index = index
+
+	return farthest_index
+
+func _stop_shot_voice(voice_index: int) -> void:
+	var voice_variant: Variant = active_shot_voices[voice_index].get("player")
+	var voice := voice_variant as AudioStreamPlayer2D
+	if voice != null and is_instance_valid(voice):
+		voice.stop()
+		voice.queue_free()
+
+	active_shot_voices.remove_at(voice_index)
+
+func _get_stream_key(stream: AudioStream) -> String:
+	if stream.resource_path != "":
+		return stream.resource_path
+
+	return str(stream.get_instance_id())
+
+func _get_listener_player() -> Player:
+	if accepts_input:
+		return self
+
+	for candidate in get_tree().get_nodes_in_group("player"):
+		var player_candidate := candidate as Player
+		if player_candidate != null and player_candidate.accepts_input and not player_candidate.is_dead:
+			return player_candidate
+
+	return null
+
+func _get_camera_hearing_radius() -> float:
+	if player_camera == null:
+		return 0.0
+
+	var viewport_size := get_viewport_rect().size
+	var world_size := viewport_size * player_camera.zoom
+	return minf(world_size.x, world_size.y) * 0.5
+
+func _on_viewport_size_changed() -> void:
+	_configure_shoot_sound()
+
 func die() -> void:
 	# Enter the dead state, stop interacting with the world, and hide body/UI visuals until respawn.
 	is_dead = true
@@ -180,6 +374,7 @@ func die() -> void:
 	weapon.clear_all_projectiles()
 	legs.modulate = Color.WHITE
 	head.modulate = Color.WHITE
+	_clear_active_shot_voices()
 	legs.visible = false
 	head.visible = false
 	health_bar.visible = false
@@ -216,9 +411,9 @@ func respawn() -> void:
 		_send_move_position()
 
 func update_auto_attack() -> void:
-	# AI characters lock onto the first node in the player group and keep aiming at it.
+	# AI characters lock onto the nearest valid player target and keep aiming at it.
 	if not is_valid_attack_target(attack_target):
-		attack_target = get_tree().get_first_node_in_group("player")
+		attack_target = _find_nearest_attack_target()
 		if not is_valid_attack_target(attack_target):
 			return
 
@@ -237,6 +432,36 @@ func update_auto_attack() -> void:
 		return
 
 	active_weapon.shoot()
+
+func _find_nearest_attack_target() -> Node:
+	var nearest_target: Node = null
+	var nearest_distance_squared := INF
+
+	for candidate in get_tree().get_nodes_in_group("player"):
+		if not is_valid_attack_target(candidate):
+			continue
+
+		var candidate_body := candidate as Node2D
+		if candidate_body == null:
+			continue
+
+		var distance_squared := global_position.distance_squared_to(candidate_body.global_position)
+		if distance_squared < nearest_distance_squared:
+			nearest_distance_squared = distance_squared
+			nearest_target = candidate_body
+
+	return nearest_target
+
+func _clear_active_shot_voices() -> void:
+	for voice_data in active_shot_voices:
+		var voice_variant: Variant = voice_data.get("player")
+		var voice := voice_variant as AudioStreamPlayer2D
+		if voice != null and is_instance_valid(voice):
+			voice.stop()
+			voice.queue_free()
+
+	active_shot_voices.clear()
+	last_shot_time_by_stream.clear()
 
 func is_valid_attack_target(target: Node) -> bool:
 	# Ignore missing, freed, or dead targets so AI can reacquire a live player.

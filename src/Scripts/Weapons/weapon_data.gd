@@ -10,8 +10,8 @@ const WEAPON_DATA := {
 	"Assult rifle": {
 		# Gameplay tuning for the assault rifle: fast, medium damage, larger magazine.
 		"image": preload("res://Assets/Textures/Guns/AFRifle/image.png"),
-		"fire_sound" : preload("res://Assets/Audio/Weapons/rifleshot.mp3"),
-		"reload_sound" : preload("res://Assets/Audio/Weapons/riflereload.mp3"),
+		"fire_sound" : preload("res://Assets/Audio/Weapons/rifleshot.ogg"),
+		"reload_sound" : preload("res://Assets/Audio/Weapons/riflereload.ogg"),
 		"damage": 12,
 		"fire_rate": 0.18,
 		"ammo_mag_size": 30,
@@ -52,8 +52,8 @@ const WEAPON_DATA := {
 	"Sniper": {
 		# Gameplay tuning for the sniper: slow fire rate, heavy damage, small magazine.
 		"image": preload("res://Assets/Textures/Guns/Sniper/image.png"),
-		"fire_sound" : preload("res://Assets/Audio/Weapons/snipershot.mp3"),
-		"reload_sound" : preload("res://Assets/Audio/Weapons/sniperreload.mp3"),
+		"fire_sound" : preload("res://Assets/Audio/Weapons/snipershot.ogg"),
+		"reload_sound" : preload("res://Assets/Audio/Weapons/sniperreload.ogg"),
 		"damage": 50,
 		"fire_rate": 0.9,
 		"ammo_mag_size": 5,
@@ -80,8 +80,8 @@ const WEAPON_DATA := {
 	"Rocket Launcher": {
 		# Gameplay tuning for the rocket launcher: strongest hit, single shot, heaviest recoil.
 		"image": preload("res://Assets/Textures/Guns/RocketLuncher/image.png"),
-		"fire_sound" : preload("res://Assets/Audio/Weapons/rpgshot.mp3"),
-		"reload_sound" : preload("res://Assets/Audio/Weapons/rpgreload.mp3"),
+		"fire_sound" : preload("res://Assets/Audio/Weapons/rpgshot.ogg"),
+		"reload_sound" : preload("res://Assets/Audio/Weapons/rpgreload.ogg"),
 		"damage": 80,
 		"fire_rate": 1.1,
 		"ammo_mag_size": 1,

@@ -1,0 +1,13 @@
+[gd_scene format=3 uid="uid://dsxg4h1k7h8yf"]
+
+[ext_resource type="PackedScene" uid="uid://byeoim577yy55" path="res://src/Objects/player.tscn" id="1_3s6yc"]
+
+[node name="ShootingDummy" instance=ExtResource("1_3s6yc")]
+
+[node name="CharacterBody2D" parent="."]
+accepts_input = false
+register_as_player_target = false
+enable_player_camera = false
+auto_attack_players = true
+attack_range = 320.0
+default_weapon_id = "Assult rifle"

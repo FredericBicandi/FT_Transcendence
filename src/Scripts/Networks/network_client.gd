@@ -54,7 +54,6 @@ func _create_tls_options() -> TLSOptions:
 
 	if bypass_tls_validation:
 		# Skip certificate and hostname verification for development servers using self-signed certs.
-		print("NetworkClient: TLS certificate verification bypass enabled for %s" % server_url)
 		return TLSOptions.client_unsafe()
 
 	return TLSOptions.client()
@@ -88,7 +87,6 @@ func _handle_state_changes(state: int) -> void:
 		was_open_last_frame = true
 		has_connected_once = true
 		has_reported_closed_state = false
-		print("NetworkClient: connected to %s" % server_url)
 		connection_established.emit()
 		_send_initial_ping()
 		return
@@ -98,9 +96,6 @@ func _handle_state_changes(state: int) -> void:
 
 		if state == WebSocketPeer.STATE_CLOSED and not has_reported_closed_state:
 			has_reported_closed_state = true
-			var close_code := socket.get_close_code()
-			var close_reason := socket.get_close_reason()
-			print("NetworkClient: socket closed (%d) %s" % [close_code, close_reason])
 
 			if not has_connected_once:
 				connection_failed.emit()
@@ -132,21 +127,16 @@ func _handle_message(message: Dictionary) -> void:
 
 	match message_type:
 		"pong":
-			print("NetworkClient: received pong")
+			pass
 		"player_move":
-			print(
-				"NetworkClient: player_move playerId=%s x=%s y=%s"
-				% [
-					str(message.get("playerId", "")),
-					str(message.get("x", 0.0)),
-					str(message.get("y", 0.0))
-				]
-			)
+			pass
 		"player_left":
-			print("NetworkClient: player_left playerId=%s" % str(message.get("playerId", "")))
+			pass
 		_:
-			print("NetworkClient: unhandled message type=%s" % message_type)
+			pass
 
 func _send_json(payload: Dictionary) -> void:
 	var data := JSON.stringify(payload)
-	socket.send_text(data)
+	var error := socket.send_text(data)
+	if error != OK:
+		push_warning("NetworkClient: failed to send packet (error %d)" % error)

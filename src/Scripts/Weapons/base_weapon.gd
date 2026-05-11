@@ -28,12 +28,13 @@ var has_aim_target_override: bool = false
 var aim_target_override: Vector2 = Vector2.ZERO
 var collision_mask_override: int = -1
 var reload_pending: bool = false
-var fire_audio_player: AudioStreamPlayer2D
 var reload_audio_player: AudioStreamPlayer2D
+var is_active_weapon: bool = false
 
 @onready var gun: AnimatedSprite2D = $Gun
 @onready var muzzle_marker: Marker2D = $Gun/Marker2D
 @onready var bullet_template: AnimatedSprite2D = $Gun/Marker2D/Bullets
+@onready var shoot_audio_source: AudioStreamPlayer2D = $AudioStreamPlayer2D
 
 func _ready() -> void:
 	# Remember the original local position so recoil and movement sway can always return here.
@@ -60,9 +61,6 @@ func _ready() -> void:
 	apply_frame_data(0)
 	set_active(false)
 	emit_ammo_changed()
-	
-	fire_audio_player = AudioStreamPlayer2D.new()
-	add_child(fire_audio_player)
 
 	reload_audio_player = AudioStreamPlayer2D.new()
 	add_child(reload_audio_player)
@@ -83,14 +81,17 @@ func _process(delta: float) -> void:
 		reload_pending = false
 		emit_ammo_changed()
 
+	# Move every active bullet and resolve hits.
+	update_bullets(delta)
+
+	if not is_active_weapon:
+		return
+
 	# Aim either at a forced target or at the mouse cursor for player-controlled weapons.
 	if has_aim_target_override:
 		update_aim(aim_target_override)
 	else:
 		update_aim(get_global_mouse_position())
-
-	# Move every active bullet and resolve hits.
-	update_bullets(delta)
 
 	# Only the local player path reads input directly from this weapon.
 	if accepts_player_input:
@@ -101,9 +102,9 @@ func _process(delta: float) -> void:
 			shoot()
 
 func set_active(is_active: bool) -> void:
-	# Inactive weapons are both hidden and fully paused.
+	# Hidden weapons stay simulated so reloads and in-flight bullets can finish naturally.
+	is_active_weapon = is_active
 	visible = is_active
-	set_process(is_active)
 
 func update_movement(direction: Vector2) -> void:
 	# Add a small position offset so the weapon reacts to character movement.
@@ -155,11 +156,18 @@ func shoot() -> void:
 	fire_cooldown = config.get("fire_rate", 0.2)
 	current_ammo -= 1
 	emit_ammo_changed()
-	var fire_sound = get_weapon_config().get("fire_sound")
+	var fire_sound: AudioStream = null
+
+	if shoot_audio_source != null:
+		fire_sound = shoot_audio_source.stream
+
+	if fire_sound == null:
+		fire_sound = get_weapon_config().get("fire_sound")
 
 	if fire_sound:
-		fire_audio_player.stream = fire_sound
-		fire_audio_player.play()
+		var owner_body := find_owner_body()
+		if owner_body != null and owner_body.has_method("play_shoot_sound"):
+			owner_body.call("play_shoot_sound", fire_sound)
 
 	# Build the bullet travel direction from the muzzle toward the current target.
 	var shot_target: Vector2 = aim_target_override if has_aim_target_override else get_global_mouse_position()
