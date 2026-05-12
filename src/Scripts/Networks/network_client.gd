@@ -9,6 +9,7 @@ signal time_synced(message: Dictionary)
 signal player_move_received(message: Dictionary)
 signal player_angle_received(message: Dictionary)
 signal player_weapon_switch_received(message: Dictionary)
+signal bullet_spawn_received(message: Dictionary)
 signal player_left_received(player_id: String)
 signal match_ended(message: Dictionary)
 
@@ -152,6 +153,17 @@ func send_weapon_switch(weapon_type: String) -> void:
 		}
 	)
 
+func send_shoot(angle: float) -> void:
+	if socket.get_ready_state() != WebSocketPeer.STATE_OPEN:
+		return
+
+	_send_json(
+		{
+			"type": "shoot",
+			"angle": angle
+		}
+	)
+
 func _handle_state_changes(state: int) -> void:
 	if state == WebSocketPeer.STATE_OPEN and not was_open_last_frame:
 		was_open_last_frame = true
@@ -208,6 +220,8 @@ func _handle_message(message: Dictionary) -> void:
 		"player_weapon_switch":
 			_store_remote_player_snapshot(message)
 			player_weapon_switch_received.emit(message)
+		"bullet_spawn":
+			bullet_spawn_received.emit(message)
 		"player_left":
 			var left_player_id := str(message.get("playerId", message.get("id", "")))
 			remote_player_snapshots.erase(left_player_id)

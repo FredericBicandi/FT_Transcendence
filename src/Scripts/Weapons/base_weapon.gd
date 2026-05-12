@@ -6,6 +6,7 @@ const WeaponData = preload("res://src/Scripts/Weapons/weapon_data.gd")
 
 # UI and game systems can listen to this to refresh ammo counters.
 signal ammo_changed(current_ammo: int, max_ammo: int)
+signal shot_fired(angle_radians: float, weapon_type: String)
 
 # This weapon instance reads all of its gameplay values from WeaponData using this id.
 @export var weapon_id: String = WeaponData.DEFAULT_WEAPON_ID
@@ -174,31 +175,29 @@ func shoot() -> void:
 	var bullet_offset := shot_target - muzzle_marker.global_position
 	var bullet_direction := bullet_offset.normalized() if bullet_offset != Vector2.ZERO else Vector2.RIGHT
 	apply_recoil(bullet_direction, config)
-
-	# Spawn a visual bullet node in the current scene so it can move independently.
-	var bullet := AnimatedSprite2D.new()
-	bullet.sprite_frames = bullet_frames
-	bullet.animation = &"default"
-	bullet.frame = get_bullet_frame()
-	bullet.global_position = muzzle_marker.global_position
-	bullet.z_index = gun.z_index
-	bullet.scale = bullet_scale
-
-	get_tree().current_scene.add_child(bullet)
-
-	# Store all gameplay data needed to simulate this bullet every frame.
-	active_bullets.append({
-		"node": bullet,
-		"position": bullet.global_position,
-		"direction": bullet_direction,
-		"speed": config.get("bullet_speed", 300.0),
-		"lifetime": config.get("bullet_lifetime", 1.0),
-		"collision_mask": collision_mask_override if collision_mask_override >= 0 else int(config.get("bullet_collision_mask", 1)),
-		"damage": int(config.get("damage", 1))
-	})
+	_spawn_bullet(bullet_direction, muzzle_marker.global_position, true)
+	shot_fired.emit(bullet_direction.angle(), get_weapon_name())
 
 	if current_ammo <= 0:
 		reload()
+
+func spawn_remote_bullet(angle_radians: float) -> void:
+	var bullet_direction := Vector2.RIGHT.rotated(angle_radians)
+	apply_recoil(bullet_direction, get_weapon_config())
+
+	var fire_sound: AudioStream = null
+	if shoot_audio_source != null:
+		fire_sound = shoot_audio_source.stream
+
+	if fire_sound == null:
+		fire_sound = get_weapon_config().get("fire_sound")
+
+	if fire_sound:
+		var owner_body := find_owner_body()
+		if owner_body != null and owner_body.has_method("play_shoot_sound"):
+			owner_body.call("play_shoot_sound", fire_sound)
+
+	_spawn_bullet(bullet_direction, muzzle_marker.global_position, true)
 
 func apply_recoil(direction: Vector2, config: Dictionary) -> void:
 	# Kick the weapon backward, with a little sideways randomness to avoid a rigid feel.
@@ -227,7 +226,10 @@ func update_bullets(delta: float) -> void:
 		var end_position: Vector2 = start_position + bullet_direction * bullet_speed * delta
 		var collision_mask: int = bullet_data["collision_mask"]
 		var damage: int = bullet_data["damage"]
-		var hit := raycast_bullet(space_state, start_position, end_position, collision_mask)
+		var should_collide: bool = bool(bullet_data.get("collides", true))
+		var hit: Dictionary = {}
+		if should_collide and collision_mask != 0:
+			hit = raycast_bullet(space_state, start_position, end_position, collision_mask)
 
 		# Stop the bullet on impact, apply damage, and remove it from the active list.
 		if not hit.is_empty():
@@ -398,3 +400,34 @@ func apply_frame_data(frame_index: int) -> void:
 func emit_ammo_changed() -> void:
 	# Centralized helper so every ammo update notifies listeners the same way.
 	ammo_changed.emit(current_ammo, get_magazine_size())
+
+func _spawn_bullet(direction: Vector2, start_position: Vector2, should_collide: bool) -> void:
+	var config := get_weapon_config()
+	var bullet_lifetime: float = float(config.get("bullet_lifetime", 1.0))
+
+	var bullet := AnimatedSprite2D.new()
+	bullet.sprite_frames = bullet_frames
+	bullet.animation = &"default"
+	bullet.frame = get_bullet_frame()
+	bullet.global_position = start_position
+	bullet.z_index = gun.z_index
+	bullet.scale = bullet_scale
+
+	get_tree().current_scene.add_child(bullet)
+	# Failsafe cleanup: even if projectile state desyncs, the visual bullet cannot remain stuck forever.
+	get_tree().create_timer(bullet_lifetime).timeout.connect(
+		func() -> void:
+			if is_instance_valid(bullet):
+				bullet.queue_free()
+	)
+
+	active_bullets.append({
+		"node": bullet,
+		"position": bullet.global_position,
+		"direction": direction,
+		"speed": config.get("bullet_speed", 300.0),
+		"lifetime": bullet_lifetime,
+		"collision_mask": collision_mask_override if should_collide and collision_mask_override >= 0 else int(config.get("bullet_collision_mask", 1)) if should_collide else 0,
+		"damage": int(config.get("damage", 1)) if should_collide else 0,
+		"collides": should_collide
+	})

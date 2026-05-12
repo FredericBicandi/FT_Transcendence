@@ -97,6 +97,9 @@ func _connect_network_signals() -> void:
 	if not network_client.player_weapon_switch_received.is_connected(_on_player_weapon_switch_received):
 		network_client.player_weapon_switch_received.connect(_on_player_weapon_switch_received)
 
+	if not network_client.bullet_spawn_received.is_connected(_on_bullet_spawn_received):
+		network_client.bullet_spawn_received.connect(_on_bullet_spawn_received)
+
 	if not network_client.player_left_received.is_connected(_on_player_left_received):
 		network_client.player_left_received.connect(_on_player_left_received)
 
@@ -178,6 +181,27 @@ func _on_match_ended(message: Dictionary) -> void:
 	remaining_match_seconds = 0.0
 	player_body.set_match_controls_enabled(false)
 	update_match_ui()
+
+func _on_bullet_spawn_received(message: Dictionary) -> void:
+	var player_id := str(message.get("playerId", ""))
+	if player_id == "" or player_id == local_player_id:
+		return
+
+	var remote_body := _get_remote_player(player_id)
+	if remote_body == null:
+		remote_body = _get_or_create_remote_player(player_id)
+	if remote_body == null:
+		return
+
+	var weapon_type := str(message.get("weaponType", message.get("weapon", "")))
+	if weapon_type == "":
+		weapon_type = remote_body.weapon.get_active_weapon().get_weapon_name() if remote_body.weapon != null and remote_body.weapon.get_active_weapon() != null else ""
+
+	remote_body.spawn_remote_bullet_from_server(
+		Vector2(float(message.get("x", remote_body.global_position.x)), float(message.get("y", remote_body.global_position.y))),
+		float(message.get("angle", 0.0)),
+		weapon_type
+	)
 
 func _get_or_create_remote_player(player_id: String) -> Player:
 	var existing_remote := _get_remote_player(player_id)

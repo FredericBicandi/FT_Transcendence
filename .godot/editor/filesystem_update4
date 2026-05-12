@@ -4,3 +4,4 @@ res://src/Scripts/Networks/network_client.gd
 res://src/Scripts/player.gd
 res://src/Scripts/game.gd
 res://src/Scripts/Weapons/weapons_manager.gd
+res://src/Scripts/Weapons/base_weapon.gd

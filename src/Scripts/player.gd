@@ -58,6 +58,7 @@ var remote_last_move_direction: Vector2 = Vector2.ZERO
 var remote_walk_animation_hold_remaining: float = 0.0
 var has_sent_connect_state: bool = false
 var last_reported_weapon_type: String = ""
+var observed_shot_weapon: BaseWeapon = null
 
 @onready var head: AnimatedSprite2D = $Head
 @onready var legs: AnimatedSprite2D = $Leg
@@ -220,6 +221,7 @@ func _on_active_weapon_changed(active_weapon: BaseWeapon) -> void:
 		return
 
 	active_weapon.set_input_enabled(accepts_input and match_controls_enabled)
+	_bind_weapon_shot_signal(active_weapon)
 
 	if is_remote_proxy:
 		active_weapon.set_aim_target(global_position + remote_facing_direction * REMOTE_AIM_DISTANCE)
@@ -477,7 +479,7 @@ func respawn() -> void:
 		active_weapon.set_active(true)
 
 	if accepts_input and network_client != null:
-		_send_move_position()
+		_send_respawn_state()
 
 func update_auto_attack() -> void:
 	# AI characters lock onto the nearest valid player target and keep aiming at it.
@@ -568,18 +570,9 @@ func send_connect_state() -> void:
 	if has_sent_connect_state or is_remote_proxy or not accepts_input or network_client == null:
 		return
 
-	var active_weapon := weapon.get_active_weapon() if weapon != null else null
-	if active_weapon == null:
+	if not _send_full_player_state():
 		return
 
-	last_sent_angle = _get_current_aim_angle()
-	network_client.send_on_connect(
-		global_position.x,
-		global_position.y,
-		last_sent_angle,
-		active_weapon.get_weapon_name()
-	)
-	last_reported_weapon_type = active_weapon.get_weapon_name()
 	has_sent_connect_state = true
 
 func _report_weapon_switch(active_weapon: BaseWeapon) -> void:
@@ -592,6 +585,20 @@ func _report_weapon_switch(active_weapon: BaseWeapon) -> void:
 
 	network_client.send_weapon_switch(weapon_type)
 	last_reported_weapon_type = weapon_type
+
+func _bind_weapon_shot_signal(active_weapon: BaseWeapon) -> void:
+	if observed_shot_weapon != null and observed_shot_weapon.shot_fired.is_connected(_on_weapon_shot_fired):
+		observed_shot_weapon.shot_fired.disconnect(_on_weapon_shot_fired)
+
+	observed_shot_weapon = active_weapon
+	if observed_shot_weapon != null and not observed_shot_weapon.shot_fired.is_connected(_on_weapon_shot_fired):
+		observed_shot_weapon.shot_fired.connect(_on_weapon_shot_fired)
+
+func _on_weapon_shot_fired(angle_radians: float, _weapon_type: String) -> void:
+	if is_remote_proxy or not accepts_input or not match_controls_enabled or network_client == null:
+		return
+
+	network_client.send_shoot(angle_radians)
 
 func _schedule_connect_state_sync() -> void:
 	if is_remote_proxy or not accepts_input or network_client == null:
@@ -617,6 +624,26 @@ func _on_network_connection_established() -> void:
 	if has_sent_connect_state and network_client != null and network_client.connection_established.is_connected(_on_network_connection_established):
 		network_client.connection_established.disconnect(_on_network_connection_established)
 
+func _send_respawn_state() -> void:
+	if _send_full_player_state():
+		idle_position_heartbeat_time = 0.0
+
+func _send_full_player_state() -> bool:
+	var active_weapon := weapon.get_active_weapon() if weapon != null else null
+	if active_weapon == null or network_client == null:
+		return false
+
+	last_sent_angle = _get_current_aim_angle()
+	network_client.send_on_connect(
+		global_position.x,
+		global_position.y,
+		last_sent_angle,
+		active_weapon.get_weapon_name()
+	)
+	last_reported_weapon_type = active_weapon.get_weapon_name()
+	last_sent_aim_frame = weapon.get_aim_frame()
+	return true
+
 func set_match_controls_enabled(is_enabled: bool) -> void:
 	match_controls_enabled = is_enabled
 	velocity = Vector2.ZERO
@@ -631,7 +658,9 @@ func configure_as_remote_proxy() -> void:
 	accepts_input = false
 	enable_player_camera = false
 	register_as_player_target = false
-	collision_layer = 0
+	# Keep remote proxies on the player hit layer so local bullet raycasts can hit them.
+	# Their mask stays empty, and remote movement never calls move_and_slide, so they still do not block gameplay movement.
+	collision_layer = 2
 	collision_mask = 0
 	velocity = Vector2.ZERO
 	remote_snapshot_queue.clear()
@@ -642,7 +671,7 @@ func configure_as_remote_proxy() -> void:
 	remote_walk_animation_hold_remaining = 0.0
 
 	if collision_shape != null:
-		collision_shape.disabled = true
+		collision_shape.disabled = false
 
 	if weapon != null:
 		weapon.set_input_enabled(false)
@@ -681,6 +710,17 @@ func set_remote_weapon(weapon_type: String) -> void:
 	if active_weapon != null:
 		active_weapon.set_input_enabled(false)
 		active_weapon.set_aim_target(global_position + remote_facing_direction * REMOTE_AIM_DISTANCE)
+
+func spawn_remote_bullet_from_server(position: Vector2, angle_radians: float, weapon_type: String) -> void:
+	global_position = position
+	remote_snapshot_queue.clear()
+	remote_latest_angle_degrees = rad_to_deg(angle_radians)
+	set_remote_weapon(weapon_type)
+	_apply_remote_aim(global_position + Vector2.RIGHT.rotated(angle_radians), remote_latest_angle_degrees)
+
+	var active_weapon := weapon.get_active_weapon()
+	if active_weapon != null:
+		active_weapon.spawn_remote_bullet(angle_radians)
 
 func _process_remote_movement(delta: float) -> void:
 	while not remote_snapshot_queue.is_empty():
