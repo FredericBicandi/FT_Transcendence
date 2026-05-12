@@ -16,6 +16,22 @@ public static class Helper
         return element.TryGetDouble(out value);
     }
 
+    // Reads a non-empty string JSON property without throwing on missing or invalid data.
+    public static bool TryGetString(JsonElement root, string propertyName, out string value)
+    {
+        value = string.Empty;
+
+        if (!root.TryGetProperty(propertyName, out var element) ||
+            element.ValueKind != JsonValueKind.String)
+            return false;
+
+        var text = element.GetString();
+        if (string.IsNullOrWhiteSpace(text))
+            return false;
+
+        value = text.Trim();
+        return true;
+    }
 
     // TODO:: get the real player ID by username from the dashboard
     public static string GetPlayerId() =>

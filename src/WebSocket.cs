@@ -11,6 +11,8 @@ public sealed class Ws
     private static readonly TimeSpan TimeSyncInterval = TimeSpan.FromSeconds(5);
     private const double MinAimAngleDegrees = 0.0;
     private const double MaxAimAngleDegrees = 360.0;
+    private const int MaxMessageBytes = 16 * 1024;
+    private const int MaxWeaponTypeLength = 64;
 
     private readonly ConcurrentDictionary<string, ClientConnection> clients;
 
@@ -167,28 +169,31 @@ public sealed class Ws
             // Snapshot avoids problems if rooms are added/removed during the loop.
             foreach (var room in rooms.Values.ToArray())
             {
-                if (room.State == GameRoomState.Ended)
-                    continue;
-
-                var remainingSeconds = room.RemainingSeconds;
-
-                if (remainingSeconds <= 0)
+                try
                 {
-                    // Time is up: end the match once and clean up its sockets.
-                    await EndRoomAsync(room);
-                    continue;
+                    if (room.State == GameRoomState.Ended)
+                        continue;
+
+                    var remainingSeconds = room.RemainingSeconds;
+
+                    if (remainingSeconds <= 0)
+                    {
+                        // Time is up: end the match once and clean up its sockets.
+                        await EndRoomAsync(room);
+                        continue;
+                    }
+
+                    await BroadcastToRoomAsync(room, new
+                    {
+                        type = "time_sync",
+                        roomId = room.RoomId,
+                        remainingSeconds
+                    });
                 }
-
-                // Do not spam every second; clients receive periodic corrections.
-                var remainingTime = TimeSpan.FromSeconds(remainingSeconds);
-                Console.WriteLine($"Time sync for room {room.RoomId}: {remainingTime.Minutes:D2}:{remainingTime.Seconds:D2} remaining");
-
-                await BroadcastToRoomAsync(room, new
+                catch (Exception ex)
                 {
-                    type = "time_sync",
-                    roomId = room.RoomId,
-                    remainingSeconds
-                });
+                    Console.WriteLine($"Room timer failed for {room.RoomId}: {ex.Message}");
+                }
             }
         }
     }
@@ -340,6 +345,9 @@ public sealed class Ws
             if (result.MessageType != WebSocketMessageType.Text)
                 continue;
 
+            if (stream.Length + result.Count > MaxMessageBytes)
+                return null;
+
             stream.Write(buffer, 0, result.Count);
 
             if (result.EndOfMessage)
@@ -379,13 +387,35 @@ public sealed class Ws
             }
 
             var type = typeElement.GetString();
+            if (type == "on_connect")
+            {
+                if (!TryReadPlayerState(root, message, client.PlayerId, "on_connect", out var x, out var y, out var angle, out var weapon))
+                    return;
+
+                client.MarkConnected(x, y, angle, weapon);
+                Console.WriteLine($"On connect from {client.PlayerId}: x={x}, y={y}, angle={angle}, weapon={weapon}");
+
+                await SendExistingPlayersAsync(client);
+
+                await BroadcastToRoomAsync(client.RoomId, new
+                {
+                    type = "player_connected",
+                    playerId = client.PlayerId,
+                    x,
+                    y,
+                    angle,
+                    weaponType = weapon
+                });
+
+                return;
+            }
+
             if (type == "move")
             {
                 if (!TryReadMove(root, message, client.PlayerId, out var x, out var y, out var angle))
                     return;
 
                 client.MarkMovement(x, y, angle);
-                Console.WriteLine($"Move from {client.PlayerId}: x={x}, y={y}, angle={angle}");
 
                 await BroadcastToRoomAsync(client.RoomId, new
                 {
@@ -405,7 +435,6 @@ public sealed class Ws
                     return;
 
                 client.MarkAngle(angle);
-                Console.WriteLine($"Angle from {client.PlayerId}: angle={angle}");
 
                 await BroadcastToRoomAsync(client.RoomId, new
                 {
@@ -423,7 +452,6 @@ public sealed class Ws
                     return;
 
                 client.MarkIdle(x, y, angle);
-                Console.WriteLine($"Idle from {client.PlayerId}: x={x}, y={y}, angle={angle}");
 
                 await BroadcastToRoomAsync(client.RoomId, new
                 {
@@ -437,7 +465,54 @@ public sealed class Ws
                 return;
             }
 
+            if (type == "weapon_switch")
+            {
+                if (!TryReadWeapon(root, message, client.PlayerId, "weapon_switch", out var weapon))
+                    return;
+
+                client.MarkWeaponSwitch(weapon);
+                Console.WriteLine($"Weapon switch from {client.PlayerId}: weapon={weapon}");
+
+                await BroadcastToRoomAsync(client.RoomId, new
+                {
+                    type = "player_weapon_switch",
+                    playerId = client.PlayerId,
+                    weaponType = weapon
+                });
+
+                return;
+            }
+
             Console.WriteLine($"Unknown message type from {client.PlayerId}: {type}");
+        }
+    }
+
+    private async Task SendExistingPlayersAsync(ClientConnection client)
+    {
+        if (!rooms.TryGetValue(client.RoomId, out var room))
+            return;
+
+        foreach (var playerId in room.PlayerIdsSnapshot())
+        {
+            if (playerId == client.PlayerId ||
+                !clients.TryGetValue(playerId, out var roomClient) ||
+                roomClient.RoomId != room.RoomId)
+            {
+                continue;
+            }
+
+            if (!roomClient.TryGetStateSnapshot(out var state))
+                continue;
+
+            await SendJsonAsync(client, new
+            {
+                type = "player_connected",
+                playerId = roomClient.PlayerId,
+                x = state.X,
+                y = state.Y,
+                angle = state.Angle,
+                weaponType = state.Weapon
+            });
         }
     }
 
@@ -453,7 +528,9 @@ public sealed class Ws
         y = default;
 
         if (!Helper.TryGetNumber(root, "x", out x) ||
-            !Helper.TryGetNumber(root, "y", out y))
+            !Helper.TryGetNumber(root, "y", out y) ||
+            !double.IsFinite(x) ||
+            !double.IsFinite(y))
         {
             Console.WriteLine($"Invalid {messageType} from {playerId}: {message}");
             return false;
@@ -476,10 +553,65 @@ public sealed class Ws
             return false;
 
         if (!Helper.TryGetNumber(root, "angle", out angle) ||
+            !double.IsFinite(angle) ||
             angle < MinAimAngleDegrees ||
             angle >= MaxAimAngleDegrees)
         {
             Console.WriteLine($"Invalid move angle from {playerId}: {message}");
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool TryReadPlayerState(
+        JsonElement root,
+        string message,
+        string playerId,
+        string messageType,
+        out double x,
+        out double y,
+        out double angle,
+        out string weapon)
+    {
+        angle = default;
+        weapon = string.Empty;
+
+        if (!TryReadCoordinates(root, message, playerId, messageType, out x, out y))
+            return false;
+
+        if (!Helper.TryGetNumber(root, "angle", out angle) ||
+            !double.IsFinite(angle) ||
+            angle < MinAimAngleDegrees ||
+            angle >= MaxAimAngleDegrees)
+        {
+            Console.WriteLine($"Invalid {messageType} angle from {playerId}: {message}");
+            return false;
+        }
+
+        if (!TryReadWeapon(root, message, playerId, messageType, out weapon))
+            return false;
+
+        return true;
+    }
+
+    private static bool TryReadWeapon(
+        JsonElement root,
+        string message,
+        string playerId,
+        string messageType,
+        out string weapon)
+    {
+        if (!Helper.TryGetString(root, "weaponType", out weapon) &&
+            !Helper.TryGetString(root, "weapon", out weapon))
+        {
+            Console.WriteLine($"Invalid {messageType} weapon from {playerId}: {message}");
+            return false;
+        }
+
+        if (weapon.Length > MaxWeaponTypeLength)
+        {
+            Console.WriteLine($"Weapon type too long in {messageType} from {playerId}: {message}");
             return false;
         }
 
@@ -493,6 +625,7 @@ public sealed class Ws
         out double angle)
     {
         if (!Helper.TryGetNumber(root, "angle", out angle) ||
+            !double.IsFinite(angle) ||
             angle < MinAimAngleDegrees ||
             angle >= MaxAimAngleDegrees)
         {
@@ -517,6 +650,7 @@ public sealed class Ws
             return false;
 
         if (!Helper.TryGetNumber(root, "angle", out angle) ||
+            !double.IsFinite(angle) ||
             angle < MinAimAngleDegrees ||
             angle >= MaxAimAngleDegrees)
         {
@@ -538,15 +672,19 @@ public sealed class Ws
 
     public async Task BroadcastToRoomAsync(GameRoom room, object payload)
     {
+        var sendTasks = new List<Task>();
+
         // Snapshot room members, then send only to clients still assigned to this room.
         foreach (var playerId in room.PlayerIdsSnapshot())
         {
             if (clients.TryGetValue(playerId, out var client) &&
                 client.RoomId == room.RoomId)
             {
-                await SendJsonAsync(client, payload);
+                sendTasks.Add(SendJsonAsync(client, payload));
             }
         }
+
+        await Task.WhenAll(sendTasks);
     }
 }
 
@@ -627,11 +765,15 @@ public enum GameRoomState
     Ended
 }
 
+public readonly record struct PlayerState(double X, double Y, double Angle, string Weapon);
+
 public sealed record ClientConnection(string PlayerId, WebSocket Socket, string RoomId)
 {
     public SemaphoreSlim SendLock { get; } = new(1, 1);
+    private readonly object stateLock = new();
     private long lastActivityUtcTicks = DateTimeOffset.UtcNow.UtcTicks;
     private long idleSinceUtcTicks;
+    private bool hasState;
 
     public DateTimeOffset LastActivityUtc =>
         new(Interlocked.Read(ref lastActivityUtcTicks), TimeSpan.Zero);
@@ -641,22 +783,72 @@ public sealed record ClientConnection(string PlayerId, WebSocket Socket, string 
     public DateTimeOffset IdleSinceUtc =>
         new(Interlocked.Read(ref idleSinceUtcTicks), TimeSpan.Zero);
 
-    public double X { get; private set; }
-    public double Y { get; private set; }
-    public double Angle { get; private set; }
+    private double x;
+    private double y;
+    private double angle;
+    private string weapon = string.Empty;
+
+    public bool TryGetStateSnapshot(out PlayerState state)
+    {
+        lock (stateLock)
+        {
+            if (!hasState)
+            {
+                state = default;
+                return false;
+            }
+
+            state = new PlayerState(x, y, angle, weapon);
+            return true;
+        }
+    }
+
+    public void MarkConnected(double x, double y, double angle, string weapon)
+    {
+        lock (stateLock)
+        {
+            this.x = x;
+            this.y = y;
+            this.angle = angle;
+            this.weapon = weapon;
+            hasState = true;
+        }
+
+        Interlocked.Exchange(ref lastActivityUtcTicks, DateTimeOffset.UtcNow.UtcTicks);
+        Interlocked.Exchange(ref idleSinceUtcTicks, 0);
+    }
 
     public void MarkMovement(double x, double y, double angle)
     {
-        X = x;
-        Y = y;
-        Angle = angle;
+        lock (stateLock)
+        {
+            this.x = x;
+            this.y = y;
+            this.angle = angle;
+        }
+
         Interlocked.Exchange(ref lastActivityUtcTicks, DateTimeOffset.UtcNow.UtcTicks);
         Interlocked.Exchange(ref idleSinceUtcTicks, 0);
     }
 
     public void MarkAngle(double angle)
     {
-        Angle = angle;
+        lock (stateLock)
+        {
+            this.angle = angle;
+        }
+
+        Interlocked.Exchange(ref lastActivityUtcTicks, DateTimeOffset.UtcNow.UtcTicks);
+        Interlocked.Exchange(ref idleSinceUtcTicks, 0);
+    }
+
+    public void MarkWeaponSwitch(string weapon)
+    {
+        lock (stateLock)
+        {
+            this.weapon = weapon;
+        }
+
         Interlocked.Exchange(ref lastActivityUtcTicks, DateTimeOffset.UtcNow.UtcTicks);
         Interlocked.Exchange(ref idleSinceUtcTicks, 0);
     }
@@ -665,9 +857,13 @@ public sealed record ClientConnection(string PlayerId, WebSocket Socket, string 
     {
         var now = DateTimeOffset.UtcNow.UtcTicks;
 
-        X = x;
-        Y = y;
-        Angle = angle;
+        lock (stateLock)
+        {
+            this.x = x;
+            this.y = y;
+            this.angle = angle;
+        }
+
         Interlocked.Exchange(ref lastActivityUtcTicks, now);
         Interlocked.CompareExchange(ref idleSinceUtcTicks, now, 0);
     }
