@@ -56,6 +56,8 @@ var last_sent_aim_frame: int = -1
 var remote_latest_angle_degrees: float = NAN
 var remote_last_move_direction: Vector2 = Vector2.ZERO
 var remote_walk_animation_hold_remaining: float = 0.0
+var has_sent_connect_state: bool = false
+var last_reported_weapon_type: String = ""
 
 @onready var head: AnimatedSprite2D = $Head
 @onready var legs: AnimatedSprite2D = $Leg
@@ -96,6 +98,7 @@ func _ready() -> void:
 	_configure_damage_numbers()
 	last_sent_angle = _get_current_aim_angle()
 	last_sent_aim_frame = weapon.get_aim_frame()
+	_schedule_connect_state_sync()
 
 func _physics_process(delta: float) -> void:
 	# Dead characters stop moving entirely until respawn.
@@ -216,10 +219,13 @@ func _on_active_weapon_changed(active_weapon: BaseWeapon) -> void:
 	if active_weapon == null:
 		return
 
-	active_weapon.set_input_enabled(accepts_input)
+	active_weapon.set_input_enabled(accepts_input and match_controls_enabled)
 
 	if is_remote_proxy:
 		active_weapon.set_aim_target(global_position + remote_facing_direction * REMOTE_AIM_DISTANCE)
+		return
+
+	_report_weapon_switch(active_weapon)
 
 func _configure_damage_numbers() -> void:
 	damage_number_settings = LabelSettings.new()
@@ -558,6 +564,59 @@ func _send_ping_position() -> void:
 	last_sent_angle = _get_current_aim_angle()
 	network_client.send_idle(global_position.x, global_position.y, last_sent_angle)
 
+func send_connect_state() -> void:
+	if has_sent_connect_state or is_remote_proxy or not accepts_input or network_client == null:
+		return
+
+	var active_weapon := weapon.get_active_weapon() if weapon != null else null
+	if active_weapon == null:
+		return
+
+	last_sent_angle = _get_current_aim_angle()
+	network_client.send_on_connect(
+		global_position.x,
+		global_position.y,
+		last_sent_angle,
+		active_weapon.get_weapon_name()
+	)
+	last_reported_weapon_type = active_weapon.get_weapon_name()
+	has_sent_connect_state = true
+
+func _report_weapon_switch(active_weapon: BaseWeapon) -> void:
+	if active_weapon == null or not accepts_input or not match_controls_enabled or network_client == null:
+		return
+
+	var weapon_type := active_weapon.get_weapon_name()
+	if weapon_type == last_reported_weapon_type:
+		return
+
+	network_client.send_weapon_switch(weapon_type)
+	last_reported_weapon_type = weapon_type
+
+func _schedule_connect_state_sync() -> void:
+	if is_remote_proxy or not accepts_input or network_client == null:
+		return
+
+	call_deferred("_try_send_connect_state")
+
+	if has_sent_connect_state:
+		return
+
+	if not network_client.connection_established.is_connected(_on_network_connection_established):
+		network_client.connection_established.connect(_on_network_connection_established)
+
+func _try_send_connect_state() -> void:
+	send_connect_state()
+
+	if has_sent_connect_state and network_client != null and network_client.connection_established.is_connected(_on_network_connection_established):
+		network_client.connection_established.disconnect(_on_network_connection_established)
+
+func _on_network_connection_established() -> void:
+	send_connect_state()
+
+	if has_sent_connect_state and network_client != null and network_client.connection_established.is_connected(_on_network_connection_established):
+		network_client.connection_established.disconnect(_on_network_connection_established)
+
 func set_match_controls_enabled(is_enabled: bool) -> void:
 	match_controls_enabled = is_enabled
 	velocity = Vector2.ZERO
@@ -612,6 +671,16 @@ func enqueue_remote_snapshot(position: Vector2, aim_angle_degrees: float = NAN) 
 func update_remote_angle(aim_angle_degrees: float) -> void:
 	remote_latest_angle_degrees = aim_angle_degrees
 	_apply_remote_aim(global_position + remote_facing_direction, remote_latest_angle_degrees)
+
+func set_remote_weapon(weapon_type: String) -> void:
+	if weapon == null or weapon_type == "":
+		return
+
+	weapon.equip_weapon_by_id(weapon_type)
+	var active_weapon := weapon.get_active_weapon()
+	if active_weapon != null:
+		active_weapon.set_input_enabled(false)
+		active_weapon.set_aim_target(global_position + remote_facing_direction * REMOTE_AIM_DISTANCE)
 
 func _process_remote_movement(delta: float) -> void:
 	while not remote_snapshot_queue.is_empty():

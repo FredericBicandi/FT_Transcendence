@@ -8,12 +8,13 @@ signal room_joined(message: Dictionary)
 signal time_synced(message: Dictionary)
 signal player_move_received(message: Dictionary)
 signal player_angle_received(message: Dictionary)
+signal player_weapon_switch_received(message: Dictionary)
 signal player_left_received(player_id: String)
 signal match_ended(message: Dictionary)
 
 # Keep the server endpoint editable from the scene inspector.
 
-@export var server_url: String = "wss://34.165.205.140:5000/ws"
+@export var server_url: String = "wss://34.165.245.105:5000/ws"
 @export var bypass_tls_validation: bool = true
 @export var connection_timeout_seconds: float = 30.0
 
@@ -27,6 +28,8 @@ var local_room_id: String = ""
 var match_duration_seconds: int = 0
 var remaining_seconds: float = 0.0
 var match_finished: bool = false
+var last_room_joined_message: Dictionary = {}
+var remote_player_snapshots: Dictionary = {}
 var seconds_since_last_server_activity: float = 0.0
 var is_connection_closed_manually: bool = false
 
@@ -65,6 +68,8 @@ func connect_to_server() -> Error:
 	match_duration_seconds = 0
 	remaining_seconds = 0.0
 	match_finished = false
+	last_room_joined_message = {}
+	remote_player_snapshots.clear()
 	seconds_since_last_server_activity = 0.0
 	is_connection_closed_manually = false
 
@@ -122,6 +127,31 @@ func send_angle(angle: float) -> void:
 		}
 	)
 
+func send_on_connect(x: float, y: float, angle: float, weapon_type: String) -> void:
+	if socket.get_ready_state() != WebSocketPeer.STATE_OPEN:
+		return
+
+	_send_json(
+		{
+			"type": "on_connect",
+			"x": x,
+			"y": y,
+			"angle": angle,
+			"weaponType": weapon_type
+		}
+	)
+
+func send_weapon_switch(weapon_type: String) -> void:
+	if socket.get_ready_state() != WebSocketPeer.STATE_OPEN:
+		return
+
+	_send_json(
+		{
+			"type": "weapon_switch",
+			"weaponType": weapon_type
+		}
+	)
+
 func _handle_state_changes(state: int) -> void:
 	if state == WebSocketPeer.STATE_OPEN and not was_open_last_frame:
 		was_open_last_frame = true
@@ -166,18 +196,29 @@ func _handle_message(message: Dictionary) -> void:
 	match message_type:
 		"pong":
 			pass
+		"player_connected":
+			_store_remote_player_snapshot(message)
+			player_move_received.emit(message)
 		"player_move":
+			_store_remote_player_snapshot(message)
 			player_move_received.emit(message)
 		"player_angle":
+			_store_remote_player_snapshot(message)
 			player_angle_received.emit(message)
+		"player_weapon_switch":
+			_store_remote_player_snapshot(message)
+			player_weapon_switch_received.emit(message)
 		"player_left":
-			player_left_received.emit(str(message.get("playerId", "")))
+			var left_player_id := str(message.get("playerId", message.get("id", "")))
+			remote_player_snapshots.erase(left_player_id)
+			player_left_received.emit(left_player_id)
 		"room_joined":
 			local_player_id = str(message.get("playerId", ""))
 			local_room_id = str(message.get("roomId", ""))
 			match_duration_seconds = int(message.get("durationSeconds", 0))
 			remaining_seconds = float(message.get("remainingSeconds", match_duration_seconds))
 			match_finished = false
+			last_room_joined_message = message.duplicate(true)
 			room_joined.emit(message)
 		"time_sync":
 			remaining_seconds = float(message.get("remainingSeconds", remaining_seconds))
@@ -194,6 +235,22 @@ func _send_json(payload: Dictionary) -> void:
 	var error := socket.send_text(data)
 	if error != OK:
 		push_warning("NetworkClient: failed to send packet (error %d)" % error)
+
+func _store_remote_player_snapshot(message: Dictionary) -> void:
+	var player_id := str(message.get("playerId", message.get("id", "")))
+	if player_id == "":
+		return
+
+	var existing_snapshot_variant: Variant = remote_player_snapshots.get(player_id, {})
+	var existing_snapshot: Dictionary = {}
+	if typeof(existing_snapshot_variant) == TYPE_DICTIONARY:
+		existing_snapshot = existing_snapshot_variant as Dictionary
+
+	var merged_snapshot: Dictionary = existing_snapshot.duplicate(true)
+	for key_variant in message.keys():
+		merged_snapshot[key_variant] = message[key_variant]
+
+	remote_player_snapshots[player_id] = merged_snapshot
 
 func _handle_connection_loss(reason: String) -> void:
 	if has_reported_connection_loss:

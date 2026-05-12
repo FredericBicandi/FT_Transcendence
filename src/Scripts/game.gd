@@ -94,6 +94,9 @@ func _connect_network_signals() -> void:
 	if not network_client.player_angle_received.is_connected(_on_player_angle_received):
 		network_client.player_angle_received.connect(_on_player_angle_received)
 
+	if not network_client.player_weapon_switch_received.is_connected(_on_player_weapon_switch_received):
+		network_client.player_weapon_switch_received.connect(_on_player_weapon_switch_received)
+
 	if not network_client.player_left_received.is_connected(_on_player_left_received):
 		network_client.player_left_received.connect(_on_player_left_received)
 
@@ -109,6 +112,8 @@ func apply_network_snapshot() -> void:
 	remaining_match_seconds = maxf(network_client.remaining_seconds, 0.0)
 	match_has_ended = network_client.match_finished
 	player_body.set_match_controls_enabled(not match_has_ended)
+	_apply_initial_remote_players(network_client.last_room_joined_message)
+	_apply_cached_remote_players()
 
 func update_match_ui() -> void:
 	timer_label.text = _format_match_time(remaining_match_seconds)
@@ -125,6 +130,7 @@ func _on_room_joined(message: Dictionary) -> void:
 	remaining_match_seconds = maxf(float(message.get("remainingSeconds", 0.0)), 0.0)
 	match_has_ended = false
 	player_body.set_match_controls_enabled(true)
+	_apply_initial_remote_players(message)
 	update_match_ui()
 
 func _on_time_synced(message: Dictionary) -> void:
@@ -140,9 +146,108 @@ func _on_player_move_received(message: Dictionary) -> void:
 	if player_id == "" or player_id == local_player_id:
 		return
 
-	var remote_body := _get_or_create_remote_player(player_id)
+	_apply_remote_player_state(message)
+
+func _on_player_left_received(player_id: String) -> void:
+	_remove_remote_player(player_id)
+
+func _on_player_angle_received(message: Dictionary) -> void:
+	var player_id := str(message.get("playerId", ""))
+	if player_id == "" or player_id == local_player_id or not message.has("angle"):
+		return
+
+	var remote_body := _get_remote_player(player_id)
 	if remote_body == null:
 		return
+
+	remote_body.update_remote_angle(float(message["angle"]))
+
+func _on_player_weapon_switch_received(message: Dictionary) -> void:
+	var player_id := str(message.get("playerId", ""))
+	if player_id == "" or player_id == local_player_id:
+		return
+
+	_apply_remote_player_state(message)
+
+func _on_match_ended(message: Dictionary) -> void:
+	var ended_room_id := str(message.get("roomId", ""))
+	if room_id != "" and ended_room_id != "" and ended_room_id != room_id:
+		return
+
+	match_has_ended = true
+	remaining_match_seconds = 0.0
+	player_body.set_match_controls_enabled(false)
+	update_match_ui()
+
+func _get_or_create_remote_player(player_id: String) -> Player:
+	var existing_remote := _get_remote_player(player_id)
+	if existing_remote != null:
+		return existing_remote
+
+	var remote_wrapper := PLAYER_SCENE.instantiate() as Node2D
+	if remote_wrapper == null:
+		return null
+
+	remote_wrapper.name = "RemotePlayer_%s" % player_id
+	var remote_body := remote_wrapper.get_node("CharacterBody2D") as Player
+	if remote_body == null:
+		remote_wrapper.queue_free()
+		return null
+
+	remote_body.configure_as_remote_proxy()
+	add_child(remote_wrapper)
+	remote_players[player_id] = remote_wrapper
+	return remote_body
+
+func _get_remote_player(player_id: String) -> Player:
+	var existing_wrapper := remote_players.get(player_id) as Node2D
+	if existing_wrapper == null or not is_instance_valid(existing_wrapper):
+		return null
+
+	return existing_wrapper.get_node("CharacterBody2D") as Player
+
+func _apply_initial_remote_players(message: Dictionary) -> void:
+	if message.is_empty():
+		return
+
+	var players_variant: Variant = message.get("players", message.get("remotePlayers", []))
+	if not (players_variant is Array):
+		return
+
+	for player_variant in players_variant:
+		if typeof(player_variant) != TYPE_DICTIONARY:
+			continue
+
+		_apply_remote_player_state(player_variant)
+
+func _apply_cached_remote_players() -> void:
+	if network_client == null:
+		return
+
+	for snapshot_variant in network_client.remote_player_snapshots.values():
+		if typeof(snapshot_variant) != TYPE_DICTIONARY:
+			continue
+
+		_apply_remote_player_state(snapshot_variant)
+
+func _apply_remote_player_state(message: Dictionary) -> void:
+	var player_id := str(message.get("playerId", message.get("id", "")))
+	if player_id == "" or player_id == local_player_id:
+		return
+
+	var remote_body := _get_remote_player(player_id)
+	var has_position := message.has("x") and message.has("y")
+	if remote_body == null and not has_position:
+		return
+
+	if remote_body == null:
+		remote_body = _get_or_create_remote_player(player_id)
+	if remote_body == null:
+		return
+
+	var weapon_type := str(message.get("weaponType", message.get("weaponHolding", message.get("weapon", ""))))
+	if weapon_type != "":
+		remote_body.set_remote_weapon(weapon_type)
 
 	var aim_angle_degrees := NAN
 	if message.has("angle"):
@@ -159,50 +264,6 @@ func _on_player_move_received(message: Dictionary) -> void:
 		),
 		aim_angle_degrees
 	)
-
-func _on_player_left_received(player_id: String) -> void:
-	_remove_remote_player(player_id)
-
-func _on_player_angle_received(message: Dictionary) -> void:
-	var player_id := str(message.get("playerId", ""))
-	if player_id == "" or player_id == local_player_id or not message.has("angle"):
-		return
-
-	var remote_body := _get_or_create_remote_player(player_id)
-	if remote_body == null:
-		return
-
-	remote_body.update_remote_angle(float(message["angle"]))
-
-func _on_match_ended(message: Dictionary) -> void:
-	var ended_room_id := str(message.get("roomId", ""))
-	if room_id != "" and ended_room_id != "" and ended_room_id != room_id:
-		return
-
-	match_has_ended = true
-	remaining_match_seconds = 0.0
-	player_body.set_match_controls_enabled(false)
-	update_match_ui()
-
-func _get_or_create_remote_player(player_id: String) -> Player:
-	var existing_wrapper := remote_players.get(player_id) as Node2D
-	if existing_wrapper != null and is_instance_valid(existing_wrapper):
-		return existing_wrapper.get_node("CharacterBody2D") as Player
-
-	var remote_wrapper := PLAYER_SCENE.instantiate() as Node2D
-	if remote_wrapper == null:
-		return null
-
-	remote_wrapper.name = "RemotePlayer_%s" % player_id
-	var remote_body := remote_wrapper.get_node("CharacterBody2D") as Player
-	if remote_body == null:
-		remote_wrapper.queue_free()
-		return null
-
-	remote_body.configure_as_remote_proxy()
-	add_child(remote_wrapper)
-	remote_players[player_id] = remote_wrapper
-	return remote_body
 
 func _remove_remote_player(player_id: String) -> void:
 	var remote_wrapper := remote_players.get(player_id) as Node2D

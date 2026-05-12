@@ -42,6 +42,9 @@ func equip_weapon(weapon_key: StringName) -> bool:
 	if next_weapon == null:
 		return false
 
+	if active_weapon == next_weapon:
+		return true
+
 	# Only one weapon stays active at a time, so hide the previous one before switching.
 	if active_weapon != null and is_instance_valid(active_weapon):
 		active_weapon.set_active(false)
