@@ -483,6 +483,30 @@ public sealed class Ws
                 return;
             }
 
+            if (type == "shoot")
+            {
+                if (!TryReadShootAngle(root, message, client.PlayerId, out var angle))
+                    return;
+
+                if (!client.TryGetStateSnapshot(out var state))
+                {
+                    Console.WriteLine($"Shoot before on_connect from {client.PlayerId}: {message}");
+                    return;
+                }
+
+                await BroadcastToRoomAsync(client.RoomId, new
+                {
+                    type = "bullet_spawn",
+                    playerId = client.PlayerId,
+                    weaponType = state.Weapon,
+                    x = state.X,
+                    y = state.Y,
+                    angle
+                });
+
+                return;
+            }
+
             Console.WriteLine($"Unknown message type from {client.PlayerId}: {type}");
         }
     }
@@ -612,6 +636,22 @@ public sealed class Ws
         if (weapon.Length > MaxWeaponTypeLength)
         {
             Console.WriteLine($"Weapon type too long in {messageType} from {playerId}: {message}");
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool TryReadShootAngle(
+        JsonElement root,
+        string message,
+        string playerId,
+        out double angle)
+    {
+        if (!Helper.TryGetNumber(root, "angle", out angle) ||
+            !double.IsFinite(angle))
+        {
+            Console.WriteLine($"Invalid shoot angle from {playerId}: {message}");
             return false;
         }
 
