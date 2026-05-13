@@ -9,13 +9,14 @@ signal time_synced(message: Dictionary)
 signal player_move_received(message: Dictionary)
 signal player_angle_received(message: Dictionary)
 signal player_weapon_switch_received(message: Dictionary)
+signal player_health_received(message: Dictionary)
 signal bullet_spawn_received(message: Dictionary)
 signal player_left_received(player_id: String)
 signal match_ended(message: Dictionary)
 
 # Keep the server endpoint editable from the scene inspector.
 
-@export var server_url: String = "wss://34.165.245.105:5000/ws"
+@export var server_url: String = "wss://34.165.205.140:5000/ws"
 @export var bypass_tls_validation: bool = true
 @export var connection_timeout_seconds: float = 30.0
 
@@ -142,6 +143,38 @@ func send_on_connect(x: float, y: float, angle: float, weapon_type: String) -> v
 		}
 	)
 
+func send_respawn(x: float, y: float, angle: float, weapon_type: String) -> void:
+	if socket.get_ready_state() != WebSocketPeer.STATE_OPEN:
+		return
+
+	_send_json(
+		{
+			"type": "respawn",
+			"x": x,
+			"y": y,
+			"angle": angle,
+			"weaponType": weapon_type
+		}
+	)
+
+func send_hit(target_player_id: String, weapon_type: String, damage: int, shot_id: String, x: float, y: float, angle: float, timestamp: int) -> void:
+	if socket.get_ready_state() != WebSocketPeer.STATE_OPEN:
+		return
+
+	_send_json(
+		{
+			"type": "hit",
+			"targetPlayerId": target_player_id,
+			"weaponType": weapon_type,
+			"damage": damage,
+			"shotId": shot_id,
+			"x": x,
+			"y": y,
+			"angle": angle,
+			"timestamp": timestamp
+		}
+	)
+
 func send_weapon_switch(weapon_type: String) -> void:
 	if socket.get_ready_state() != WebSocketPeer.STATE_OPEN:
 		return
@@ -220,6 +253,12 @@ func _handle_message(message: Dictionary) -> void:
 		"player_weapon_switch":
 			_store_remote_player_snapshot(message)
 			player_weapon_switch_received.emit(message)
+		"player_health":
+			_store_remote_player_snapshot(message)
+			player_health_received.emit(message)
+		"player_heartbeat":
+			_store_remote_player_snapshot(message)
+			player_health_received.emit(message)
 		"bullet_spawn":
 			bullet_spawn_received.emit(message)
 		"player_left":

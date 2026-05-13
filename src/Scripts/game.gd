@@ -97,6 +97,9 @@ func _connect_network_signals() -> void:
 	if not network_client.player_weapon_switch_received.is_connected(_on_player_weapon_switch_received):
 		network_client.player_weapon_switch_received.connect(_on_player_weapon_switch_received)
 
+	if not network_client.player_health_received.is_connected(_on_player_health_received):
+		network_client.player_health_received.connect(_on_player_health_received)
+
 	if not network_client.bullet_spawn_received.is_connected(_on_bullet_spawn_received):
 		network_client.bullet_spawn_received.connect(_on_bullet_spawn_received)
 
@@ -112,9 +115,11 @@ func apply_network_snapshot() -> void:
 
 	local_player_id = network_client.local_player_id
 	room_id = network_client.local_room_id
+	player_body.set_network_player_id(local_player_id)
 	remaining_match_seconds = maxf(network_client.remaining_seconds, 0.0)
 	match_has_ended = network_client.match_finished
 	player_body.set_match_controls_enabled(not match_has_ended)
+	_apply_local_player_state(network_client.last_room_joined_message)
 	_apply_initial_remote_players(network_client.last_room_joined_message)
 	_apply_cached_remote_players()
 
@@ -130,9 +135,11 @@ func _format_match_time(total_seconds: float) -> String:
 func _on_room_joined(message: Dictionary) -> void:
 	local_player_id = str(message.get("playerId", ""))
 	room_id = str(message.get("roomId", ""))
+	player_body.set_network_player_id(local_player_id)
 	remaining_match_seconds = maxf(float(message.get("remainingSeconds", 0.0)), 0.0)
 	match_has_ended = false
 	player_body.set_match_controls_enabled(true)
+	_apply_local_player_state(message)
 	_apply_initial_remote_players(message)
 	update_match_ui()
 
@@ -159,15 +166,22 @@ func _on_player_angle_received(message: Dictionary) -> void:
 	if player_id == "" or player_id == local_player_id or not message.has("angle"):
 		return
 
-	var remote_body := _get_remote_player(player_id)
-	if remote_body == null:
-		return
-
-	remote_body.update_remote_angle(float(message["angle"]))
+	_apply_remote_player_state(message)
 
 func _on_player_weapon_switch_received(message: Dictionary) -> void:
 	var player_id := str(message.get("playerId", ""))
 	if player_id == "" or player_id == local_player_id:
+		return
+
+	_apply_remote_player_state(message)
+
+func _on_player_health_received(message: Dictionary) -> void:
+	var player_id := str(message.get("playerId", message.get("id", "")))
+	if player_id == "":
+		return
+
+	if player_id == local_player_id:
+		_apply_local_player_state(message)
 		return
 
 	_apply_remote_player_state(message)
@@ -219,9 +233,24 @@ func _get_or_create_remote_player(player_id: String) -> Player:
 		return null
 
 	remote_body.configure_as_remote_proxy()
+	remote_body.set_network_player_id(player_id)
 	add_child(remote_wrapper)
 	remote_players[player_id] = remote_wrapper
 	return remote_body
+
+func _apply_local_player_state(message: Dictionary) -> void:
+	if message.is_empty():
+		return
+
+	if message.has("x") and message.has("y"):
+		player_body.global_position = Vector2(float(message["x"]), float(message["y"]))
+
+	if message.has("health") or message.has("isDead"):
+		player_body.apply_authoritative_health_state(
+			int(message.get("health", player_body.health)),
+			bool(message.get("isDead", player_body.is_dead)),
+			int(message.get("damage", 0))
+		)
 
 func _get_remote_player(player_id: String) -> Player:
 	var existing_wrapper := remote_players.get(player_id) as Node2D
@@ -273,6 +302,13 @@ func _apply_remote_player_state(message: Dictionary) -> void:
 	if weapon_type != "":
 		remote_body.set_remote_weapon(weapon_type)
 
+	if message.has("health"):
+		remote_body.apply_authoritative_health_state(
+			int(message["health"]),
+			bool(message.get("isDead", remote_body.is_dead)),
+			int(message.get("damage", 0))
+		)
+
 	var aim_angle_degrees := NAN
 	if message.has("angle"):
 		aim_angle_degrees = float(message["angle"])
@@ -281,13 +317,16 @@ func _apply_remote_player_state(message: Dictionary) -> void:
 	elif message.has("aimAngle"):
 		aim_angle_degrees = float(message["aimAngle"])
 
-	remote_body.enqueue_remote_snapshot(
-		Vector2(
-			float(message.get("x", remote_body.global_position.x)),
-			float(message.get("y", remote_body.global_position.y))
-		),
-		aim_angle_degrees
-	)
+	if has_position:
+		remote_body.enqueue_remote_snapshot(
+			Vector2(
+				float(message["x"]),
+				float(message["y"])
+			),
+			aim_angle_degrees
+		)
+	elif not is_nan(aim_angle_degrees):
+		remote_body.update_remote_angle(aim_angle_degrees)
 
 func _remove_remote_player(player_id: String) -> void:
 	var remote_wrapper := remote_players.get(player_id) as Node2D

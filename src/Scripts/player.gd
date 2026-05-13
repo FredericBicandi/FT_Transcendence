@@ -58,6 +58,9 @@ var remote_last_move_direction: Vector2 = Vector2.ZERO
 var remote_walk_animation_hold_remaining: float = 0.0
 var has_sent_connect_state: bool = false
 var last_reported_weapon_type: String = ""
+var network_player_id: String = ""
+var next_shot_sequence: int = 0
+var has_requested_server_respawn: bool = false
 var observed_shot_weapon: BaseWeapon = null
 
 @onready var head: AnimatedSprite2D = $Head
@@ -133,7 +136,10 @@ func _process(delta: float) -> void:
 	if is_dead:
 		respawn_timer = maxf(respawn_timer - delta, 0.0)
 		if respawn_timer == 0.0:
-			respawn()
+			if _uses_server_authoritative_health():
+				_request_server_respawn()
+			else:
+				respawn()
 	else:
 		if auto_attack_players:
 			update_auto_attack()
@@ -436,8 +442,12 @@ func _on_viewport_size_changed() -> void:
 
 func die() -> void:
 	# Enter the dead state, stop interacting with the world, and hide body/UI visuals until respawn.
+	if is_dead:
+		return
+
 	is_dead = true
 	respawn_timer = respawn_delay
+	has_requested_server_respawn = false
 	idle_position_heartbeat_time = 0.0
 	velocity = Vector2.ZERO
 	hit_flash_time = 0.0
@@ -458,25 +468,10 @@ func die() -> void:
 
 func respawn() -> void:
 	# Restore health, position, collision, visuals, and weapon state so the player can act again.
-	is_dead = false
-	respawn_timer = 0.0
 	health = max_health
 	global_position = spawn_position
-	idle_position_heartbeat_time = 0.0
 	update_health_bar()
-	legs.frame = 0
-	leg_animation_time = 0.0
-	legs.visible = true
-	head.visible = true
-	health_bar.visible = true
-	reload_bar.visible = false
-	collision_shape.set_deferred("disabled", false)
-
-	weapon.clear_all_projectiles()
-	var active_weapon := weapon.get_active_weapon()
-	if active_weapon != null:
-		active_weapon.set_input_enabled(accepts_input and match_controls_enabled)
-		active_weapon.set_active(true)
+	_restore_after_respawn()
 
 	if accepts_input and network_client != null:
 		_send_respawn_state()
@@ -625,8 +620,25 @@ func _on_network_connection_established() -> void:
 		network_client.connection_established.disconnect(_on_network_connection_established)
 
 func _send_respawn_state() -> void:
-	if _send_full_player_state():
-		idle_position_heartbeat_time = 0.0
+	var active_weapon := weapon.get_active_weapon() if weapon != null else null
+	if active_weapon == null or network_client == null:
+		return
+
+	last_sent_angle = _get_current_aim_angle()
+	network_client.send_respawn(
+		global_position.x,
+		global_position.y,
+		last_sent_angle,
+		active_weapon.get_weapon_name()
+	)
+	idle_position_heartbeat_time = 0.0
+
+func _request_server_respawn() -> void:
+	if has_requested_server_respawn or not accepts_input or network_client == null:
+		return
+
+	has_requested_server_respawn = true
+	_send_respawn_state()
 
 func _send_full_player_state() -> bool:
 	var active_weapon := weapon.get_active_weapon() if weapon != null else null
@@ -678,6 +690,77 @@ func configure_as_remote_proxy() -> void:
 		var active_weapon := weapon.get_active_weapon()
 		if active_weapon != null:
 			active_weapon.set_aim_target(global_position + remote_facing_direction * REMOTE_AIM_DISTANCE)
+
+func set_network_player_id(player_id: String) -> void:
+	network_player_id = player_id
+
+func get_network_player_id() -> String:
+	return network_player_id
+
+func report_authoritative_hit(target: Node, damage: int, hit_position: Vector2, source_weapon: Node) -> bool:
+	if network_client == null or is_remote_proxy or not accepts_input or damage <= 0:
+		return false
+
+	if target == null or not is_instance_valid(target) or not target.has_method("get_network_player_id"):
+		return false
+
+	var target_player_id := str(target.call("get_network_player_id"))
+	if target_player_id == "":
+		return false
+
+	var weapon_type := ""
+	if source_weapon != null and source_weapon.has_method("get_weapon_name"):
+		weapon_type = str(source_weapon.call("get_weapon_name"))
+
+	next_shot_sequence += 1
+	var shot_id := "%s:%d" % [network_player_id if network_player_id != "" else "local", next_shot_sequence]
+	var shot_angle := rad_to_deg((hit_position - global_position).angle())
+	if shot_angle < 0.0:
+		shot_angle += 360.0
+	network_client.send_hit(target_player_id, weapon_type, damage, shot_id, global_position.x, global_position.y, shot_angle, Time.get_ticks_msec())
+	return true
+
+func apply_authoritative_health_state(new_health: int, authoritative_is_dead: bool, reported_damage: int = 0) -> void:
+	var clamped_health := clampi(new_health, 0, max_health)
+	var took_damage := clamped_health < health
+	health = clamped_health
+	update_health_bar()
+
+	if took_damage:
+		hit_flash_time = 0.12
+		if reported_damage > 0:
+			_show_damage_number(reported_damage, global_position)
+
+	if authoritative_is_dead:
+		die()
+		health = 0
+		update_health_bar()
+		return
+
+	if is_dead:
+		_restore_after_respawn()
+
+func _restore_after_respawn() -> void:
+	is_dead = false
+	respawn_timer = 0.0
+	has_requested_server_respawn = false
+	idle_position_heartbeat_time = 0.0
+	legs.frame = 0
+	leg_animation_time = 0.0
+	legs.visible = true
+	head.visible = true
+	health_bar.visible = true
+	reload_bar.visible = false
+	collision_shape.set_deferred("disabled", false)
+
+	weapon.clear_all_projectiles()
+	var active_weapon := weapon.get_active_weapon()
+	if active_weapon != null:
+		active_weapon.set_input_enabled(accepts_input and match_controls_enabled)
+		active_weapon.set_active(true)
+
+func _uses_server_authoritative_health() -> bool:
+	return network_client != null and (accepts_input or is_remote_proxy)
 
 func enqueue_remote_snapshot(position: Vector2, aim_angle_degrees: float = NAN) -> void:
 	if not is_nan(aim_angle_degrees):

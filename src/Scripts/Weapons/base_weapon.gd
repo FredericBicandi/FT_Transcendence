@@ -197,7 +197,7 @@ func spawn_remote_bullet(angle_radians: float) -> void:
 		if owner_body != null and owner_body.has_method("play_shoot_sound"):
 			owner_body.call("play_shoot_sound", fire_sound)
 
-	_spawn_bullet(bullet_direction, muzzle_marker.global_position, true)
+	_spawn_bullet(bullet_direction, muzzle_marker.global_position, true, 0)
 
 func apply_recoil(direction: Vector2, config: Dictionary) -> void:
 	# Kick the weapon backward, with a little sideways randomness to avoid a rigid feel.
@@ -267,12 +267,20 @@ func find_owner_body() -> CollisionObject2D:
 	return null
 
 func apply_bullet_hit(hit: Dictionary, damage: int) -> void:
-	# Damage is opt-in: only colliders exposing apply_damage will react to bullet hits.
+	# Local player-owned bullets report proposed hits to the server; non-networked actors still use local damage.
+	if damage <= 0:
+		return
+
 	var collider_variant: Variant = hit.get("collider")
 	if collider_variant == null or not (collider_variant is Node):
 		return
 
 	var collider := collider_variant as Node
+	var owner_body := find_owner_body()
+	if owner_body != null and owner_body.has_method("report_authoritative_hit"):
+		if bool(owner_body.call("report_authoritative_hit", collider, damage, hit.get("position", Vector2.ZERO), self)):
+			return
+
 	if collider != null and collider.has_method("apply_damage"):
 		collider.call("apply_damage", damage, hit.get("position", Vector2.ZERO), self)
 
@@ -401,7 +409,7 @@ func emit_ammo_changed() -> void:
 	# Centralized helper so every ammo update notifies listeners the same way.
 	ammo_changed.emit(current_ammo, get_magazine_size())
 
-func _spawn_bullet(direction: Vector2, start_position: Vector2, should_collide: bool) -> void:
+func _spawn_bullet(direction: Vector2, start_position: Vector2, should_collide: bool, damage_override: int = -1) -> void:
 	var config := get_weapon_config()
 	var bullet_lifetime: float = float(config.get("bullet_lifetime", 1.0))
 
@@ -428,6 +436,6 @@ func _spawn_bullet(direction: Vector2, start_position: Vector2, should_collide: 
 		"speed": config.get("bullet_speed", 300.0),
 		"lifetime": bullet_lifetime,
 		"collision_mask": collision_mask_override if should_collide and collision_mask_override >= 0 else int(config.get("bullet_collision_mask", 1)) if should_collide else 0,
-		"damage": int(config.get("damage", 1)) if should_collide else 0,
+		"damage": damage_override if damage_override >= 0 else int(config.get("damage", 1)) if should_collide else 0,
 		"collides": should_collide
 	})
