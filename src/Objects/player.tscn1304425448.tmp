@@ -168,6 +168,15 @@ animations = [{
 "speed": 5.0
 }]
 
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_bg"]
+bg_color = Color(0.109804, 0.109804, 0.109804, 0.85)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_fill"]
+bg_color = Color(0.160784, 0.776471, 0.286275, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_reload_fill"]
+bg_color = Color(0.207843, 0.494118, 0.921569, 1)
+
 [sub_resource type="AtlasTexture" id="AtlasTexture_ggyxi"]
 atlas = ExtResource("2_fhpty")
 region = Rect2(192, 0, 32, 32)
@@ -236,30 +245,33 @@ animations = [{
 radius = 7.0
 height = 14.0
 
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_overhead_panel"]
-bg_color = Color(0, 0, 0, 0.38)
-border_width_left = 1
-border_width_top = 1
-border_width_right = 1
-border_width_bottom = 1
-border_color = Color(1, 1, 1, 0.08)
-corner_radius_top_left = 6
-corner_radius_top_right = 6
-corner_radius_bottom_right = 6
-corner_radius_bottom_left = 6
-
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_bg"]
-bg_color = Color(0.109804, 0.109804, 0.109804, 0.85)
-
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_fill"]
-bg_color = Color(0.160784, 0.776471, 0.286275, 1)
-
 [node name="Player" type="Node2D" unique_id=284655760]
 
 [node name="CharacterBody2D" type="CharacterBody2D" parent="." unique_id=902192763]
 position = Vector2(2, 0)
 collision_layer = 2
 script = ExtResource("1_4o2qk")
+move_speed = null
+max_health = null
+leg_animation_speed = null
+accepts_input = null
+register_as_player_target = null
+enable_player_camera = null
+respawn_delay = null
+auto_attack_players = null
+attack_range = null
+default_weapon_id = null
+shoot_sound_attenuation = null
+shoot_sound_volume_db = null
+shoot_sound_cooldown = null
+shoot_sound_fade_margin = null
+shoot_sound_silent_volume_db = null
+shoot_sound_max_simultaneous_per_stream = null
+shoot_sound_listener_cooldown = null
+shoot_sound_pitch_randomness = null
+shoot_sound_volume_jitter_db = null
+damage_number_rise_distance = null
+damage_number_spread = null
 
 [node name="Leg" type="AnimatedSprite2D" parent="CharacterBody2D" unique_id=1021202293]
 position = Vector2(-1, 7)
@@ -268,6 +280,45 @@ sprite_frames = SubResource("SpriteFrames_3vd87")
 
 [node name="Weapons" parent="CharacterBody2D" unique_id=2015572023 instance=ExtResource("2_gl4sb")]
 position = Vector2(0, 9)
+
+[node name="HealthBar" type="ProgressBar" parent="CharacterBody2D" unique_id=157230094]
+z_index = 2
+offset_left = -11.0
+offset_top = -11.0
+offset_right = 11.0
+offset_bottom = -8.0
+mouse_filter = 2
+theme_override_styles/background = SubResource("StyleBoxFlat_bg")
+theme_override_styles/fill = SubResource("StyleBoxFlat_fill")
+show_percentage = false
+
+[node name="PlayerNameLabel" type="Label" parent="CharacterBody2D" unique_id=112340915]
+visible = false
+z_index = 2
+offset_left = -64.0
+offset_top = -28.0
+offset_right = 64.0
+offset_bottom = -10.0
+theme_override_colors/font_color = Color(0.886275, 0.952941, 0.862745, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 0.9)
+theme_override_constants/outline_size = 1
+theme_override_fonts/font = ExtResource("5_player_name_font")
+theme_override_font_sizes/font_size = 10
+text = "player"
+horizontal_alignment = 1
+clip_text = true
+
+[node name="ReloadBar" type="ProgressBar" parent="CharacterBody2D" unique_id=1050789520]
+visible = false
+z_index = 2
+offset_left = -11.0
+offset_top = -16.0
+offset_right = 11.0
+offset_bottom = -12.0
+mouse_filter = 2
+theme_override_styles/background = SubResource("StyleBoxFlat_bg")
+theme_override_styles/fill = SubResource("StyleBoxFlat_reload_fill")
+show_percentage = false
 
 [node name="DamageNumbers" type="Node2D" parent="CharacterBody2D" unique_id=1448116061]
 z_index = 3
@@ -281,7 +332,7 @@ animation = &"Idle"
 autoplay = "Idle"
 
 [node name="Camera2D" type="Camera2D" parent="CharacterBody2D" unique_id=464962696]
-zoom = Vector2(4.5, 4.5)
+zoom = Vector2(3, 3)
 position_smoothing_enabled = true
 
 [node name="ShootSound" type="AudioStreamPlayer2D" parent="CharacterBody2D" unique_id=827025043]
@@ -293,29 +344,14 @@ attenuation = 1.5
 position = Vector2(0, 9)
 shape = SubResource("CapsuleShape2D_t1rct")
 
-[node name="OverheadUiCanvasLayer" type="CanvasLayer" parent="." unique_id=1761189483]
+[node name="PlayerNameCanvasLayer" type="CanvasLayer" parent="." unique_id=1761189483]
 
-[node name="OverheadPanel" type="PanelContainer" parent="OverheadUiCanvasLayer" unique_id=802100969]
-offset_left = -44.0
-offset_top = -30.0
-offset_right = 44.0
-offset_bottom = -4.0
-mouse_filter = 2
-theme_override_styles/panel = SubResource("StyleBoxFlat_overhead_panel")
-
-[node name="OverheadMargin" type="MarginContainer" parent="OverheadUiCanvasLayer/OverheadPanel" unique_id=424610667]
-layout_mode = 2
-theme_override_constants/margin_left = 6
-theme_override_constants/margin_top = 4
-theme_override_constants/margin_right = 6
-theme_override_constants/margin_bottom = 4
-
-[node name="OverheadVBox" type="VBoxContainer" parent="OverheadUiCanvasLayer/OverheadPanel/OverheadMargin" unique_id=1717534498]
-layout_mode = 2
-theme_override_constants/separation = 2
-
-[node name="PlayerNameLabel" type="Label" parent="OverheadUiCanvasLayer/OverheadPanel/OverheadMargin/OverheadVBox" unique_id=112340915]
-layout_mode = 2
+[node name="PlayerNameOverlay" type="Label" parent="PlayerNameCanvasLayer" unique_id=802100969]
+texture_filter = 1
+offset_left = -61.0
+offset_top = -25.0
+offset_right = 67.0
+offset_bottom = -7.0
 theme_override_colors/font_color = Color(0.886275, 0.952941, 0.862745, 1)
 theme_override_colors/font_outline_color = Color(0, 0, 0, 0.9)
 theme_override_constants/outline_size = 1
@@ -324,11 +360,3 @@ theme_override_font_sizes/font_size = 8
 text = "player"
 horizontal_alignment = 1
 clip_text = true
-
-[node name="HealthBar" type="ProgressBar" parent="OverheadUiCanvasLayer/OverheadPanel/OverheadMargin/OverheadVBox" unique_id=157230094]
-custom_minimum_size = Vector2(76, 8)
-layout_mode = 2
-mouse_filter = 2
-theme_override_styles/background = SubResource("StyleBoxFlat_bg")
-theme_override_styles/fill = SubResource("StyleBoxFlat_fill")
-show_percentage = false

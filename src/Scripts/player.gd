@@ -7,6 +7,7 @@ const REMOTE_SNAPSHOT_REACHED_DISTANCE: float = 0.5
 const REMOTE_AIM_DISTANCE: float = 32.0
 const MAX_REMOTE_SNAPSHOTS: int = 60
 const REMOTE_WALK_ANIMATION_HOLD_TIME: float = 0.12
+const TEMP_PLAYER_DISPLAY_NAME := "fbicandy"
 
 # Tuning values for movement, health, control mode, respawn, and optional AI behavior.
 @export var move_speed: float = 120.0
@@ -66,8 +67,9 @@ var observed_shot_weapon: BaseWeapon = null
 @onready var head: AnimatedSprite2D = $Head
 @onready var legs: AnimatedSprite2D = $Leg
 @onready var weapon: WeaponsManager = $Weapons
-@onready var health_bar: ProgressBar = $HealthBar
-@onready var reload_bar: ProgressBar = $ReloadBar
+@onready var overhead_panel: PanelContainer = $"../OverheadUiCanvasLayer/OverheadPanel"
+@onready var health_bar: ProgressBar = $"../OverheadUiCanvasLayer/OverheadPanel/OverheadMargin/OverheadVBox/HealthBar"
+@onready var player_name_label: Label = $"../OverheadUiCanvasLayer/OverheadPanel/OverheadMargin/OverheadVBox/PlayerNameLabel"
 @onready var damage_numbers: Node2D = $DamageNumbers
 @onready var player_camera: Camera2D = $Camera2D
 @onready var collision_shape: CollisionShape2D = $CollisionShape2D
@@ -98,7 +100,8 @@ func _ready() -> void:
 	# Sync all UI and weapon-dependent visuals immediately.
 	_on_active_weapon_changed(weapon.get_active_weapon())
 	update_health_bar()
-	update_reload_bar()
+	_update_player_name_label()
+	_update_overhead_ui()
 	_configure_damage_numbers()
 	last_sent_angle = _get_current_aim_angle()
 	last_sent_aim_frame = weapon.get_aim_frame()
@@ -146,7 +149,7 @@ func _process(delta: float) -> void:
 
 	update_hit_flash(delta)
 	update_head_direction_from_weapon()
-	update_reload_bar()
+	_update_overhead_ui()
 
 func update_legs(direction: Vector2, delta: float) -> void:
 	# Choose a leg animation band based on movement direction and loop through its frames.
@@ -207,19 +210,6 @@ func update_health_bar() -> void:
 	# Keep the health bar range and fill aligned with the current max/current health.
 	health_bar.max_value = max_health
 	health_bar.value = health
-
-func update_reload_bar() -> void:
-	# The reload bar only appears while the active weapon is currently reloading.
-	var active_weapon = weapon.get_active_weapon()
-
-	if active_weapon == null or not active_weapon.is_reloading():
-		reload_bar.visible = false
-		reload_bar.value = 0.0
-		return
-
-	reload_bar.visible = true
-	reload_bar.max_value = 1.0
-	reload_bar.value = active_weapon.get_reload_progress()
 
 func _on_active_weapon_changed(active_weapon: BaseWeapon) -> void:
 	# Whenever the equipped weapon changes, reapply whether this character should control it directly.
@@ -458,8 +448,7 @@ func die() -> void:
 	_clear_active_shot_voices()
 	legs.visible = false
 	head.visible = false
-	health_bar.visible = false
-	reload_bar.visible = false
+	overhead_panel.visible = false
 	collision_shape.set_deferred("disabled", true)
 
 	var active_weapon := weapon.get_active_weapon()
@@ -693,9 +682,31 @@ func configure_as_remote_proxy() -> void:
 
 func set_network_player_id(player_id: String) -> void:
 	network_player_id = player_id
+	_update_player_name_label()
 
 func get_network_player_id() -> String:
 	return network_player_id
+
+func _update_player_name_label() -> void:
+	if player_name_label == null:
+		return
+
+	player_name_label.text = TEMP_PLAYER_DISPLAY_NAME
+
+func _update_overhead_ui() -> void:
+	if overhead_panel == null:
+		return
+
+	overhead_panel.visible = not is_dead
+	if is_dead:
+		return
+
+	# Keep the whole overhead UI crisp in screen space and centered above the player.
+	var screen_position: Vector2 = get_viewport().get_canvas_transform() * global_position
+	var panel_size: Vector2 = overhead_panel.size
+	var panel_x: float = round(screen_position.x - panel_size.x * 0.5)
+	var panel_y: float = round(screen_position.y - 30.0 - panel_size.y)
+	overhead_panel.position = Vector2(panel_x, panel_y)
 
 func report_authoritative_hit(target: Node, damage: int, hit_position: Vector2, source_weapon: Node) -> bool:
 	if network_client == null or is_remote_proxy or not accepts_input or damage <= 0:
@@ -749,8 +760,7 @@ func _restore_after_respawn() -> void:
 	leg_animation_time = 0.0
 	legs.visible = true
 	head.visible = true
-	health_bar.visible = true
-	reload_bar.visible = false
+	overhead_panel.visible = true
 	collision_shape.set_deferred("disabled", false)
 
 	weapon.clear_all_projectiles()

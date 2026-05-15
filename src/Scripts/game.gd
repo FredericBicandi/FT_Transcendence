@@ -6,14 +6,10 @@ const PLAYER_SCENE: PackedScene = preload("res://src/Objects/player.tscn")
 @onready var player = $Player
 @onready var player_body = $Player/CharacterBody2D
 @onready var weapons: WeaponsManager = $Player/CharacterBody2D/Weapons
-@onready var weapon_panel: Control = $WeaponSwitcher/CanvasLayer/WeaponHud
-@onready var weapon_icon: TextureRect = $WeaponSwitcher/CanvasLayer/WeaponHud/MarginContainer/VBoxContainer/WeaponIcon
-@onready var weapon_name: Label = $WeaponSwitcher/CanvasLayer/WeaponHud/MarginContainer/VBoxContainer/WeaponName
-@onready var ammo_label: Label = $WeaponSwitcher/CanvasLayer/WeaponHud/MarginContainer/VBoxContainer/AmmoLabel
-@onready var respawn_overlay: ColorRect = $RespawnUi/CanvasLayer/RespawnOverlay
-@onready var respawn_message: Label = $RespawnUi/CanvasLayer/RespawnOverlay/CenterContainer/VBoxContainer/RespawnMessage
-@onready var respawn_countdown: Label = $RespawnUi/CanvasLayer/RespawnOverlay/CenterContainer/VBoxContainer/RespawnCountdown
-@onready var timer_label: Label = $MatchUi/CanvasLayer/TimerLabel
+@onready var weapon_switcher_ui: Node = $WeaponSwitcher
+@onready var respawn_ui: Node = $RespawnUi
+@onready var timer_ui: Node = $Timer
+@onready var leaderboard_ui: Node = $Leaderboard
 @onready var network_client: NetworkClient = get_tree().get_first_node_in_group("network_client") as NetworkClient
 
 var observed_weapon: BaseWeapon
@@ -29,8 +25,8 @@ func _ready() -> void:
 	_on_active_weapon_changed(weapons.get_active_weapon())
 	_connect_network_signals()
 	apply_network_snapshot()
-	update_respawn_overlay()
-	update_match_ui()
+	respawn_ui.call("update_for_player", player_body)
+	timer_ui.call("set_remaining_seconds", remaining_match_seconds)
 	Input.set_mouse_mode(Input.MOUSE_MODE_HIDDEN)
 
 func _process(delta: float) -> void:
@@ -38,8 +34,8 @@ func _process(delta: float) -> void:
 	if not match_has_ended and remaining_match_seconds > 0.0:
 		remaining_match_seconds = maxf(remaining_match_seconds - delta, 0.0)
 
-	update_respawn_overlay()
-	update_match_ui()
+	respawn_ui.call("update_for_player", player_body)
+	timer_ui.call("set_remaining_seconds", remaining_match_seconds)
 
 func _on_active_weapon_changed(weapon: BaseWeapon) -> void:
 	# Stop listening to the old weapon before tracking the newly equipped one.
@@ -48,35 +44,16 @@ func _on_active_weapon_changed(weapon: BaseWeapon) -> void:
 
 	observed_weapon = weapon
 
-	# If no weapon is active, hide the HUD instead of showing stale data.
+	# Let the dedicated weapon HUD scene own all visual updates.
+	weapon_switcher_ui.call("show_weapon", observed_weapon)
 	if observed_weapon == null:
-		weapon_panel.visible = false
-		weapon_icon.texture = null
 		return
 
-	# Fill the HUD from the new weapon and subscribe to future ammo updates.
-	weapon_panel.visible = true
-	weapon_icon.texture = observed_weapon.get_weapon_icon()
-	weapon_name.text = observed_weapon.get_weapon_name()
 	observed_weapon.ammo_changed.connect(_on_ammo_changed)
 	_on_ammo_changed(observed_weapon.get_current_ammo(), observed_weapon.get_magazine_size())
 
 func _on_ammo_changed(current_ammo: int, max_ammo: int) -> void:
-	# Show current magazine ammo in a compact weapon HUD format.
-	ammo_label.text = "%d/%d" % [current_ammo, max_ammo]
-
-func update_respawn_overlay() -> void:
-	# Read death and respawn state directly from the player body script.
-	var is_dead: bool = bool(player_body.get("is_dead"))
-	respawn_overlay.visible = is_dead
-
-	if not is_dead:
-		return
-
-	# While dead, show a simple countdown until the player becomes active again.
-	var respawn_timer: float = float(player_body.get("respawn_timer"))
-	respawn_message.text = "Respawning"
-	respawn_countdown.text = "%.1f" % maxf(respawn_timer, 0.0)
+	weapon_switcher_ui.call("set_ammo", current_ammo, max_ammo)
 
 func _connect_network_signals() -> void:
 	if network_client == null:
@@ -116,6 +93,7 @@ func apply_network_snapshot() -> void:
 	local_player_id = network_client.local_player_id
 	room_id = network_client.local_room_id
 	player_body.set_network_player_id(local_player_id)
+	leaderboard_ui.call("set_local_player_id", local_player_id)
 	remaining_match_seconds = maxf(network_client.remaining_seconds, 0.0)
 	match_has_ended = network_client.match_finished
 	player_body.set_match_controls_enabled(not match_has_ended)
@@ -123,25 +101,16 @@ func apply_network_snapshot() -> void:
 	_apply_initial_remote_players(network_client.last_room_joined_message)
 	_apply_cached_remote_players()
 
-func update_match_ui() -> void:
-	timer_label.text = _format_match_time(remaining_match_seconds)
-
-func _format_match_time(total_seconds: float) -> String:
-	var clamped_seconds := maxi(int(ceil(maxf(total_seconds, 0.0))), 0)
-	var minutes := clamped_seconds / 60
-	var seconds := clamped_seconds % 60
-	return "%02d:%02d" % [minutes, seconds]
-
 func _on_room_joined(message: Dictionary) -> void:
 	local_player_id = str(message.get("playerId", ""))
 	room_id = str(message.get("roomId", ""))
 	player_body.set_network_player_id(local_player_id)
+	leaderboard_ui.call("set_local_player_id", local_player_id)
 	remaining_match_seconds = maxf(float(message.get("remainingSeconds", 0.0)), 0.0)
 	match_has_ended = false
 	player_body.set_match_controls_enabled(true)
 	_apply_local_player_state(message)
 	_apply_initial_remote_players(message)
-	update_match_ui()
 
 func _on_time_synced(message: Dictionary) -> void:
 	var synced_room_id := str(message.get("roomId", ""))
@@ -149,7 +118,6 @@ func _on_time_synced(message: Dictionary) -> void:
 		return
 
 	remaining_match_seconds = maxf(float(message.get("remainingSeconds", remaining_match_seconds)), 0.0)
-	update_match_ui()
 
 func _on_player_move_received(message: Dictionary) -> void:
 	var player_id := str(message.get("playerId", ""))
@@ -194,7 +162,6 @@ func _on_match_ended(message: Dictionary) -> void:
 	match_has_ended = true
 	remaining_match_seconds = 0.0
 	player_body.set_match_controls_enabled(false)
-	update_match_ui()
 
 func _on_bullet_spawn_received(message: Dictionary) -> void:
 	var player_id := str(message.get("playerId", ""))

@@ -1,0 +1,180 @@
+[gd_scene format=3 uid="uid://torw2ug24653"]
+
+[ext_resource type="Script" uid="uid://ddhwolxoyra8n" path="res://src/Scripts/game.gd" id="1_dc36d"]
+[ext_resource type="PackedScene" uid="uid://ctsjqy1slixm8" path="res://src/Scenes/map.tscn" id="1_f4gu5"]
+[ext_resource type="PackedScene" uid="uid://byeoim577yy55" path="res://src/Objects/player.tscn" id="2_mdaci"]
+[ext_resource type="PackedScene" uid="uid://d2656rq6f72ub" path="res://src/Scenes/equipments.tscn" id="4_3rp81"]
+[ext_resource type="PackedScene" uid="uid://daaxgnf8jlf6p" path="res://src/Scenes/respawn.tscn" id="5_b2r7h"]
+[ext_resource type="Texture2D" uid="uid://brbxpwntxiyc7" path="res://Assets/Textures/cursor.png" id="7_6bcpe"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_leaderboard_panel"]
+bg_color = Color(0.0431373, 0.054902, 0.0823529, 0.92)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.380392, 0.529412, 0.815686, 0.55)
+corner_radius_top_left = 18
+corner_radius_top_right = 18
+corner_radius_bottom_right = 18
+corner_radius_bottom_left = 18
+shadow_color = Color(0, 0, 0, 0.3)
+shadow_size = 8
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_leaderboard_header"]
+bg_color = Color(0.215686, 0.341176, 0.623529, 0.95)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_leaderboard_rows"]
+bg_color = Color(1, 1, 1, 0.08)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+
+[sub_resource type="GDScript" id="GDScript_jma1v"]
+script/source = "extends Node2D
+
+func _process(_delta: float) -> void:
+	global_position = get_global_mouse_position()
+"
+
+[node name="Game" type="Node2D" unique_id=1266203192]
+script = ExtResource("1_dc36d")
+
+[node name="Map" parent="." unique_id=433046130 instance=ExtResource("1_f4gu5")]
+
+[node name="Player" parent="." unique_id=284655760 instance=ExtResource("2_mdaci")]
+y_sort_enabled = true
+position = Vector2(173, -307)
+
+[node name="WeaponSwitcher" parent="." unique_id=427891286 instance=ExtResource("4_3rp81")]
+
+[node name="RespawnUi" parent="." unique_id=1627112034 instance=ExtResource("5_b2r7h")]
+
+[node name="MatchUi" type="Node" parent="." unique_id=397145728]
+
+[node name="CanvasLayer" type="CanvasLayer" parent="MatchUi" unique_id=210770445]
+
+[node name="TimerLabel" type="Label" parent="MatchUi/CanvasLayer" unique_id=2065873522]
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -80.0
+offset_top = 16.0
+offset_right = 80.0
+offset_bottom = 72.0
+grow_horizontal = 2
+theme_override_font_sizes/font_size = 48
+text = "10:00"
+horizontal_alignment = 1
+
+[node name="LeaderboardOverlay" type="ColorRect" parent="MatchUi/CanvasLayer" unique_id=764227910]
+visible = false
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0, 0, 0, 0.42)
+
+[node name="CenterContainer" type="CenterContainer" parent="MatchUi/CanvasLayer/LeaderboardOverlay" unique_id=286231156]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="LeaderboardPanel" type="PanelContainer" parent="MatchUi/CanvasLayer/LeaderboardOverlay/CenterContainer" unique_id=991722056]
+custom_minimum_size = Vector2(760, 0)
+layout_mode = 2
+size_flags_horizontal = 4
+theme_override_styles/panel = SubResource("StyleBoxFlat_leaderboard_panel")
+
+[node name="MarginContainer" type="MarginContainer" parent="MatchUi/CanvasLayer/LeaderboardOverlay/CenterContainer/LeaderboardPanel" unique_id=1257695400]
+layout_mode = 2
+theme_override_constants/margin_left = 24
+theme_override_constants/margin_top = 20
+theme_override_constants/margin_right = 24
+theme_override_constants/margin_bottom = 20
+
+[node name="VBoxContainer" type="VBoxContainer" parent="MatchUi/CanvasLayer/LeaderboardOverlay/CenterContainer/LeaderboardPanel/MarginContainer" unique_id=1213821307]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="TitleLabel" type="Label" parent="MatchUi/CanvasLayer/LeaderboardOverlay/CenterContainer/LeaderboardPanel/MarginContainer/VBoxContainer" unique_id=867253609]
+layout_mode = 2
+theme_override_font_sizes/font_size = 24
+text = "Leaderboard"
+horizontal_alignment = 1
+
+[node name="HeaderPanel" type="PanelContainer" parent="MatchUi/CanvasLayer/LeaderboardOverlay/CenterContainer/LeaderboardPanel/MarginContainer/VBoxContainer" unique_id=2046364884]
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_leaderboard_header")
+
+[node name="HeaderMargin" type="MarginContainer" parent="MatchUi/CanvasLayer/LeaderboardOverlay/CenterContainer/LeaderboardPanel/MarginContainer/VBoxContainer/HeaderPanel" unique_id=1135072320]
+layout_mode = 2
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 12
+
+[node name="HeaderColumns" type="GridContainer" parent="MatchUi/CanvasLayer/LeaderboardOverlay/CenterContainer/LeaderboardPanel/MarginContainer/VBoxContainer/HeaderPanel/HeaderMargin" unique_id=2081346771]
+layout_mode = 2
+columns = 4
+
+[node name="PlayerNameHeader" type="Label" parent="MatchUi/CanvasLayer/LeaderboardOverlay/CenterContainer/LeaderboardPanel/MarginContainer/VBoxContainer/HeaderPanel/HeaderMargin/HeaderColumns" unique_id=1194843020]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_font_sizes/font_size = 18
+text = "Player Name"
+
+[node name="KillsHeader" type="Label" parent="MatchUi/CanvasLayer/LeaderboardOverlay/CenterContainer/LeaderboardPanel/MarginContainer/VBoxContainer/HeaderPanel/HeaderMargin/HeaderColumns" unique_id=1875381204]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_font_sizes/font_size = 18
+text = "Kills"
+horizontal_alignment = 1
+
+[node name="DeathsHeader" type="Label" parent="MatchUi/CanvasLayer/LeaderboardOverlay/CenterContainer/LeaderboardPanel/MarginContainer/VBoxContainer/HeaderPanel/HeaderMargin/HeaderColumns" unique_id=94346880]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_font_sizes/font_size = 18
+text = "Deaths"
+horizontal_alignment = 1
+
+[node name="ScoreHeader" type="Label" parent="MatchUi/CanvasLayer/LeaderboardOverlay/CenterContainer/LeaderboardPanel/MarginContainer/VBoxContainer/HeaderPanel/HeaderMargin/HeaderColumns" unique_id=2001066080]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_font_sizes/font_size = 18
+text = "Score"
+horizontal_alignment = 1
+
+[node name="RowsPanel" type="PanelContainer" parent="MatchUi/CanvasLayer/LeaderboardOverlay/CenterContainer/LeaderboardPanel/MarginContainer/VBoxContainer" unique_id=1788598200]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_styles/panel = SubResource("StyleBoxFlat_leaderboard_rows")
+
+[node name="RowsMargin" type="MarginContainer" parent="MatchUi/CanvasLayer/LeaderboardOverlay/CenterContainer/LeaderboardPanel/MarginContainer/VBoxContainer/RowsPanel" unique_id=733711562]
+layout_mode = 2
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 14
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 14
+
+[node name="RowsContainer" type="VBoxContainer" parent="MatchUi/CanvasLayer/LeaderboardOverlay/CenterContainer/LeaderboardPanel/MarginContainer/VBoxContainer/RowsPanel/RowsMargin" unique_id=1200855404]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Cursor" type="Node2D" parent="." unique_id=1106131925]
+script = SubResource("GDScript_jma1v")
+
+[node name="Sprite2D" type="Sprite2D" parent="Cursor" unique_id=1461886096]
+z_index = 4
+scale = Vector2(0.5, 0.5)
+texture = ExtResource("7_6bcpe")

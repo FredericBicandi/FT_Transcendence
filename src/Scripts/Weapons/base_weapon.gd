@@ -3,6 +3,7 @@ extends Node2D
 
 # Shared weapon stats and per-angle sprite setup live in WeaponData.
 const WeaponData = preload("res://src/Scripts/Weapons/weapon_data.gd")
+const Projectile = preload("res://src/Scripts/Weapons/projectile.gd")
 
 # UI and game systems can listen to this to refresh ammo counters.
 signal ammo_changed(current_ammo: int, max_ammo: int)
@@ -141,6 +142,24 @@ func get_bullet_frame() -> int:
 
 	return current_frame_index
 
+func get_projectile_frame_for_direction(direction: Vector2) -> int:
+	return Projectile.get_frame_for_direction(get_weapon_config(), get_bullet_frame(), direction)
+
+func uses_projectile_frame_mapping() -> bool:
+	return Projectile.uses_frame_mapping(get_weapon_config())
+
+func get_pass_over_tilemap_layers() -> Array[String]:
+	return Projectile.get_pass_over_tilemap_layers(get_weapon_config())
+
+func get_bullet_visual_z_index() -> int:
+	return Projectile.get_visual_z_index(get_weapon_config(), gun.z_index)
+
+func get_spawned_bullet_frame(direction: Vector2) -> int:
+	if uses_projectile_frame_mapping():
+		return get_projectile_frame_for_direction(direction)
+
+	return get_bullet_frame()
+
 func shoot() -> void:
 	# Never fire while still cooling down or reloading.
 	if fire_cooldown > 0.0 or reload_cooldown > 0.0:
@@ -209,27 +228,29 @@ func apply_recoil(direction: Vector2, config: Dictionary) -> void:
 func update_bullets(delta: float) -> void:
 	# Use raycasts between frames so fast bullets cannot skip through targets.
 	var space_state := get_world_2d().direct_space_state
+	var config := get_weapon_config()
 
 	for i in range(active_bullets.size() - 1, -1, -1):
 		var bullet_data := active_bullets[i]
-		var bullet: AnimatedSprite2D = bullet_data["node"]
+		var bullet_instance_id := int(bullet_data.get("instance_id", 0))
+		var bullet := instance_from_id(bullet_instance_id) as AnimatedSprite2D
 
 		# Drop stale entries if the visual node was already destroyed somewhere else.
-		if not is_instance_valid(bullet):
+		if bullet == null or not is_instance_valid(bullet):
 			active_bullets.remove_at(i)
 			continue
 
-		# Simulate this bullet's next step and test the path for a hit.
-		var start_position: Vector2 = bullet_data["position"]
-		var bullet_direction: Vector2 = bullet_data["direction"]
-		var bullet_speed: float = bullet_data["speed"]
-		var end_position: Vector2 = start_position + bullet_direction * bullet_speed * delta
+		# Simulate this bullet's next step and test the full segment for a hit.
+		var result := Projectile.tick(bullet_data, delta)
+		var start_position: Vector2 = result["start_position"]
+		var end_position: Vector2 = result["position"]
 		var collision_mask: int = bullet_data["collision_mask"]
 		var damage: int = bullet_data["damage"]
 		var should_collide: bool = bool(bullet_data.get("collides", true))
+		var pass_over_layers: Array[String] = _to_string_array(bullet_data.get("pass_over_layers", []))
 		var hit: Dictionary = {}
 		if should_collide and collision_mask != 0:
-			hit = raycast_bullet(space_state, start_position, end_position, collision_mask)
+			hit = raycast_bullet(space_state, start_position, end_position, collision_mask, pass_over_layers)
 
 		# Stop the bullet on impact, apply damage, and remove it from the active list.
 		if not hit.is_empty():
@@ -241,20 +262,43 @@ func update_bullets(delta: float) -> void:
 
 		# No impact happened, so keep moving the bullet until its lifetime expires.
 		bullet.global_position = end_position
-		bullet_data["position"] = end_position
-		bullet_data["lifetime"] -= delta
+		Projectile.update_visual_for_velocity(bullet, config, result["velocity"], get_bullet_frame())
 
-		if bullet_data["lifetime"] <= 0.0:
+		if not bool(result["alive"]):
 			bullet.queue_free()
 			active_bullets.remove_at(i)
 			continue
 
 		active_bullets[i] = bullet_data
 
-func raycast_bullet(space_state: PhysicsDirectSpaceState2D, from: Vector2, to: Vector2, collision_mask: int) -> Dictionary:
-	# The exclude list stops the bullet from colliding with the weapon's owner.
-	var query := PhysicsRayQueryParameters2D.create(from, to, collision_mask, bullet_exclude_rids)
-	return space_state.intersect_ray(query)
+func raycast_bullet(space_state: PhysicsDirectSpaceState2D, from: Vector2, to: Vector2, collision_mask: int, pass_over_layers: Array[String] = []) -> Dictionary:
+	return Projectile.raycast(space_state, from, to, collision_mask, bullet_exclude_rids, pass_over_layers)
+
+func _to_string_array(values: Variant) -> Array[String]:
+	var result: Array[String] = []
+	if not (values is Array):
+		return result
+
+	for value in values:
+		result.append(str(value))
+
+	return result
+
+func _to_int_array(values: Variant) -> Array[int]:
+	var result: Array[int] = []
+	if not (values is Array):
+		return result
+
+	for value in values:
+		result.append(int(value))
+
+	return result
+
+func _build_bullet_runtime_data(bullet: AnimatedSprite2D, direction: Vector2, bullet_lifetime: float, should_collide: bool, damage_override: int, pass_over_layers: Array[String]) -> Dictionary:
+	return Projectile.build_runtime_data(get_weapon_config(), bullet, direction, bullet_lifetime, should_collide, damage_override, collision_mask_override, pass_over_layers)
+
+func _configure_spawned_bullet(bullet: AnimatedSprite2D, direction: Vector2, start_position: Vector2) -> void:
+	Projectile.configure_visual(bullet, bullet_frames, bullet_scale, get_weapon_config(), get_spawned_bullet_frame(direction), gun.z_index, direction, start_position)
 
 func find_owner_body() -> CollisionObject2D:
 	# Walk up the scene tree until we find the first physics body that owns this weapon.
@@ -341,11 +385,10 @@ func reset_state() -> void:
 	# Destroy all still-active bullet nodes before forgetting them.
 	for bullet_data_variant in active_bullets:
 		var bullet_data: Dictionary = bullet_data_variant
-		var bullet_variant: Variant = bullet_data.get("node")
-		if bullet_variant is AnimatedSprite2D:
-			var bullet := bullet_variant as AnimatedSprite2D
-			if bullet != null and is_instance_valid(bullet):
-				bullet.queue_free()
+		var bullet_instance_id := int(bullet_data.get("instance_id", 0))
+		var bullet := instance_from_id(bullet_instance_id) as AnimatedSprite2D
+		if bullet != null and is_instance_valid(bullet):
+			bullet.queue_free()
 
 	active_bullets.clear()
 	emit_ammo_changed()
@@ -412,30 +455,19 @@ func emit_ammo_changed() -> void:
 func _spawn_bullet(direction: Vector2, start_position: Vector2, should_collide: bool, damage_override: int = -1) -> void:
 	var config := get_weapon_config()
 	var bullet_lifetime: float = float(config.get("bullet_lifetime", 1.0))
+	var pass_over_layers: Array[String] = get_pass_over_tilemap_layers()
 
 	var bullet := AnimatedSprite2D.new()
-	bullet.sprite_frames = bullet_frames
-	bullet.animation = &"default"
-	bullet.frame = get_bullet_frame()
-	bullet.global_position = start_position
-	bullet.z_index = gun.z_index
-	bullet.scale = bullet_scale
+	_configure_spawned_bullet(bullet, direction, start_position)
 
 	get_tree().current_scene.add_child(bullet)
 	# Failsafe cleanup: even if projectile state desyncs, the visual bullet cannot remain stuck forever.
-	get_tree().create_timer(bullet_lifetime).timeout.connect(
-		func() -> void:
-			if is_instance_valid(bullet):
-				bullet.queue_free()
-	)
+	var bullet_instance_id := bullet.get_instance_id()
+	get_tree().create_timer(bullet_lifetime).timeout.connect(_on_bullet_lifetime_timeout.bind(bullet_instance_id))
 
-	active_bullets.append({
-		"node": bullet,
-		"position": bullet.global_position,
-		"direction": direction,
-		"speed": config.get("bullet_speed", 300.0),
-		"lifetime": bullet_lifetime,
-		"collision_mask": collision_mask_override if should_collide and collision_mask_override >= 0 else int(config.get("bullet_collision_mask", 1)) if should_collide else 0,
-		"damage": damage_override if damage_override >= 0 else int(config.get("damage", 1)) if should_collide else 0,
-		"collides": should_collide
-	})
+	active_bullets.append(_build_bullet_runtime_data(bullet, direction, bullet_lifetime, should_collide, damage_override, pass_over_layers))
+
+func _on_bullet_lifetime_timeout(bullet_instance_id: int) -> void:
+	var bullet := instance_from_id(bullet_instance_id) as AnimatedSprite2D
+	if bullet != null and is_instance_valid(bullet):
+		bullet.queue_free()

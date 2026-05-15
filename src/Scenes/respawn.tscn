@@ -1,5 +1,7 @@
 [gd_scene format=3 uid="uid://daaxgnf8jlf6p"]
 
+[ext_resource type="Script" uid="uid://csk4yjtmq18or" path="res://src/Scripts/respawn_ui.gd" id="1_respawn_ui"]
+
 [sub_resource type="LabelSettings" id="LabelSettings_84mpq"]
 font_size = 28
 outline_size = 4
@@ -12,6 +14,7 @@ outline_size = 4
 outline_color = Color(0, 0, 0, 0.75)
 
 [node name="respawn" type="Node" unique_id=106679232]
+script = ExtResource("1_respawn_ui")
 
 [node name="CanvasLayer" type="CanvasLayer" parent="." unique_id=1376626428]
 
