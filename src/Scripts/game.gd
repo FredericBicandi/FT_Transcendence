@@ -97,6 +97,7 @@ func apply_network_snapshot() -> void:
 	remaining_match_seconds = maxf(network_client.remaining_seconds, 0.0)
 	match_has_ended = network_client.match_finished
 	player_body.set_match_controls_enabled(not match_has_ended)
+	_apply_leaderboard_snapshot(network_client.last_room_joined_message)
 	_apply_local_player_state(network_client.last_room_joined_message)
 	_apply_initial_remote_players(network_client.last_room_joined_message)
 	_apply_cached_remote_players()
@@ -109,6 +110,7 @@ func _on_room_joined(message: Dictionary) -> void:
 	remaining_match_seconds = maxf(float(message.get("remainingSeconds", 0.0)), 0.0)
 	match_has_ended = false
 	player_body.set_match_controls_enabled(true)
+	_apply_leaderboard_snapshot(message)
 	_apply_local_player_state(message)
 	_apply_initial_remote_players(message)
 
@@ -118,6 +120,7 @@ func _on_time_synced(message: Dictionary) -> void:
 		return
 
 	remaining_match_seconds = maxf(float(message.get("remainingSeconds", remaining_match_seconds)), 0.0)
+	_apply_leaderboard_snapshot(message)
 
 func _on_player_move_received(message: Dictionary) -> void:
 	var player_id := str(message.get("playerId", ""))
@@ -162,6 +165,7 @@ func _on_match_ended(message: Dictionary) -> void:
 	match_has_ended = true
 	remaining_match_seconds = 0.0
 	player_body.set_match_controls_enabled(false)
+	_apply_leaderboard_snapshot(message)
 
 func _on_bullet_spawn_received(message: Dictionary) -> void:
 	var player_id := str(message.get("playerId", ""))
@@ -303,3 +307,11 @@ func _remove_remote_player(player_id: String) -> void:
 	remote_players.erase(player_id)
 	if is_instance_valid(remote_wrapper):
 		remote_wrapper.queue_free()
+
+func _apply_leaderboard_snapshot(message: Dictionary) -> void:
+	if message.is_empty() or not message.has("leaderboard"):
+		return
+
+	var leaderboard_variant: Variant = message.get("leaderboard", [])
+	if leaderboard_variant is Array:
+		leaderboard_ui.call("apply_server_leaderboard_snapshot", leaderboard_variant)

@@ -8,12 +8,6 @@ const LEADERBOARD_COLUMNS := [
 	{"key": "deaths", "title": "Deaths", "alignment": HORIZONTAL_ALIGNMENT_CENTER, "width": 120.0},
 	{"key": "score", "title": "Score", "alignment": HORIZONTAL_ALIGNMENT_CENTER, "width": 120.0}
 ]
-const DUMMY_LEADERBOARD_ENTRIES := [
-	{"player_id": "player_local", "player_name": "You", "kills": 12, "deaths": 3, "score": 2450},
-	{"player_id": "player_2", "player_name": "Phantom", "kills": 9, "deaths": 5, "score": 1880},
-	{"player_id": "player_3", "player_name": "Sable", "kills": 7, "deaths": 6, "score": 1520},
-	{"player_id": "player_4", "player_name": "Rook", "kills": 4, "deaths": 8, "score": 960}
-]
 
 @onready var leaderboard_overlay: ColorRect = $CanvasLayer/LeaderboardOverlay
 @onready var leaderboard_rows_container: VBoxContainer = $CanvasLayer/LeaderboardOverlay/CenterContainer/LeaderboardPanel/MarginContainer/VBoxContainer/RowsPanel/RowsMargin/RowsContainer
@@ -30,7 +24,7 @@ var local_player_id: String = ""
 
 func _ready() -> void:
 	_configure_leaderboard_header()
-	set_leaderboard_entries(DUMMY_LEADERBOARD_ENTRIES)
+	clear_leaderboard_entries()
 
 
 func _input(event: InputEvent) -> void:
@@ -163,10 +157,7 @@ func _get_leaderboard_label_color(entry: Dictionary, column_key: String) -> Colo
 
 func _is_local_leaderboard_entry(entry: Dictionary) -> bool:
 	var entry_player_id := str(entry.get("player_id", ""))
-	if local_player_id != "" and entry_player_id == local_player_id:
-		return true
-
-	return entry_player_id == "player_local" or str(entry.get("player_name", "")) == "You"
+	return local_player_id != "" and entry_player_id == local_player_id
 
 
 func _sort_leaderboard_entries(left: Dictionary, right: Dictionary) -> bool:
