@@ -8,6 +8,7 @@ const REMOTE_AIM_DISTANCE: float = 32.0
 const MAX_REMOTE_SNAPSHOTS: int = 60
 const REMOTE_WALK_ANIMATION_HOLD_TIME: float = 0.12
 const TEMP_PLAYER_DISPLAY_NAME := "fbicandy"
+const DAMAGEABLE_PLAYER_GROUP := "damageable_player"
 
 # Tuning values for movement, health, control mode, respawn, and optional AI behavior.
 @export var move_speed: float = 120.0
@@ -84,6 +85,7 @@ func _ready() -> void:
 
 	if register_as_player_target:
 		add_to_group("player")
+	add_to_group(DAMAGEABLE_PLAYER_GROUP)
 
 	# Configure child systems so they match whether this character is player-controlled or AI-controlled.
 	player_camera.enabled = enable_player_camera
@@ -581,11 +583,11 @@ func _bind_weapon_shot_signal(active_weapon: BaseWeapon) -> void:
 	if observed_shot_weapon != null and not observed_shot_weapon.shot_fired.is_connected(_on_weapon_shot_fired):
 		observed_shot_weapon.shot_fired.connect(_on_weapon_shot_fired)
 
-func _on_weapon_shot_fired(angle_radians: float, _weapon_type: String) -> void:
+func _on_weapon_shot_fired(angle_radians: float, weapon_type: String, start_position: Vector2, target_position: Vector2) -> void:
 	if is_remote_proxy or not accepts_input or not match_controls_enabled or network_client == null:
 		return
 
-	network_client.send_shoot(angle_radians)
+	network_client.send_shoot(angle_radians, weapon_type, global_position, start_position, target_position)
 
 func _schedule_connect_state_sync() -> void:
 	if is_remote_proxy or not accepts_input or network_client == null:
@@ -677,6 +679,7 @@ func configure_as_remote_proxy() -> void:
 	accepts_input = false
 	enable_player_camera = false
 	register_as_player_target = false
+	add_to_group(DAMAGEABLE_PLAYER_GROUP)
 	# Keep remote proxies on the player hit layer so local bullet raycasts can hit them.
 	# Their mask stays empty, and remote movement never calls move_and_slide, so they still do not block gameplay movement.
 	collision_layer = 2
@@ -726,7 +729,11 @@ func _update_overhead_ui() -> void:
 	var panel_y: float = round(screen_position.y - 30.0 - panel_size.y)
 	overhead_panel.position = Vector2(panel_x, panel_y)
 
-func report_authoritative_hit(target: Node, damage: int, hit_position: Vector2, source_weapon: Node) -> bool:
+func create_authoritative_shot_id() -> String:
+	next_shot_sequence += 1
+	return "%s:%d" % [network_player_id if network_player_id != "" else "local", next_shot_sequence]
+
+func report_authoritative_hit(target: Node, damage: int, hit_position: Vector2, source_weapon: Node, shot_id_override: String = "") -> bool:
 	if network_client == null or is_remote_proxy or not accepts_input or damage <= 0:
 		return false
 
@@ -741,8 +748,10 @@ func report_authoritative_hit(target: Node, damage: int, hit_position: Vector2, 
 	if source_weapon != null and source_weapon.has_method("get_weapon_name"):
 		weapon_type = str(source_weapon.call("get_weapon_name"))
 
-	next_shot_sequence += 1
-	var shot_id := "%s:%d" % [network_player_id if network_player_id != "" else "local", next_shot_sequence]
+	var shot_id := shot_id_override
+	if shot_id == "":
+		shot_id = create_authoritative_shot_id()
+
 	var shot_angle := rad_to_deg((hit_position - global_position).angle())
 	if shot_angle < 0.0:
 		shot_angle += 360.0
@@ -750,7 +759,7 @@ func report_authoritative_hit(target: Node, damage: int, hit_position: Vector2, 
 	return true
 
 func apply_authoritative_health_state(new_health: int, authoritative_is_dead: bool, reported_damage: int = 0) -> void:
-	if is_dead and not authoritative_is_dead and respawn_timer > 0.0:
+	if is_dead and not authoritative_is_dead and respawn_timer > 0.0 and not is_remote_proxy:
 		return
 
 	var clamped_health := clampi(new_health, 0, max_health)
@@ -798,9 +807,7 @@ func enqueue_remote_snapshot(position: Vector2, aim_angle_degrees: float = NAN) 
 		remote_latest_angle_degrees = aim_angle_degrees
 
 	if not has_received_remote_snapshot:
-		has_received_remote_snapshot = true
-		global_position = position
-		_apply_remote_aim(position, remote_latest_angle_degrees)
+		snap_remote_snapshot(position, remote_latest_angle_degrees)
 		return
 
 	if remote_snapshot_queue.size() >= MAX_REMOTE_SNAPSHOTS:
@@ -811,6 +818,20 @@ func enqueue_remote_snapshot(position: Vector2, aim_angle_degrees: float = NAN) 
 		"aim_angle_degrees": remote_latest_angle_degrees
 	})
 
+func snap_remote_snapshot(position: Vector2, aim_angle_degrees: float = NAN) -> void:
+	if not is_nan(aim_angle_degrees):
+		remote_latest_angle_degrees = aim_angle_degrees
+
+	has_received_remote_snapshot = true
+	remote_snapshot_queue.clear()
+	global_position = position
+	velocity = Vector2.ZERO
+	remote_last_move_direction = Vector2.ZERO
+	remote_walk_animation_hold_remaining = 0.0
+	update_legs(Vector2.ZERO, 0.0)
+	weapon.update_movement(Vector2.ZERO)
+	_apply_remote_aim(global_position + remote_facing_direction, remote_latest_angle_degrees)
+
 func update_remote_angle(aim_angle_degrees: float) -> void:
 	remote_latest_angle_degrees = aim_angle_degrees
 	_apply_remote_aim(global_position + remote_facing_direction, remote_latest_angle_degrees)
@@ -819,22 +840,51 @@ func set_remote_weapon(weapon_type: String) -> void:
 	if weapon == null or weapon_type == "":
 		return
 
-	weapon.equip_weapon_by_id(weapon_type)
+	var normalized_weapon_type := _normalize_weapon_type(weapon_type)
+	if not weapon.equip_weapon_by_id(normalized_weapon_type):
+		weapon.equip_weapon(StringName(normalized_weapon_type))
+	if weapon.get_active_weapon() == null or weapon.get_active_weapon().get_weapon_name() != normalized_weapon_type:
+		weapon.equip_weapon(StringName(weapon_type))
+
 	var active_weapon := weapon.get_active_weapon()
 	if active_weapon != null:
 		active_weapon.set_input_enabled(false)
 		active_weapon.set_aim_target(global_position + remote_facing_direction * REMOTE_AIM_DISTANCE)
 
-func spawn_remote_bullet_from_server(position: Vector2, angle_radians: float, weapon_type: String) -> void:
+func _normalize_weapon_type(weapon_type: String) -> String:
+	var key := weapon_type.strip_edges().to_lower().replace("_", " ").replace("-", " ")
+	key = " ".join(key.split(" ", false))
+
+	match key:
+		"rocket launcher", "rocketlauncher", "rocket", "rpg":
+			return "Rocket Launcher"
+		"assult rifle", "assault rifle", "assultrifle", "assaultrifle", "rifle", "af rifle", "afrifle":
+			return "Assult rifle"
+		"sniper", "sniper rifle", "sniperrifle":
+			return "Sniper"
+		_:
+			return weapon_type
+
+func spawn_remote_bullet_from_server(position: Vector2, angle_radians: float, weapon_type: String, target_position: Variant = null, start_position: Variant = null) -> void:
 	global_position = position
 	remote_snapshot_queue.clear()
-	remote_latest_angle_degrees = rad_to_deg(angle_radians)
 	set_remote_weapon(weapon_type)
-	_apply_remote_aim(global_position + Vector2.RIGHT.rotated(angle_radians), remote_latest_angle_degrees)
+	var has_target_position := target_position is Vector2
+	var aim_target := global_position + Vector2.RIGHT.rotated(angle_radians)
+	if has_target_position:
+		aim_target = target_position as Vector2
+
+	if has_target_position:
+		var aim_direction := aim_target - global_position
+		remote_latest_angle_degrees = rad_to_deg(aim_direction.angle()) if aim_direction != Vector2.ZERO else rad_to_deg(angle_radians)
+		_apply_remote_aim(aim_target, NAN)
+	else:
+		remote_latest_angle_degrees = rad_to_deg(angle_radians)
+		_apply_remote_aim(aim_target, remote_latest_angle_degrees)
 
 	var active_weapon := weapon.get_active_weapon()
 	if active_weapon != null:
-		active_weapon.spawn_remote_bullet(angle_radians)
+		active_weapon.spawn_remote_bullet(angle_radians, target_position, start_position)
 
 func _process_remote_movement(delta: float) -> void:
 	while not remote_snapshot_queue.is_empty():

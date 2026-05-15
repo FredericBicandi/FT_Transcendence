@@ -282,7 +282,6 @@ autoplay = "Idle"
 
 [node name="Camera2D" type="Camera2D" parent="CharacterBody2D" unique_id=464962696]
 zoom = Vector2(4.5, 4.5)
-position_smoothing_enabled = true
 
 [node name="ShootSound" type="AudioStreamPlayer2D" parent="CharacterBody2D" unique_id=827025043]
 volume_db = -6.0

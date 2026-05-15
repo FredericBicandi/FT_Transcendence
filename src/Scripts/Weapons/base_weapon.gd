@@ -4,10 +4,11 @@ extends Node2D
 # Shared weapon stats and per-angle sprite setup live in WeaponData.
 const WeaponData = preload("res://src/Scripts/Weapons/weapon_data.gd")
 const Projectile = preload("res://src/Scripts/Weapons/projectile.gd")
+const DAMAGEABLE_PLAYER_GROUP := "damageable_player"
 
 # UI and game systems can listen to this to refresh ammo counters.
 signal ammo_changed(current_ammo: int, max_ammo: int)
-signal shot_fired(angle_radians: float, weapon_type: String)
+signal shot_fired(angle_radians: float, weapon_type: String, start_position: Vector2, target_position: Vector2)
 
 # This weapon instance reads all of its gameplay values from WeaponData using this id.
 @export var weapon_id: String = WeaponData.DEFAULT_WEAPON_ID
@@ -190,18 +191,34 @@ func shoot() -> void:
 			owner_body.call("play_shoot_sound", fire_sound)
 
 	# Build the bullet travel direction from the muzzle toward the current target.
-	var shot_target: Vector2 = aim_target_override if has_aim_target_override else get_global_mouse_position()
-	var bullet_offset := shot_target - muzzle_marker.global_position
+	var raw_shot_target: Vector2 = aim_target_override if has_aim_target_override else get_global_mouse_position()
+	var shot_start_position := muzzle_marker.global_position
+	var shot_target := _resolve_shot_target(shot_start_position, raw_shot_target, config)
+	var bullet_offset := shot_target - shot_start_position
 	var bullet_direction := bullet_offset.normalized() if bullet_offset != Vector2.ZERO else Vector2.RIGHT
 	apply_recoil(bullet_direction, config)
-	_spawn_bullet(bullet_direction, muzzle_marker.global_position, true, -1, shot_target)
-	shot_fired.emit(bullet_direction.angle(), get_weapon_name())
+	_spawn_bullet(bullet_direction, shot_start_position, true, -1, shot_target)
+	shot_fired.emit(bullet_direction.angle(), get_weapon_name(), shot_start_position, shot_target)
 
 	if current_ammo <= 0:
 		reload()
 
-func spawn_remote_bullet(angle_radians: float) -> void:
-	var bullet_direction := Vector2.RIGHT.rotated(angle_radians)
+func spawn_remote_bullet(angle_radians: float, target_position: Variant = null, start_position: Variant = null) -> void:
+	var shot_start_position := muzzle_marker.global_position
+	if start_position is Vector2:
+		shot_start_position = start_position as Vector2
+
+	var has_target_position := target_position is Vector2
+	var aim_target := shot_start_position + Vector2.RIGHT.rotated(angle_radians) * 32.0
+	if has_target_position:
+		aim_target = target_position as Vector2
+
+	var bullet_offset := aim_target - shot_start_position
+	var bullet_direction := bullet_offset.normalized() if has_target_position and bullet_offset != Vector2.ZERO else Vector2.RIGHT.rotated(angle_radians)
+	update_aim(aim_target)
+	if not (start_position is Vector2):
+		shot_start_position = muzzle_marker.global_position
+
 	apply_recoil(bullet_direction, get_weapon_config())
 
 	var fire_sound: AudioStream = null
@@ -216,7 +233,8 @@ func spawn_remote_bullet(angle_radians: float) -> void:
 		if owner_body != null and owner_body.has_method("play_shoot_sound"):
 			owner_body.call("play_shoot_sound", fire_sound)
 
-	_spawn_bullet(bullet_direction, muzzle_marker.global_position, true, 0)
+	var replay_target: Variant = aim_target if has_target_position else null
+	_spawn_bullet(bullet_direction, shot_start_position, true, 0, replay_target)
 
 func apply_recoil(direction: Vector2, config: Dictionary) -> void:
 	# Kick the weapon backward, with a little sideways randomness to avoid a rigid feel.
@@ -244,14 +262,15 @@ func update_bullets(delta: float) -> void:
 		var result := Projectile.tick(bullet_data, delta)
 		var start_position: Vector2 = result["start_position"]
 		var end_position: Vector2 = result["position"]
+		var collision_start_position: Vector2 = result.get("collision_start_position", start_position)
+		var collision_end_position: Vector2 = result.get("collision_position", end_position)
 		var collision_mask: int = bullet_data["collision_mask"]
 		var damage: int = bullet_data["damage"]
 		var should_collide: bool = bool(bullet_data.get("collides", true))
 		var pass_over_layers: Array[String] = _to_string_array(bullet_data.get("pass_over_layers", []))
-		var uses_target_arc := bool(config.get("uses_target_arc", false))
 		var hit: Dictionary = {}
-		if should_collide and collision_mask != 0 and not uses_target_arc:
-			hit = raycast_bullet(space_state, start_position, end_position, collision_mask, pass_over_layers)
+		if should_collide and collision_mask != 0:
+			hit = raycast_bullet(space_state, collision_start_position, collision_end_position, collision_mask, pass_over_layers)
 
 		# Stop the bullet on impact, apply damage, and remove it from the active list.
 		if not hit.is_empty():
@@ -270,7 +289,6 @@ func update_bullets(delta: float) -> void:
 
 		# No impact happened, so keep moving the bullet until its lifetime expires.
 		bullet.global_position = end_position
-		Projectile.update_visual_for_arc_progress(bullet, config, float(result.get("arc_progress", 0.0)))
 		Projectile.update_visual_for_velocity(bullet, config, result["velocity"], get_bullet_frame())
 
 		if not bool(result["alive"]):
@@ -282,6 +300,20 @@ func update_bullets(delta: float) -> void:
 
 func raycast_bullet(space_state: PhysicsDirectSpaceState2D, from: Vector2, to: Vector2, collision_mask: int, pass_over_layers: Array[String] = []) -> Dictionary:
 	return Projectile.raycast(space_state, from, to, collision_mask, bullet_exclude_rids, pass_over_layers)
+
+func _resolve_shot_target(start_position: Vector2, target_position: Vector2, config: Dictionary) -> Vector2:
+	if not Projectile.uses_target_arc(config):
+		return target_position
+
+	var collision_mask := collision_mask_override if collision_mask_override >= 0 else int(config.get("bullet_collision_mask", 1))
+	if collision_mask == 0:
+		return target_position
+
+	var hit := raycast_bullet(get_world_2d().direct_space_state, start_position, target_position, collision_mask, get_pass_over_tilemap_layers())
+	if hit.is_empty():
+		return target_position
+
+	return hit.get("position", target_position)
 
 func _to_string_array(values: Variant) -> Array[String]:
 	var result: Array[String] = []
@@ -324,16 +356,15 @@ func apply_bullet_hit(hit: Dictionary, damage: int) -> void:
 	if damage <= 0:
 		return
 
+	var collider := _resolve_damage_target(hit.get("collider"))
 	var explosion_radius := float(get_weapon_config().get("explosion_radius", 0.0))
 	if explosion_radius > 0.0:
-		apply_explosion_damage(hit.get("position", Vector2.ZERO), explosion_radius, damage)
+		apply_explosion_damage(hit.get("position", Vector2.ZERO), explosion_radius, damage, collider)
 		return
 
-	var collider_variant: Variant = hit.get("collider")
-	if collider_variant == null or not (collider_variant is Node):
+	if collider == null:
 		return
 
-	var collider := collider_variant as Node
 	var owner_body := find_owner_body()
 	if owner_body != null and owner_body.has_method("report_authoritative_hit"):
 		if bool(owner_body.call("report_authoritative_hit", collider, damage, hit.get("position", Vector2.ZERO), self)):
@@ -342,9 +373,39 @@ func apply_bullet_hit(hit: Dictionary, damage: int) -> void:
 	if collider != null and collider.has_method("apply_damage"):
 		collider.call("apply_damage", damage, hit.get("position", Vector2.ZERO), self)
 
-func apply_explosion_damage(center: Vector2, radius: float, damage: int) -> void:
-	if radius <= 0.0 or damage <= 0:
+func apply_explosion_damage(center: Vector2, radius: float, max_damage: int, direct_target: Node = null) -> void:
+	if radius <= 0.0 or max_damage <= 0:
 		return
+
+	var owner_body := find_owner_body()
+	var explosion_shot_id := _create_owner_shot_id(owner_body)
+	for target in _collect_explosion_targets(center, radius, direct_target):
+		if target == owner_body:
+			continue
+
+		var damage := _get_explosion_damage_for_target(center, radius, max_damage, target, direct_target)
+		if damage <= 0:
+			continue
+
+		if owner_body != null and owner_body.has_method("report_authoritative_hit"):
+			if bool(owner_body.call("report_authoritative_hit", target, damage, center, self, explosion_shot_id)):
+				continue
+
+		target.call("apply_damage", damage, center, self)
+
+func _collect_explosion_targets(center: Vector2, radius: float, direct_target: Node = null) -> Array[Node]:
+	var targets: Array[Node] = []
+	if direct_target != null and direct_target.has_method("apply_damage"):
+		targets.append(direct_target)
+
+	for candidate in get_tree().get_nodes_in_group(DAMAGEABLE_PLAYER_GROUP):
+		var target := _resolve_damage_target(candidate)
+		if target == null or targets.has(target):
+			continue
+
+		var target_body := target as Node2D
+		if target_body != null and not bool(target.get("is_dead")) and target_body.global_position.distance_to(center) <= radius:
+			targets.append(target)
 
 	var shape := CircleShape2D.new()
 	shape.radius = radius
@@ -355,23 +416,64 @@ func apply_explosion_damage(center: Vector2, radius: float, damage: int) -> void
 	query.collision_mask = int(get_weapon_config().get("bullet_collision_mask", 1))
 	query.exclude = bullet_exclude_rids
 
-	var damaged_bodies: Array[Node] = []
-	var owner_body := find_owner_body()
 	for result in get_world_2d().direct_space_state.intersect_shape(query):
-		var collider_variant: Variant = result.get("collider")
-		if not (collider_variant is Node):
+		var target := _resolve_damage_target(result.get("collider"))
+		if target == null or targets.has(target):
 			continue
 
-		var collider := collider_variant as Node
-		if damaged_bodies.has(collider) or not collider.has_method("apply_damage"):
-			continue
+		targets.append(target)
 
-		damaged_bodies.append(collider)
-		if owner_body != null and owner_body.has_method("report_authoritative_hit"):
-			if bool(owner_body.call("report_authoritative_hit", collider, damage, center, self)):
-				continue
+	var current_scene := get_tree().current_scene
+	if current_scene != null:
+		_collect_scene_explosion_targets(current_scene, center, radius, targets)
 
-		collider.call("apply_damage", damage, center, self)
+	return targets
+
+func _collect_scene_explosion_targets(node: Node, center: Vector2, radius: float, targets: Array[Node]) -> void:
+	var target := _resolve_damage_target(node)
+	if target != null and target == node and not targets.has(target):
+		var target_body := target as Node2D
+		if target_body != null and target_body.global_position.distance_to(center) <= radius:
+			targets.append(target)
+
+	for child in node.get_children():
+		_collect_scene_explosion_targets(child, center, radius, targets)
+
+func _resolve_damage_target(candidate: Variant) -> Node:
+	if not (candidate is Node):
+		return null
+
+	var current := candidate as Node
+	while current != null:
+		if current.has_method("apply_damage"):
+			return current
+
+		current = current.get_parent()
+
+	return null
+
+func _create_owner_shot_id(owner_body: CollisionObject2D) -> String:
+	if owner_body != null and owner_body.has_method("create_authoritative_shot_id"):
+		return str(owner_body.call("create_authoritative_shot_id"))
+
+	return "%s:%d:%d" % [get_weapon_name(), get_instance_id(), Time.get_ticks_usec()]
+
+func _get_explosion_damage_for_target(center: Vector2, radius: float, max_damage: int, target: Node, direct_target: Node = null) -> int:
+	if target == direct_target:
+		return max_damage
+
+	var target_body := target as Node2D
+	if target_body == null:
+		return 0
+
+	var distance := target_body.global_position.distance_to(center)
+	if distance > radius:
+		return 0
+
+	var falloff_power := maxf(float(get_weapon_config().get("explosion_falloff_power", 1.0)), 0.001)
+	var falloff := pow(1.0 - clampf(distance / radius, 0.0, 1.0), falloff_power)
+	var minimum_damage := clampi(int(get_weapon_config().get("explosion_min_damage", 1)), 1, max_damage)
+	return clampi(ceili(float(max_damage) * falloff), minimum_damage, max_damage)
 
 func reload() -> void:
 	# Ignore reload requests if a reload is already running or the magazine is already full.
@@ -513,6 +615,18 @@ func _spawn_bullet(direction: Vector2, start_position: Vector2, should_collide: 
 	active_bullets.append(_build_bullet_runtime_data(bullet, direction, bullet_lifetime, should_collide, damage_override, pass_over_layers, target_position))
 
 func _on_bullet_lifetime_timeout(bullet_instance_id: int) -> void:
+	for i in range(active_bullets.size() - 1, -1, -1):
+		var bullet_data := active_bullets[i]
+		if int(bullet_data.get("instance_id", 0)) != bullet_instance_id:
+			continue
+
+		if bullet_data.has("target_position") and int(bullet_data.get("damage", 0)) > 0:
+			var impact_position: Vector2 = bullet_data.get("ground_position", bullet_data.get("target_position", bullet_data.get("position", Vector2.ZERO)))
+			apply_bullet_hit({ "position": impact_position }, int(bullet_data.get("damage", 0)))
+
+		active_bullets.remove_at(i)
+		break
+
 	var bullet := instance_from_id(bullet_instance_id) as AnimatedSprite2D
 	if bullet != null and is_instance_valid(bullet):
 		bullet.queue_free()

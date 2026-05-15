@@ -16,7 +16,7 @@ signal match_ended(message: Dictionary)
 
 # Keep the server endpoint editable from the scene inspector.
 
-@export var server_url: String = "wss://34.165.50.106:5000/ws"
+@export var server_url: String = "wss://34.165.205.140:5000/ws"
 @export var bypass_tls_validation: bool = true
 @export var connection_timeout_seconds: float = 30.0
 
@@ -186,16 +186,23 @@ func send_weapon_switch(weapon_type: String) -> void:
 		}
 	)
 
-func send_shoot(angle: float) -> void:
+func send_shoot(angle: float, weapon_type: String, shooter_position: Vector2, start_position: Vector2, target_position: Vector2) -> void:
 	if socket.get_ready_state() != WebSocketPeer.STATE_OPEN:
 		return
 
-	_send_json(
-		{
-			"type": "shoot",
-			"angle": angle
-		}
-	)
+	var payload := {
+		"type": "shoot",
+		"angle": angle,
+		"weaponType": weapon_type,
+		"x": shooter_position.x,
+		"y": shooter_position.y,
+		"startX": start_position.x,
+		"startY": start_position.y,
+		"targetX": target_position.x,
+		"targetY": target_position.y
+	}
+
+	_send_json(payload)
 
 func _handle_state_changes(state: int) -> void:
 	if state == WebSocketPeer.STATE_OPEN and not was_open_last_frame:

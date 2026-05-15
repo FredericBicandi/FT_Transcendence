@@ -9,6 +9,7 @@ const RESPAWN_TILE_ATLAS_COORDS := Vector2i(25, 2)
 @onready var map: Node2D = $Map
 @onready var player = $Player
 @onready var player_body = $Player/CharacterBody2D
+@onready var test_bot_body = $TestBot/CharacterBody2D
 @onready var weapons: WeaponsManager = $Player/CharacterBody2D/Weapons
 @onready var weapon_switcher_ui: Node = $WeaponSwitcher
 @onready var respawn_ui: Node = $RespawnUi
@@ -33,6 +34,7 @@ func _ready() -> void:
 	var initial_respawn_position := _get_random_respawn_position()
 	player_body.set_spawn_position(initial_respawn_position)
 	player_body.global_position = initial_respawn_position
+	_place_test_bot()
 
 	# Listen for weapon swaps so the HUD can follow whichever weapon is currently equipped.
 	weapons.active_weapon_changed.connect(_on_active_weapon_changed)
@@ -65,6 +67,38 @@ func _on_active_weapon_changed(weapon: BaseWeapon) -> void:
 
 	observed_weapon.ammo_changed.connect(_on_ammo_changed)
 	_on_ammo_changed(observed_weapon.get_current_ammo(), observed_weapon.get_magazine_size())
+
+func _place_test_bot() -> void:
+	if test_bot_body == null:
+		return
+
+	var bot_position := _get_map_center_position()
+	test_bot_body.global_position = bot_position
+	test_bot_body.set_spawn_position(bot_position)
+
+func _get_map_center_position() -> Vector2:
+	if map == null:
+		return player_body.global_position
+
+	var min_position := Vector2(INF, INF)
+	var max_position := Vector2(-INF, -INF)
+	var has_map_cells := false
+
+	for child in map.get_children():
+		var layer := child as TileMapLayer
+		if layer == null or layer.name == "RespawnPoints":
+			continue
+
+		for cell in layer.get_used_cells():
+			var cell_position := layer.to_global(layer.map_to_local(cell))
+			min_position = min_position.min(cell_position)
+			max_position = max_position.max(cell_position)
+			has_map_cells = true
+
+	if not has_map_cells:
+		return player_body.global_position
+
+	return min_position.lerp(max_position, 0.5)
 
 func _on_ammo_changed(current_ammo: int, max_ammo: int) -> void:
 	weapon_switcher_ui.call("set_ammo", current_ammo, max_ammo)
@@ -192,15 +226,59 @@ func _on_bullet_spawn_received(message: Dictionary) -> void:
 	if remote_body == null:
 		return
 
-	var weapon_type := str(message.get("weaponType", message.get("weapon", "")))
-	if weapon_type == "":
-		weapon_type = remote_body.weapon.get_active_weapon().get_weapon_name() if remote_body.weapon != null and remote_body.weapon.get_active_weapon() != null else ""
+	var weapon_type := _get_bullet_weapon_type(message, remote_body)
 
 	remote_body.spawn_remote_bullet_from_server(
 		Vector2(float(message.get("x", remote_body.global_position.x)), float(message.get("y", remote_body.global_position.y))),
 		float(message.get("angle", 0.0)),
-		weapon_type
+		weapon_type,
+		_get_bullet_target_position(message),
+		_get_bullet_start_position(message)
 	)
+
+func _get_bullet_weapon_type(message: Dictionary, remote_body: Player) -> String:
+	for key in ["weaponType", "weapon", "weapon_type", "weaponId", "weapon_id", "weaponHolding"]:
+		if not message.has(key):
+			continue
+
+		var weapon_type := str(message[key])
+		if weapon_type != "":
+			return weapon_type
+
+	return remote_body.weapon.get_active_weapon().get_weapon_name() if remote_body.weapon != null and remote_body.weapon.get_active_weapon() != null else ""
+
+func _get_bullet_start_position(message: Dictionary) -> Variant:
+	if message.has("startX") and message.has("startY"):
+		return Vector2(float(message["startX"]), float(message["startY"]))
+
+	if message.has("muzzleX") and message.has("muzzleY"):
+		return Vector2(float(message["muzzleX"]), float(message["muzzleY"]))
+
+	if message.has("bulletX") and message.has("bulletY"):
+		return Vector2(float(message["bulletX"]), float(message["bulletY"]))
+
+	var start_variant: Variant = message.get("start", message.get("muzzle", null))
+	if typeof(start_variant) == TYPE_DICTIONARY:
+		var start := start_variant as Dictionary
+		if start.has("x") and start.has("y"):
+			return Vector2(float(start["x"]), float(start["y"]))
+
+	return null
+
+func _get_bullet_target_position(message: Dictionary) -> Variant:
+	if message.has("targetX") and message.has("targetY"):
+		return Vector2(float(message["targetX"]), float(message["targetY"]))
+
+	if message.has("target_x") and message.has("target_y"):
+		return Vector2(float(message["target_x"]), float(message["target_y"]))
+
+	var target_variant: Variant = message.get("target", null)
+	if typeof(target_variant) == TYPE_DICTIONARY:
+		var target := target_variant as Dictionary
+		if target.has("x") and target.has("y"):
+			return Vector2(float(target["x"]), float(target["y"]))
+
+	return null
 
 func _get_or_create_remote_player(player_id: String) -> Player:
 	var existing_remote := _get_remote_player(player_id)
@@ -285,14 +363,18 @@ func _apply_remote_player_state(message: Dictionary) -> void:
 	if remote_body == null:
 		return
 
+	var was_dead := remote_body.is_dead
 	var weapon_type := str(message.get("weaponType", message.get("weaponHolding", message.get("weapon", ""))))
 	if weapon_type != "":
 		remote_body.set_remote_weapon(weapon_type)
 
+	var authoritative_is_dead := bool(message.get("isDead", remote_body.is_dead))
+	if message.has("health") and not message.has("isDead"):
+		authoritative_is_dead = int(message["health"]) <= 0
 	if message.has("health"):
 		remote_body.apply_authoritative_health_state(
 			int(message["health"]),
-			bool(message.get("isDead", remote_body.is_dead)),
+			authoritative_is_dead,
 			int(message.get("damage", 0))
 		)
 
@@ -305,13 +387,12 @@ func _apply_remote_player_state(message: Dictionary) -> void:
 		aim_angle_degrees = float(message["aimAngle"])
 
 	if has_position:
-		remote_body.enqueue_remote_snapshot(
-			Vector2(
-				float(message["x"]),
-				float(message["y"])
-			),
-			aim_angle_degrees
-		)
+		var remote_position := Vector2(float(message["x"]), float(message["y"]))
+		var is_respawn_snap := was_dead and not authoritative_is_dead and message.has("health") and int(message["health"]) > 0
+		if is_respawn_snap:
+			remote_body.snap_remote_snapshot(remote_position, aim_angle_degrees)
+		else:
+			remote_body.enqueue_remote_snapshot(remote_position, aim_angle_degrees)
 	elif not is_nan(aim_angle_degrees):
 		remote_body.update_remote_angle(aim_angle_degrees)
 

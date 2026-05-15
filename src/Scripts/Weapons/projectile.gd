@@ -83,6 +83,7 @@ static func build_runtime_data(config: Dictionary, bullet: AnimatedSprite2D, dir
 			target = target_position as Vector2
 
 		runtime_data["target_position"] = target
+		runtime_data["ground_position"] = bullet.global_position
 		runtime_data["arc_height"] = float(config.get("arc_height", 64.0))
 
 	return runtime_data
@@ -91,8 +92,6 @@ static func configure_visual(bullet: AnimatedSprite2D, sprite_frames: SpriteFram
 	bullet.sprite_frames = sprite_frames
 	bullet.animation = &"default"
 	bullet.frame = get_frame_for_direction(config, fallback_frame, direction)
-	if uses_target_arc(config):
-		bullet.frame = int(config.get("arc_ascent_frame", 6))
 	bullet.global_position = start_position
 	bullet.z_index = get_visual_z_index(config, fallback_z_index)
 	bullet.scale = bullet_scale
@@ -126,12 +125,6 @@ static func tick(runtime_data: Dictionary, delta: float) -> Dictionary:
 		"alive": age < lifetime
 	}
 
-static func update_visual_for_arc_progress(bullet: AnimatedSprite2D, config: Dictionary, progress: float) -> void:
-	if not uses_target_arc(config):
-		return
-
-	bullet.frame = int(config.get("arc_ascent_frame", 6)) if progress < 0.5 else int(config.get("arc_descent_frame", 2))
-
 static func update_visual_for_velocity(bullet: AnimatedSprite2D, config: Dictionary, velocity: Vector2, fallback_frame: int) -> void:
 	if not uses_frame_mapping(config) or velocity.length_squared() == 0.0:
 		return
@@ -145,17 +138,19 @@ static func _tick_target_arc(runtime_data: Dictionary, delta: float) -> Dictiona
 	var start_position: Vector2 = runtime_data.get("position", Vector2.ZERO)
 	var launch_position: Vector2 = runtime_data.get("start_position", start_position)
 	var target_position: Vector2 = runtime_data.get("target_position", start_position)
+	var ground_start_position: Vector2 = runtime_data.get("ground_position", launch_position)
 	var age: float = float(runtime_data.get("age", 0.0)) + delta
 	var total_lifetime: float = maxf(float(runtime_data.get("lifetime", 0.0)), 0.001)
 	var progress := clampf(age / total_lifetime, 0.0, 1.0)
 	var arc_height: float = float(runtime_data.get("arc_height", 64.0))
 
-	var end_position := launch_position.lerp(target_position, progress)
-	end_position.y -= sin(progress * PI) * arc_height
+	var ground_end_position := launch_position.lerp(target_position, progress)
+	var end_position := ground_end_position - Vector2(0.0, sin(progress * PI) * arc_height)
 	var velocity := (end_position - start_position) / maxf(delta, 0.0001)
 	var direction: Vector2 = velocity.normalized() if velocity.length_squared() > 0.0 else runtime_data.get("direction", Vector2.RIGHT)
 
 	runtime_data["position"] = end_position
+	runtime_data["ground_position"] = ground_end_position
 	runtime_data["velocity"] = velocity
 	runtime_data["direction"] = direction
 	runtime_data["age"] = age
@@ -164,6 +159,8 @@ static func _tick_target_arc(runtime_data: Dictionary, delta: float) -> Dictiona
 	return {
 		"start_position": start_position,
 		"position": end_position,
+		"collision_start_position": ground_start_position,
+		"collision_position": ground_end_position,
 		"velocity": velocity,
 		"alive": progress < 1.0,
 		"landed": progress >= 1.0,

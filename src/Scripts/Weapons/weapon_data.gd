@@ -90,6 +90,8 @@ const WEAPON_DATA := {
 		"bullet_lifetime": 0.95,
 		"bullet_collision_mask": 3,
 		"explosion_radius": 42.0,
+		"explosion_min_damage": 1,
+		"explosion_falloff_power": 1.0,
 		"move_offset": 0.8,
 		"recoil_distance": 4.5,
 		"recoil_jitter": 0.1,
@@ -99,8 +101,6 @@ const WEAPON_DATA := {
 		"projectile_frame_count": 16,
 		"uses_target_arc": true,
 		"arc_height": 42.0,
-		"arc_ascent_frame": 6,
-		"arc_descent_frame": 2,
 		"passes_over_tilemap_layers": ["Obstacles", "ObsDecor"],
 		"bullet_z_index": 6,
 		"frames": [
