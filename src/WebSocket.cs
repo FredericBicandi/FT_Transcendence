@@ -1,11 +1,13 @@
 using System.Collections.Concurrent;
 using System.Net.WebSockets;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text;
 
 public sealed class Ws
 {
     private static readonly TimeSpan HeartbeatTimeout = TimeSpan.FromMinutes(1);
+    private static readonly TimeSpan PendingJoinTimeout = TimeSpan.FromMinutes(10);
     private static readonly TimeSpan HeartbeatCheckInterval = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan IdleTimeout = TimeSpan.FromSeconds(60);
     private static readonly TimeSpan TimeSyncInterval = TimeSpan.FromSeconds(5);
@@ -18,6 +20,9 @@ public sealed class Ws
     private const double DefaultSpawnX = 0.0;
     private const double DefaultSpawnY = 0.0;
     private const double MaxHitDamage = DefaultPlayerHealth;
+    private const double MinRocketLauncherDamage = 1.0;
+    private const double MaxRocketLauncherDamage = 80.0;
+    private const string RocketLauncherWeaponType = "Rocket Launcher";
 
     private static readonly IReadOnlyDictionary<string, double> ServerWeaponDamage =
         new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
@@ -60,7 +65,8 @@ public sealed class Ws
             playerId,
             roomId = room.RoomId,
             durationSeconds = room.DurationSeconds,
-            remainingSeconds = room.RemainingSeconds
+            remainingSeconds = room.RemainingSeconds,
+            leaderboard = room.LeaderboardSnapshot()
         });
 
         using var connectionLifetime = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
@@ -118,11 +124,21 @@ public sealed class Ws
 
             if (disconnectedRoom is not null)
             {
+                var leaderboard = disconnectedRoom.LeaderboardSnapshot();
+
                 // Only players in the same room should see this player leave.
                 await BroadcastToRoomAsync(disconnectedRoom, new
                 {
                     type = "player_left",
-                    playerId
+                    playerId,
+                    leaderboard
+                });
+
+                await BroadcastToRoomAsync(disconnectedRoom, new
+                {
+                    type = "leaderboard_update",
+                    roomId = disconnectedRoom.RoomId,
+                    leaderboard
                 });
             }
         }
@@ -195,7 +211,8 @@ public sealed class Ws
                     {
                         type = "time_sync",
                         roomId = room.RoomId,
-                        remainingSeconds
+                        remainingSeconds,
+                        leaderboard = room.LeaderboardSnapshot()
                     });
                 }
                 catch (Exception ex)
@@ -218,7 +235,8 @@ public sealed class Ws
         {
             type = "match_ended",
             roomId = room.RoomId,
-            reason = "time_limit"
+            reason = "time_limit",
+            leaderboard = room.LeaderboardSnapshot()
         });
 
         foreach (var playerId in room.PlayerIdsSnapshot())
@@ -276,8 +294,9 @@ public sealed class Ws
             }
 
             var inactiveDuration = DateTimeOffset.UtcNow - client.LastActivityUtc;
+            var timeout = client.HasJoinedGame ? HeartbeatTimeout : PendingJoinTimeout;
 
-            if (inactiveDuration < HeartbeatTimeout)
+            if (inactiveDuration < timeout)
                 continue;
 
             Console.WriteLine($"Heartbeat timeout for {client.PlayerId}: idle for {inactiveDuration.TotalSeconds:F0}s");
@@ -400,6 +419,9 @@ public sealed class Ws
                 if (!TryReadPlayerState(root, message, client.PlayerId, "on_connect", out var x, out var y, out var angle, out var weapon))
                     return;
 
+                if (!rooms.TryGetValue(client.RoomId, out var room))
+                    return;
+
                 var health = client.MarkConnected(x, y, angle, weapon);
                 Console.WriteLine($"On connect from {client.PlayerId}: x={x}, y={y}, angle={angle}, weapon={weapon}, health={health}");
 
@@ -415,6 +437,13 @@ public sealed class Ws
                     weaponType = weapon,
                     health,
                     isDead = false
+                });
+
+                await BroadcastToRoomAsync(client.RoomId, new
+                {
+                    type = "leaderboard_update",
+                    roomId = client.RoomId,
+                    leaderboard = room.LeaderboardSnapshot()
                 });
 
                 return;
@@ -570,7 +599,7 @@ public sealed class Ws
 
             if (type == "shoot")
             {
-                if (!TryReadShootAngle(root, message, client.PlayerId, out var angle))
+                if (!TryReadShoot(root, message, client.PlayerId, out var shoot))
                     return;
 
                 if (!client.TryGetStateSnapshot(out var state))
@@ -585,15 +614,29 @@ public sealed class Ws
                     return;
                 }
 
-                await BroadcastToRoomAsync(client.RoomId, new
+                var bulletSpawn = new Dictionary<string, object>
                 {
-                    type = "bullet_spawn",
-                    playerId = client.PlayerId,
-                    weaponType = state.Weapon,
-                    x = state.X,
-                    y = state.Y,
-                    angle
-                });
+                    ["type"] = "bullet_spawn",
+                    ["playerId"] = client.PlayerId,
+                    ["weaponType"] = shoot.WeaponType ?? state.Weapon,
+                    ["angle"] = shoot.Angle,
+                    ["x"] = shoot.X ?? state.X,
+                    ["y"] = shoot.Y ?? state.Y
+                };
+
+                if (shoot.StartX is not null)
+                    bulletSpawn["startX"] = shoot.StartX.Value;
+
+                if (shoot.StartY is not null)
+                    bulletSpawn["startY"] = shoot.StartY.Value;
+
+                if (shoot.TargetX is not null)
+                    bulletSpawn["targetX"] = shoot.TargetX.Value;
+
+                if (shoot.TargetY is not null)
+                    bulletSpawn["targetY"] = shoot.TargetY.Value;
+
+                await BroadcastToRoomAsync(client.RoomId, bulletSpawn);
 
                 return;
             }
@@ -635,6 +678,9 @@ public sealed class Ws
 
     private async Task ResolveHitAsync(ClientConnection shooter, HitRequest hit)
     {
+        if (!rooms.TryGetValue(shooter.RoomId, out var room))
+            return;
+
         if (!clients.TryGetValue(shooter.PlayerId, out var currentShooter) ||
             currentShooter.RoomId != shooter.RoomId)
         {
@@ -660,14 +706,19 @@ public sealed class Ws
             return;
         }
 
-        if (hit.ShotId is not null && !currentShooter.TryMarkShotId(hit.ShotId))
+        if (hit.ShotId is not null &&
+            !currentShooter.TryMarkShotHit(hit.ShotId, hit.TargetPlayerId))
         {
-            Console.WriteLine($"Rejected duplicate shot {hit.ShotId} from {shooter.PlayerId}");
+            Console.WriteLine($"Rejected duplicate shot {hit.ShotId} against {hit.TargetPlayerId} from {shooter.PlayerId}");
             return;
         }
 
         var damage = ResolveDamage(hit.WeaponType, hit.Damage);
         var result = target.ApplyDamage(damage);
+        var shouldUpdateLeaderboard = result.Damage > 0;
+
+        if (shouldUpdateLeaderboard)
+            room.RecordHit(shooter.PlayerId, target.PlayerId, result.Damage, result.IsDead);
 
         await BroadcastToRoomAsync(shooter.RoomId, new
         {
@@ -679,15 +730,31 @@ public sealed class Ws
             weaponType = hit.WeaponType,
             isDead = result.IsDead
         });
+
+        if (shouldUpdateLeaderboard)
+        {
+            await BroadcastToRoomAsync(room, new
+            {
+                type = "leaderboard_update",
+                roomId = room.RoomId,
+                leaderboard = room.LeaderboardSnapshot()
+            });
+        }
     }
 
     private static double ResolveDamage(string weaponType, double requestedDamage)
     {
+        if (IsRocketLauncher(weaponType))
+            return Math.Clamp(requestedDamage, MinRocketLauncherDamage, MaxRocketLauncherDamage);
+
         if (ServerWeaponDamage.TryGetValue(weaponType, out var configuredDamage))
             return configuredDamage;
 
         return Math.Clamp(requestedDamage, 0, MaxHitDamage);
     }
+
+    private static bool IsRocketLauncher(string weaponType) =>
+        string.Equals(weaponType, RocketLauncherWeaponType, StringComparison.OrdinalIgnoreCase);
 
     private static bool TryReadOptionalRespawnPosition(
         JsonElement root,
@@ -815,9 +882,14 @@ public sealed class Ws
             return false;
 
         if (!Helper.TryGetNumber(root, "damage", out var damage) ||
-            !double.IsFinite(damage) ||
-            damage < 0 ||
-            damage > MaxHitDamage)
+            !double.IsFinite(damage))
+        {
+            Console.WriteLine($"Invalid hit damage from {playerId}: {message}");
+            return false;
+        }
+
+        if (!IsRocketLauncher(weapon) &&
+            (damage < 0 || damage > MaxHitDamage))
         {
             Console.WriteLine($"Invalid hit damage from {playerId}: {message}");
             return false;
@@ -898,12 +970,15 @@ public sealed class Ws
         return true;
     }
 
-    private static bool TryReadShootAngle(
+    private static bool TryReadShoot(
         JsonElement root,
         string message,
         string playerId,
-        out double angle)
+        out ShootRequest shoot)
     {
+        shoot = default;
+
+        double angle;
         if (!Helper.TryGetNumber(root, "angle", out angle) ||
             !double.IsFinite(angle))
         {
@@ -911,6 +986,50 @@ public sealed class Ws
             return false;
         }
 
+        string? weaponType = null;
+        if (root.TryGetProperty("weaponType", out _) || root.TryGetProperty("weapon", out _))
+        {
+            if (!TryReadWeapon(root, message, playerId, "shoot", out var weapon))
+                return false;
+
+            weaponType = weapon;
+        }
+
+        if (!TryReadOptionalNumber(root, "x", message, playerId, "shoot", out var x) ||
+            !TryReadOptionalNumber(root, "y", message, playerId, "shoot", out var y) ||
+            !TryReadOptionalNumber(root, "startX", message, playerId, "shoot", out var startX) ||
+            !TryReadOptionalNumber(root, "startY", message, playerId, "shoot", out var startY) ||
+            !TryReadOptionalNumber(root, "targetX", message, playerId, "shoot", out var targetX) ||
+            !TryReadOptionalNumber(root, "targetY", message, playerId, "shoot", out var targetY))
+        {
+            return false;
+        }
+
+        shoot = new ShootRequest(weaponType, angle, x, y, startX, startY, targetX, targetY);
+        return true;
+    }
+
+    private static bool TryReadOptionalNumber(
+        JsonElement root,
+        string propertyName,
+        string message,
+        string playerId,
+        string messageType,
+        out double? value)
+    {
+        value = null;
+
+        if (!root.TryGetProperty(propertyName, out _))
+            return true;
+
+        if (!Helper.TryGetNumber(root, propertyName, out var parsed) ||
+            !double.IsFinite(parsed))
+        {
+            Console.WriteLine($"Invalid {messageType} {propertyName} from {playerId}: {message}");
+            return false;
+        }
+
+        value = parsed;
         return true;
     }
 
@@ -991,6 +1110,7 @@ public sealed class GameRoom
 
     // Concurrent set of player ids. The byte value is unused.
     private readonly ConcurrentDictionary<string, byte> playerIds = new();
+    private readonly ConcurrentDictionary<string, LeaderboardEntry> leaderboard = new();
 
     private GameRoom(string roomId, DateTime startTimeUtc, DateTime endTimeUtc)
     {
@@ -1031,15 +1151,45 @@ public sealed class GameRoom
                 return false;
 
             playerIds[playerId] = 0;
+            leaderboard.TryAdd(playerId, LeaderboardEntry.Empty(playerId));
             return true;
         }
     }
 
-    public void RemovePlayer(string playerId) =>
+    public void RemovePlayer(string playerId)
+    {
         playerIds.TryRemove(playerId, out _);
+        leaderboard.TryRemove(playerId, out _);
+    }
 
     public string[] PlayerIdsSnapshot() =>
         playerIds.Keys.ToArray();
+
+    public LeaderboardEntry[] LeaderboardSnapshot() =>
+        leaderboard.Values
+            .OrderByDescending(entry => entry.Score)
+            .ThenByDescending(entry => entry.Kills)
+            .ThenBy(entry => entry.Deaths)
+            .ThenBy(entry => entry.PlayerId, StringComparer.Ordinal)
+            .ToArray();
+
+    public void RecordHit(string shooterPlayerId, string targetPlayerId, double damage, bool killed)
+    {
+        leaderboard.AddOrUpdate(
+            shooterPlayerId,
+            LeaderboardEntry.Empty(shooterPlayerId).WithDamage(damage, killed),
+            (_, entry) => entry.WithDamage(damage, killed)
+        );
+
+        if (!killed)
+            return;
+
+        leaderboard.AddOrUpdate(
+            targetPlayerId,
+            LeaderboardEntry.Empty(targetPlayerId).WithDeath(),
+            (_, entry) => entry.WithDeath()
+        );
+    }
 
     public bool MarkEnded()
     {
@@ -1067,6 +1217,18 @@ public readonly record struct HitRequest(
     double Damage,
     string? ShotId);
 
+public readonly record struct ShootRequest(
+    string? WeaponType,
+    double Angle,
+    double? X,
+    double? Y,
+    double? StartX,
+    double? StartY,
+    double? TargetX,
+    double? TargetY);
+
+public readonly record struct ShotTargetKey(string ShotId, string TargetPlayerId);
+
 public readonly record struct HealthSnapshot(double Health, bool IsDead);
 
 public readonly record struct RespawnResult(double Health, bool IsDead, double X, double Y);
@@ -1074,6 +1236,36 @@ public readonly record struct RespawnResult(double Health, bool IsDead, double X
 public readonly record struct DamageResult(double Health, double Damage, bool IsDead);
 
 public readonly record struct PlayerState(double X, double Y, double Angle, string Weapon, double Health, bool IsDead);
+
+public readonly record struct LeaderboardEntry(
+    [property: JsonPropertyName("playerId")]
+    string PlayerId,
+    [property: JsonPropertyName("score")]
+    int Score,
+    [property: JsonPropertyName("kills")]
+    int Kills,
+    [property: JsonPropertyName("deaths")]
+    int Deaths,
+    [property: JsonPropertyName("damageDealt")]
+    double DamageDealt)
+{
+    public static LeaderboardEntry Empty(string playerId) =>
+        new(playerId, 0, 0, 0, 0);
+
+    public LeaderboardEntry WithDamage(double damage, bool killed) =>
+        this with
+        {
+            Score = killed ? Score + 1 : Score,
+            Kills = killed ? Kills + 1 : Kills,
+            DamageDealt = DamageDealt + damage
+        };
+
+    public LeaderboardEntry WithDeath() =>
+        this with
+        {
+            Deaths = Deaths + 1
+        };
+}
 
 public sealed record ClientConnection(string PlayerId, WebSocket Socket, string RoomId)
 {
@@ -1091,13 +1283,24 @@ public sealed record ClientConnection(string PlayerId, WebSocket Socket, string 
     public DateTimeOffset IdleSinceUtc =>
         new(Interlocked.Read(ref idleSinceUtcTicks), TimeSpan.Zero);
 
+    public bool HasJoinedGame
+    {
+        get
+        {
+            lock (stateLock)
+            {
+                return hasState;
+            }
+        }
+    }
+
     private double x;
     private double y;
     private double angle;
     private string weapon = string.Empty;
     private double health = 100.0;
     private bool isDead;
-    private readonly HashSet<string> processedShotIds = new(StringComparer.Ordinal);
+    private readonly HashSet<ShotTargetKey> processedShotHits = new();
 
     public bool TryGetStateSnapshot(out PlayerState state)
     {
@@ -1207,11 +1410,11 @@ public sealed record ClientConnection(string PlayerId, WebSocket Socket, string 
         }
     }
 
-    public bool TryMarkShotId(string shotId)
+    public bool TryMarkShotHit(string shotId, string targetPlayerId)
     {
         lock (stateLock)
         {
-            return processedShotIds.Add(shotId);
+            return processedShotHits.Add(new ShotTargetKey(shotId, targetPlayerId));
         }
     }
 
@@ -1240,7 +1443,7 @@ public sealed record ClientConnection(string PlayerId, WebSocket Socket, string 
             isDead = false;
             x = spawnX;
             y = spawnY;
-            processedShotIds.Clear();
+            processedShotHits.Clear();
 
             return new RespawnResult(health, isDead, x, y);
         }
