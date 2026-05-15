@@ -9,7 +9,12 @@ const LEADERBOARD_COLUMNS := [
 	{"key": "score", "title": "Score", "alignment": HORIZONTAL_ALIGNMENT_CENTER, "width": 120.0}
 ]
 
+@export var tab_visibility_enabled: bool = true
+@export var initially_visible: bool = false
+@export var panel_minimum_size: Vector2 = Vector2(820, 560)
+
 @onready var leaderboard_overlay: ColorRect = $CanvasLayer/LeaderboardOverlay
+@onready var leaderboard_panel: PanelContainer = $CanvasLayer/LeaderboardOverlay/CenterContainer/LeaderboardPanel
 @onready var leaderboard_rows_container: VBoxContainer = $CanvasLayer/LeaderboardOverlay/CenterContainer/LeaderboardPanel/MarginContainer/VBoxContainer/RowsPanel/RowsMargin/RowsContainer
 @onready var leaderboard_header_labels: Array[Label] = [
 	$CanvasLayer/LeaderboardOverlay/CenterContainer/LeaderboardPanel/MarginContainer/VBoxContainer/HeaderPanel/HeaderMargin/HeaderColumns/PlayerNameHeader,
@@ -23,11 +28,16 @@ var local_player_id: String = ""
 
 
 func _ready() -> void:
+	leaderboard_panel.custom_minimum_size = panel_minimum_size
 	_configure_leaderboard_header()
 	clear_leaderboard_entries()
+	set_leaderboard_visible(initially_visible)
 
 
 func _input(event: InputEvent) -> void:
+	if not tab_visibility_enabled:
+		return
+
 	if event is InputEventKey and event.keycode == KEY_TAB and not event.echo:
 		set_leaderboard_visible(event.pressed)
 		get_viewport().set_input_as_handled()
