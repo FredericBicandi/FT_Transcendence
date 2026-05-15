@@ -38,8 +38,8 @@ tile_map_data = PackedByteArray("AAAbANv/CgAEAAYAAAAhANv/CgAEAAYAAAAjAN7/CgAGAAY
 tile_set = ExtResource("1_5bwnj")
 
 [node name="RespawnPoints" type="TileMapLayer" parent="." unique_id=2121267579]
-light_mask = 524289
-visibility_layer = 524289
+light_mask = 524288
+visibility_layer = 524288
 y_sort_enabled = true
 tile_map_data = PackedByteArray("AAAKAOf/CgAKAAAAAAAKAOb/CgAKAAAAAAALAOb/CgAKAAAAAAALAOX/CgAKAAAAAAAKAOX/CgAKAAAAAAAKAOT/CgAKAAAAAAALAOT/CgAKAAAAAAALAOP/CgAKAAAAAAAKAOP/CgAKAAAAAAALAOj/CgAKAAAAAAALAOf/CgAKAAAAAAAKAOj/CgAKAAAAAAAkAP//CgAZAAIAAAAhAPf/CgAZAAIAAAD///3/CgAZAAIAAAD1/9r/CgAZAAIAAAAZANz/CgAZAAIAAAD2/+b/CgAZAAIAAAA=")
 tile_set = ExtResource("1_5bwnj")

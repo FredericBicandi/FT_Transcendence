@@ -1,8 +1,12 @@
 extends Node2D
 
 const PLAYER_SCENE: PackedScene = preload("res://src/Objects/player.tscn")
+const RESPAWN_LAYER_20_MASK: int = 1 << 19
+const RESPAWN_TILE_SOURCE_ID: int = 10
+const RESPAWN_TILE_ATLAS_COORDS := Vector2i(25, 2)
 
 # Cache the player, weapons, and HUD nodes once so the scene can update UI cheaply.
+@onready var map: Node2D = $Map
 @onready var player = $Player
 @onready var player_body = $Player/CharacterBody2D
 @onready var weapons: WeaponsManager = $Player/CharacterBody2D/Weapons
@@ -18,8 +22,18 @@ var local_player_id: String = ""
 var room_id: String = ""
 var remaining_match_seconds: float = 0.0
 var match_has_ended: bool = false
+var respawn_positions: Array[Vector2] = []
+var respawn_rng := RandomNumberGenerator.new()
+var last_respawn_index: int = -1
 
 func _ready() -> void:
+	respawn_rng.randomize()
+	_cache_respawn_positions()
+	player_body.set_respawn_position_provider(Callable(self, "_get_random_respawn_position"))
+	var initial_respawn_position := _get_random_respawn_position()
+	player_body.set_spawn_position(initial_respawn_position)
+	player_body.global_position = initial_respawn_position
+
 	# Listen for weapon swaps so the HUD can follow whichever weapon is currently equipped.
 	weapons.active_weapon_changed.connect(_on_active_weapon_changed)
 	_on_active_weapon_changed(weapons.get_active_weapon())
@@ -98,7 +112,7 @@ func apply_network_snapshot() -> void:
 	match_has_ended = network_client.match_finished
 	player_body.set_match_controls_enabled(not match_has_ended)
 	_apply_leaderboard_snapshot(network_client.last_room_joined_message)
-	_apply_local_player_state(network_client.last_room_joined_message)
+	_apply_local_player_state(network_client.last_room_joined_message, false)
 	_apply_initial_remote_players(network_client.last_room_joined_message)
 	_apply_cached_remote_players()
 
@@ -111,7 +125,7 @@ func _on_room_joined(message: Dictionary) -> void:
 	match_has_ended = false
 	player_body.set_match_controls_enabled(true)
 	_apply_leaderboard_snapshot(message)
-	_apply_local_player_state(message)
+	_apply_local_player_state(message, false)
 	_apply_initial_remote_players(message)
 
 func _on_time_synced(message: Dictionary) -> void:
@@ -152,7 +166,7 @@ func _on_player_health_received(message: Dictionary) -> void:
 		return
 
 	if player_id == local_player_id:
-		_apply_local_player_state(message)
+		_apply_local_player_state(message, false)
 		return
 
 	_apply_remote_player_state(message)
@@ -209,12 +223,14 @@ func _get_or_create_remote_player(player_id: String) -> Player:
 	remote_players[player_id] = remote_wrapper
 	return remote_body
 
-func _apply_local_player_state(message: Dictionary) -> void:
+func _apply_local_player_state(message: Dictionary, should_apply_position: bool = true) -> void:
 	if message.is_empty():
 		return
 
-	if message.has("x") and message.has("y"):
-		player_body.global_position = Vector2(float(message["x"]), float(message["y"]))
+	if should_apply_position and message.has("x") and message.has("y"):
+		var authoritative_position := Vector2(float(message["x"]), float(message["y"]))
+		player_body.global_position = authoritative_position
+		player_body.set_spawn_position(authoritative_position)
 
 	if message.has("health") or message.has("isDead"):
 		player_body.apply_authoritative_health_state(
@@ -315,3 +331,55 @@ func _apply_leaderboard_snapshot(message: Dictionary) -> void:
 	var leaderboard_variant: Variant = message.get("leaderboard", [])
 	if leaderboard_variant is Array:
 		leaderboard_ui.call("apply_server_leaderboard_snapshot", leaderboard_variant)
+
+func _cache_respawn_positions() -> void:
+	respawn_positions.clear()
+
+	var respawn_layer := _find_respawn_points_layer()
+	if respawn_layer == null:
+		push_error("Game: RespawnPoints TileMapLayer with light mask 20 and visibility layer 20 was not found.")
+		return
+
+	for cell in respawn_layer.get_used_cells():
+		if not _is_respawn_tile(respawn_layer, cell):
+			continue
+
+		respawn_positions.append(respawn_layer.to_global(respawn_layer.map_to_local(cell)))
+
+	if respawn_positions.is_empty():
+		push_error("Game: RespawnPoints exists, but no valid respawn marker tiles were found.")
+
+func _find_respawn_points_layer() -> TileMapLayer:
+	if map == null:
+		return null
+
+	var respawn_layer := map.get_node_or_null("RespawnPoints") as TileMapLayer
+	if respawn_layer == null:
+		return null
+
+	if respawn_layer.light_mask != RESPAWN_LAYER_20_MASK or respawn_layer.visibility_layer != RESPAWN_LAYER_20_MASK:
+		return null
+
+	return respawn_layer
+
+func _is_respawn_tile(respawn_layer: TileMapLayer, cell: Vector2i) -> bool:
+	return (
+		respawn_layer.get_cell_source_id(cell) == RESPAWN_TILE_SOURCE_ID
+		and respawn_layer.get_cell_atlas_coords(cell) == RESPAWN_TILE_ATLAS_COORDS
+	)
+
+func _get_random_respawn_position() -> Vector2:
+	if respawn_positions.is_empty():
+		push_error("Game: Cannot choose a respawn position because no valid respawn marker tiles are cached.")
+		return player_body.spawn_position
+
+	if respawn_positions.size() == 1:
+		last_respawn_index = 0
+		return respawn_positions[0]
+
+	var next_index := respawn_rng.randi_range(0, respawn_positions.size() - 1)
+	while next_index == last_respawn_index:
+		next_index = respawn_rng.randi_range(0, respawn_positions.size() - 1)
+
+	last_respawn_index = next_index
+	return respawn_positions[next_index]

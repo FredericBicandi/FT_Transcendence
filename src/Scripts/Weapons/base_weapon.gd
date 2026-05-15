@@ -194,7 +194,7 @@ func shoot() -> void:
 	var bullet_offset := shot_target - muzzle_marker.global_position
 	var bullet_direction := bullet_offset.normalized() if bullet_offset != Vector2.ZERO else Vector2.RIGHT
 	apply_recoil(bullet_direction, config)
-	_spawn_bullet(bullet_direction, muzzle_marker.global_position, true)
+	_spawn_bullet(bullet_direction, muzzle_marker.global_position, true, -1, shot_target)
 	shot_fired.emit(bullet_direction.angle(), get_weapon_name())
 
 	if current_ammo <= 0:
@@ -248,8 +248,9 @@ func update_bullets(delta: float) -> void:
 		var damage: int = bullet_data["damage"]
 		var should_collide: bool = bool(bullet_data.get("collides", true))
 		var pass_over_layers: Array[String] = _to_string_array(bullet_data.get("pass_over_layers", []))
+		var uses_target_arc := bool(config.get("uses_target_arc", false))
 		var hit: Dictionary = {}
-		if should_collide and collision_mask != 0:
+		if should_collide and collision_mask != 0 and not uses_target_arc:
 			hit = raycast_bullet(space_state, start_position, end_position, collision_mask, pass_over_layers)
 
 		# Stop the bullet on impact, apply damage, and remove it from the active list.
@@ -260,8 +261,16 @@ func update_bullets(delta: float) -> void:
 			active_bullets.remove_at(i)
 			continue
 
+		if bool(result.get("landed", false)):
+			apply_bullet_hit({ "position": end_position }, damage)
+			bullet.global_position = end_position
+			bullet.queue_free()
+			active_bullets.remove_at(i)
+			continue
+
 		# No impact happened, so keep moving the bullet until its lifetime expires.
 		bullet.global_position = end_position
+		Projectile.update_visual_for_arc_progress(bullet, config, float(result.get("arc_progress", 0.0)))
 		Projectile.update_visual_for_velocity(bullet, config, result["velocity"], get_bullet_frame())
 
 		if not bool(result["alive"]):
@@ -294,8 +303,8 @@ func _to_int_array(values: Variant) -> Array[int]:
 
 	return result
 
-func _build_bullet_runtime_data(bullet: AnimatedSprite2D, direction: Vector2, bullet_lifetime: float, should_collide: bool, damage_override: int, pass_over_layers: Array[String]) -> Dictionary:
-	return Projectile.build_runtime_data(get_weapon_config(), bullet, direction, bullet_lifetime, should_collide, damage_override, collision_mask_override, pass_over_layers)
+func _build_bullet_runtime_data(bullet: AnimatedSprite2D, direction: Vector2, bullet_lifetime: float, should_collide: bool, damage_override: int, pass_over_layers: Array[String], target_position: Variant = null) -> Dictionary:
+	return Projectile.build_runtime_data(get_weapon_config(), bullet, direction, bullet_lifetime, should_collide, damage_override, collision_mask_override, pass_over_layers, target_position)
 
 func _configure_spawned_bullet(bullet: AnimatedSprite2D, direction: Vector2, start_position: Vector2) -> void:
 	Projectile.configure_visual(bullet, bullet_frames, bullet_scale, get_weapon_config(), get_spawned_bullet_frame(direction), gun.z_index, direction, start_position)
@@ -315,6 +324,11 @@ func apply_bullet_hit(hit: Dictionary, damage: int) -> void:
 	if damage <= 0:
 		return
 
+	var explosion_radius := float(get_weapon_config().get("explosion_radius", 0.0))
+	if explosion_radius > 0.0:
+		apply_explosion_damage(hit.get("position", Vector2.ZERO), explosion_radius, damage)
+		return
+
 	var collider_variant: Variant = hit.get("collider")
 	if collider_variant == null or not (collider_variant is Node):
 		return
@@ -327,6 +341,37 @@ func apply_bullet_hit(hit: Dictionary, damage: int) -> void:
 
 	if collider != null and collider.has_method("apply_damage"):
 		collider.call("apply_damage", damage, hit.get("position", Vector2.ZERO), self)
+
+func apply_explosion_damage(center: Vector2, radius: float, damage: int) -> void:
+	if radius <= 0.0 or damage <= 0:
+		return
+
+	var shape := CircleShape2D.new()
+	shape.radius = radius
+
+	var query := PhysicsShapeQueryParameters2D.new()
+	query.shape = shape
+	query.transform = Transform2D(0.0, center)
+	query.collision_mask = int(get_weapon_config().get("bullet_collision_mask", 1))
+	query.exclude = bullet_exclude_rids
+
+	var damaged_bodies: Array[Node] = []
+	var owner_body := find_owner_body()
+	for result in get_world_2d().direct_space_state.intersect_shape(query):
+		var collider_variant: Variant = result.get("collider")
+		if not (collider_variant is Node):
+			continue
+
+		var collider := collider_variant as Node
+		if damaged_bodies.has(collider) or not collider.has_method("apply_damage"):
+			continue
+
+		damaged_bodies.append(collider)
+		if owner_body != null and owner_body.has_method("report_authoritative_hit"):
+			if bool(owner_body.call("report_authoritative_hit", collider, damage, center, self)):
+				continue
+
+		collider.call("apply_damage", damage, center, self)
 
 func reload() -> void:
 	# Ignore reload requests if a reload is already running or the magazine is already full.
@@ -452,7 +497,7 @@ func emit_ammo_changed() -> void:
 	# Centralized helper so every ammo update notifies listeners the same way.
 	ammo_changed.emit(current_ammo, get_magazine_size())
 
-func _spawn_bullet(direction: Vector2, start_position: Vector2, should_collide: bool, damage_override: int = -1) -> void:
+func _spawn_bullet(direction: Vector2, start_position: Vector2, should_collide: bool, damage_override: int = -1, target_position: Variant = null) -> void:
 	var config := get_weapon_config()
 	var bullet_lifetime: float = float(config.get("bullet_lifetime", 1.0))
 	var pass_over_layers: Array[String] = get_pass_over_tilemap_layers()
@@ -465,7 +510,7 @@ func _spawn_bullet(direction: Vector2, start_position: Vector2, should_collide: 
 	var bullet_instance_id := bullet.get_instance_id()
 	get_tree().create_timer(bullet_lifetime).timeout.connect(_on_bullet_lifetime_timeout.bind(bullet_instance_id))
 
-	active_bullets.append(_build_bullet_runtime_data(bullet, direction, bullet_lifetime, should_collide, damage_override, pass_over_layers))
+	active_bullets.append(_build_bullet_runtime_data(bullet, direction, bullet_lifetime, should_collide, damage_override, pass_over_layers, target_position))
 
 func _on_bullet_lifetime_timeout(bullet_instance_id: int) -> void:
 	var bullet := instance_from_id(bullet_instance_id) as AnimatedSprite2D

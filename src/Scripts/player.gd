@@ -39,6 +39,7 @@ var leg_animation_time: float = 0.0
 var hit_flash_time: float = 0.0
 var respawn_timer: float = 0.0
 var spawn_position: Vector2
+var respawn_position_provider: Callable = Callable()
 var attack_target: Node = null
 var network_client: NetworkClient = null
 var idle_position_heartbeat_time: float = 0.0
@@ -458,7 +459,7 @@ func die() -> void:
 func respawn() -> void:
 	# Restore health, position, collision, visuals, and weapon state so the player can act again.
 	health = max_health
-	global_position = spawn_position
+	global_position = _resolve_respawn_position()
 	update_health_bar()
 	_restore_after_respawn()
 
@@ -554,6 +555,8 @@ func send_connect_state() -> void:
 	if has_sent_connect_state or is_remote_proxy or not accepts_input or network_client == null:
 		return
 
+	global_position = _resolve_respawn_position()
+
 	if not _send_full_player_state():
 		return
 
@@ -627,7 +630,22 @@ func _request_server_respawn() -> void:
 		return
 
 	has_requested_server_respawn = true
+	global_position = _resolve_respawn_position()
 	_send_respawn_state()
+
+func set_spawn_position(position: Vector2) -> void:
+	spawn_position = position
+
+func set_respawn_position_provider(provider: Callable) -> void:
+	respawn_position_provider = provider
+
+func _resolve_respawn_position() -> Vector2:
+	if respawn_position_provider.is_valid():
+		var next_position_variant: Variant = respawn_position_provider.call()
+		if next_position_variant is Vector2:
+			spawn_position = next_position_variant
+
+	return spawn_position
 
 func _send_full_player_state() -> bool:
 	var active_weapon := weapon.get_active_weapon() if weapon != null else null
@@ -732,6 +750,9 @@ func report_authoritative_hit(target: Node, damage: int, hit_position: Vector2, 
 	return true
 
 func apply_authoritative_health_state(new_health: int, authoritative_is_dead: bool, reported_damage: int = 0) -> void:
+	if is_dead and not authoritative_is_dead and respawn_timer > 0.0:
+		return
+
 	var clamped_health := clampi(new_health, 0, max_health)
 	var took_damage := clamped_health < health
 	health = clamped_health

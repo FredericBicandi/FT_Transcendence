@@ -4,6 +4,9 @@ extends RefCounted
 static func uses_arc_physics(config: Dictionary) -> bool:
 	return bool(config.get("uses_ballistic_arc", false))
 
+static func uses_target_arc(config: Dictionary) -> bool:
+	return bool(config.get("uses_target_arc", false))
+
 static func uses_frame_mapping(config: Dictionary) -> bool:
 	return int(config.get("projectile_frame_count", 0)) > 0
 
@@ -52,15 +55,16 @@ static func raycast(space_state: PhysicsDirectSpaceState2D, from: Vector2, to: V
 
 	return {}
 
-static func build_runtime_data(config: Dictionary, bullet: AnimatedSprite2D, direction: Vector2, bullet_lifetime: float, should_collide: bool, damage_override: int, collision_mask_override: int, pass_over_layers: Array[String]) -> Dictionary:
+static func build_runtime_data(config: Dictionary, bullet: AnimatedSprite2D, direction: Vector2, bullet_lifetime: float, should_collide: bool, damage_override: int, collision_mask_override: int, pass_over_layers: Array[String], target_position: Variant = null) -> Dictionary:
 	var speed: float = float(config.get("bullet_speed", 300.0))
 	var velocity: Vector2 = direction * speed
 	if uses_arc_physics(config):
 		velocity = _build_launch_velocity(config, direction, speed)
 
-	return {
+	var runtime_data := {
 		"instance_id": bullet.get_instance_id(),
 		"position": bullet.global_position,
+		"start_position": bullet.global_position,
 		"direction": direction,
 		"velocity": velocity,
 		"speed": speed,
@@ -73,15 +77,30 @@ static func build_runtime_data(config: Dictionary, bullet: AnimatedSprite2D, dir
 		"gravity": float(config.get("gravity", 0.0))
 	}
 
+	if uses_target_arc(config):
+		var target := bullet.global_position + direction * speed * bullet_lifetime
+		if target_position is Vector2:
+			target = target_position as Vector2
+
+		runtime_data["target_position"] = target
+		runtime_data["arc_height"] = float(config.get("arc_height", 64.0))
+
+	return runtime_data
+
 static func configure_visual(bullet: AnimatedSprite2D, sprite_frames: SpriteFrames, bullet_scale: Vector2, config: Dictionary, fallback_frame: int, fallback_z_index: int, direction: Vector2, start_position: Vector2) -> void:
 	bullet.sprite_frames = sprite_frames
 	bullet.animation = &"default"
 	bullet.frame = get_frame_for_direction(config, fallback_frame, direction)
+	if uses_target_arc(config):
+		bullet.frame = int(config.get("arc_ascent_frame", 6))
 	bullet.global_position = start_position
 	bullet.z_index = get_visual_z_index(config, fallback_z_index)
 	bullet.scale = bullet_scale
 
 static func tick(runtime_data: Dictionary, delta: float) -> Dictionary:
+	if runtime_data.has("target_position"):
+		return _tick_target_arc(runtime_data, delta)
+
 	var start_position: Vector2 = runtime_data.get("position", Vector2.ZERO)
 	var velocity: Vector2 = runtime_data.get("velocity", Vector2.ZERO)
 	var gravity: float = float(runtime_data.get("gravity", 0.0))
@@ -107,11 +126,49 @@ static func tick(runtime_data: Dictionary, delta: float) -> Dictionary:
 		"alive": age < lifetime
 	}
 
+static func update_visual_for_arc_progress(bullet: AnimatedSprite2D, config: Dictionary, progress: float) -> void:
+	if not uses_target_arc(config):
+		return
+
+	bullet.frame = int(config.get("arc_ascent_frame", 6)) if progress < 0.5 else int(config.get("arc_descent_frame", 2))
+
 static func update_visual_for_velocity(bullet: AnimatedSprite2D, config: Dictionary, velocity: Vector2, fallback_frame: int) -> void:
 	if not uses_frame_mapping(config) or velocity.length_squared() == 0.0:
 		return
 
+	if not bool(config.get("projectile_tracks_velocity", true)):
+		return
+
 	bullet.frame = get_frame_for_direction(config, fallback_frame, velocity.normalized())
+
+static func _tick_target_arc(runtime_data: Dictionary, delta: float) -> Dictionary:
+	var start_position: Vector2 = runtime_data.get("position", Vector2.ZERO)
+	var launch_position: Vector2 = runtime_data.get("start_position", start_position)
+	var target_position: Vector2 = runtime_data.get("target_position", start_position)
+	var age: float = float(runtime_data.get("age", 0.0)) + delta
+	var total_lifetime: float = maxf(float(runtime_data.get("lifetime", 0.0)), 0.001)
+	var progress := clampf(age / total_lifetime, 0.0, 1.0)
+	var arc_height: float = float(runtime_data.get("arc_height", 64.0))
+
+	var end_position := launch_position.lerp(target_position, progress)
+	end_position.y -= sin(progress * PI) * arc_height
+	var velocity := (end_position - start_position) / maxf(delta, 0.0001)
+	var direction: Vector2 = velocity.normalized() if velocity.length_squared() > 0.0 else runtime_data.get("direction", Vector2.RIGHT)
+
+	runtime_data["position"] = end_position
+	runtime_data["velocity"] = velocity
+	runtime_data["direction"] = direction
+	runtime_data["age"] = age
+	runtime_data["lifetime"] = total_lifetime
+
+	return {
+		"start_position": start_position,
+		"position": end_position,
+		"velocity": velocity,
+		"alive": progress < 1.0,
+		"landed": progress >= 1.0,
+		"arc_progress": progress
+	}
 
 static func _should_ignore_hit(hit: Dictionary, pass_over_layers: Array[String]) -> bool:
 	if pass_over_layers.is_empty():
@@ -145,8 +202,10 @@ static func _to_int_array(values: Variant) -> Array[int]:
 	return result
 
 static func _build_launch_velocity(config: Dictionary, direction: Vector2, speed: float) -> Vector2:
-	var launch_angle_deg: float = absf(float(config.get("launch_angle_deg", 60.0)))
-	var launch_angle_rad: float = deg_to_rad(launch_angle_deg)
-	var horizontal_sign: float = -1.0 if direction.x < 0.0 else 1.0
-	var launch_direction := Vector2(horizontal_sign * cos(launch_angle_rad), -sin(launch_angle_rad))
-	return launch_direction.normalized() * speed
+	var launch_direction := direction.normalized()
+	if launch_direction == Vector2.ZERO:
+		launch_direction = Vector2.RIGHT
+
+	var velocity := launch_direction * speed
+	velocity.y -= float(config.get("arc_lift", 0.0))
+	return velocity
