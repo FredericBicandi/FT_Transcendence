@@ -16,7 +16,7 @@ signal match_ended(message: Dictionary)
 
 # Keep the server endpoint editable from the scene inspector.
 
-@export var server_url: String = "wss://34.165.205.140:5000/ws"
+@export var server_url: String = "wss://34.27.81.233:5000/ws"
 @export var bypass_tls_validation: bool = true
 @export var connection_timeout_seconds: float = 30.0
 

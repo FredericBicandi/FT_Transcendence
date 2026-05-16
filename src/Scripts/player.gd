@@ -7,7 +7,7 @@ const REMOTE_SNAPSHOT_REACHED_DISTANCE: float = 0.5
 const REMOTE_AIM_DISTANCE: float = 32.0
 const MAX_REMOTE_SNAPSHOTS: int = 60
 const REMOTE_WALK_ANIMATION_HOLD_TIME: float = 0.12
-const TEMP_PLAYER_DISPLAY_NAME := "fbicandy"
+const DEFAULT_PLAYER_DISPLAY_NAME := "Player"
 const DAMAGEABLE_PLAYER_GROUP := "damageable_player"
 
 # Tuning values for movement, health, control mode, respawn, and optional AI behavior.
@@ -712,7 +712,7 @@ func _update_player_name_label() -> void:
 	if player_name_label == null:
 		return
 
-	player_name_label.text = TEMP_PLAYER_DISPLAY_NAME
+	player_name_label.text = network_player_id if network_player_id != "" else DEFAULT_PLAYER_DISPLAY_NAME
 
 func _update_overhead_ui() -> void:
 	if overhead_panel == null:

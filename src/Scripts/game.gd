@@ -9,7 +9,6 @@ const RESPAWN_TILE_ATLAS_COORDS := Vector2i(25, 2)
 @onready var map: Node2D = $Map
 @onready var player = $Player
 @onready var player_body = $Player/CharacterBody2D
-@onready var test_bot_body = $TestBot/CharacterBody2D
 @onready var weapons: WeaponsManager = $Player/CharacterBody2D/Weapons
 @onready var weapon_switcher_ui: Node = $WeaponSwitcher
 @onready var respawn_ui: Node = $RespawnUi
@@ -34,7 +33,6 @@ func _ready() -> void:
 	var initial_respawn_position := _get_random_respawn_position()
 	player_body.set_spawn_position(initial_respawn_position)
 	player_body.global_position = initial_respawn_position
-	_place_test_bot()
 
 	# Listen for weapon swaps so the HUD can follow whichever weapon is currently equipped.
 	weapons.active_weapon_changed.connect(_on_active_weapon_changed)
@@ -67,38 +65,6 @@ func _on_active_weapon_changed(weapon: BaseWeapon) -> void:
 
 	observed_weapon.ammo_changed.connect(_on_ammo_changed)
 	_on_ammo_changed(observed_weapon.get_current_ammo(), observed_weapon.get_magazine_size())
-
-func _place_test_bot() -> void:
-	if test_bot_body == null:
-		return
-
-	var bot_position := _get_map_center_position()
-	test_bot_body.global_position = bot_position
-	test_bot_body.set_spawn_position(bot_position)
-
-func _get_map_center_position() -> Vector2:
-	if map == null:
-		return player_body.global_position
-
-	var min_position := Vector2(INF, INF)
-	var max_position := Vector2(-INF, -INF)
-	var has_map_cells := false
-
-	for child in map.get_children():
-		var layer := child as TileMapLayer
-		if layer == null or layer.name == "RespawnPoints":
-			continue
-
-		for cell in layer.get_used_cells():
-			var cell_position := layer.to_global(layer.map_to_local(cell))
-			min_position = min_position.min(cell_position)
-			max_position = max_position.max(cell_position)
-			has_map_cells = true
-
-	if not has_map_cells:
-		return player_body.global_position
-
-	return min_position.lerp(max_position, 0.5)
 
 func _on_ammo_changed(current_ammo: int, max_ammo: int) -> void:
 	weapon_switcher_ui.call("set_ammo", current_ammo, max_ammo)

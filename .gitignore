@@ -13,6 +13,8 @@
 /out/
 
 # production
+/Build/
+*.tmp
 
 
 # misc
