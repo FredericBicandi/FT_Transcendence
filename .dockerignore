@@ -1,0 +1,11 @@
+node_modules
+.next
+.git
+.agents
+.codex
+npm-debug.log*
+Dockerfile
+dockerfile
+.dockerignore
+README.md
+certificates

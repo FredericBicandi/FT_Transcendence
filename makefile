@@ -8,7 +8,7 @@ build:
 run: clean
 	docker run -d \
 		--name $(CONTAINER) \
-		-p 0.0.0.0:443:443 \
+		-p 127.0.0.1:3000:3000 \
 		$(IMAGE)
 
 stop:
