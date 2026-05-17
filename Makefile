@@ -6,15 +6,31 @@ build:
 	docker build -t $(IMAGE) .
 
 run: stop
-	docker run --name $(CONTAINER) --rm --init -p $(PORT):$(PORT) $(IMAGE)
+	docker run -d \
+		--name $(CONTAINER) \
+		--restart unless-stopped \
+		--init \
+		-p 127.0.0.1:$(PORT):$(PORT) \
+		$(IMAGE)
 
-re: stop build run
+re: clean build run
 
 stop:
 	-@docker stop $(CONTAINER) 2>/dev/null || true
 	-@docker rm -f $(CONTAINER) 2>/dev/null || true
 
 clean: stop
-	-@docker rmi $(IMAGE) 2>/dev/null || true
 
-.PHONY: build run re stop clean
+fclean: clean
+	-@docker rmi -f $(IMAGE) 2>/dev/null || true
+
+logs:
+	docker logs -f $(CONTAINER)
+
+shell:
+	docker exec -it $(CONTAINER) bash
+
+status:
+	docker ps -a | grep $(CONTAINER) || true
+
+.PHONY: build run re stop clean fclean logs shell status
