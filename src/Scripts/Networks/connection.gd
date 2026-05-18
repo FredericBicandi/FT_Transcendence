@@ -2,7 +2,7 @@ extends Node
 
 const GAME_SCENE: PackedScene = preload("res://src/Scenes/game.tscn")
 const PLAYER_SCENE: PackedScene = preload("res://src/Objects/player.tscn")
-const LOBBY_URL: String = "http://localhost:5000"
+const LOBBY_URL: String = "https://pixelfight.live/"
 
 @onready var background_map: Node2D = $Map
 @onready var background_camera: Camera2D = $BackgroundCamera
