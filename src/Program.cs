@@ -9,7 +9,6 @@ var webSocketApp = new Ws(clients);
 app.UseHttpsRedirection();
 app.UseWebSockets();
 
-app.MapGet("/", () => "Game server running");
 app.Map("/ws", webSocketApp.RunWebSocketApp);
 
 app.Run();
