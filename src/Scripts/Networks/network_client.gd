@@ -16,8 +16,8 @@ signal match_ended(message: Dictionary)
 
 # Keep the server endpoint editable from the scene inspector.
 
-@export var server_url: String = "wss://34.27.81.233:5000/ws"
-@export var bypass_tls_validation: bool = true
+@export var server_url: String = "wss://pixelfight.live/ws"
+@export var bypass_tls_validation: bool = false
 @export var connection_timeout_seconds: float = 30.0
 
 var socket: WebSocketPeer = WebSocketPeer.new()
