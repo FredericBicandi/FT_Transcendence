@@ -1,6 +1,6 @@
 [gd_scene format=3 uid="uid://daaxgnf8jlf6p"]
 
-[ext_resource type="Script" uid="uid://csk4yjtmq18or" path="res://src/Scripts/respawn_ui.gd" id="1_respawn_ui"]
+[ext_resource type="Script" uid="uid://csk4yjtmq18or" path="res://src/Scripts/components/respawn_ui.gd" id="1_respawn_ui"]
 
 [sub_resource type="LabelSettings" id="LabelSettings_84mpq"]
 font_size = 28

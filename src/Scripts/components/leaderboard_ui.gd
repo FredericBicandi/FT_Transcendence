@@ -56,6 +56,7 @@ func set_leaderboard_entries(entries: Array) -> void:
 	leaderboard_entries.clear()
 
 	for entry_variant in entries:
+		# Skip broken server entries instead of crashing the HUD
 		if typeof(entry_variant) != TYPE_DICTIONARY:
 			continue
 
@@ -146,6 +147,7 @@ func _create_leaderboard_row(entry: Dictionary) -> Control:
 
 
 func _normalize_leaderboard_entry(entry: Dictionary) -> Dictionary:
+	# Accept both server naming styles so old payloads still work
 	var normalized_player_name := str(entry.get("player_name", entry.get("playerName", "Unknown")))
 	var normalized_player_id := str(entry.get("player_id", entry.get("playerId", normalized_player_name)))
 
@@ -171,6 +173,7 @@ func _is_local_leaderboard_entry(entry: Dictionary) -> bool:
 
 
 func _sort_leaderboard_entries(left: Dictionary, right: Dictionary) -> bool:
+	# Score wins first, then kills, deaths, and name keep the order stable
 	var left_score := int(left.get("score", 0))
 	var right_score := int(right.get("score", 0))
 	if left_score != right_score:

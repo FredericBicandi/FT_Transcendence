@@ -15,6 +15,7 @@ static func get_frame_for_direction(config: Dictionary, fallback_frame: int, dir
 	if projectile_frame_count <= 0:
 		return fallback_frame
 
+	# Pick the closest sprite frame for the projectile direction
 	var angle: float = direction.angle()
 	if angle < 0.0:
 		angle += TAU
@@ -38,6 +39,7 @@ static func raycast(space_state: PhysicsDirectSpaceState2D, from: Vector2, to: V
 	local_excluded_rids.append_array(excluded_rids)
 
 	while true:
+		# Keep raycasting past layers that this projectile is allowed to fly over
 		var query := PhysicsRayQueryParameters2D.create(from, to, collision_mask, local_excluded_rids)
 		var hit: Dictionary = space_state.intersect_ray(query)
 		if hit.is_empty():
@@ -59,6 +61,7 @@ static func build_runtime_data(config: Dictionary, bullet: AnimatedSprite2D, dir
 	var speed: float = float(config.get("bullet_speed", 300.0))
 	var velocity: Vector2 = direction * speed
 	if uses_arc_physics(config):
+		# Add lift for projectiles that use simple ballistic movement
 		velocity = _build_launch_velocity(config, direction, speed)
 
 	var runtime_data := {
@@ -78,6 +81,7 @@ static func build_runtime_data(config: Dictionary, bullet: AnimatedSprite2D, dir
 	}
 
 	if uses_target_arc(config):
+		# Target arcs move visually in the air while collision stays on the ground path
 		var target := bullet.global_position + direction * speed * bullet_lifetime
 		if target_position is Vector2:
 			target = target_position as Vector2
@@ -132,9 +136,11 @@ static func update_visual_for_velocity(bullet: AnimatedSprite2D, config: Diction
 	if not bool(config.get("projectile_tracks_velocity", true)):
 		return
 
+	# Rotate frame choice as the projectile direction changes
 	bullet.frame = get_frame_for_direction(config, fallback_frame, velocity.normalized())
 
 static func _tick_target_arc(runtime_data: Dictionary, delta: float) -> Dictionary:
+	# Move the sprite over an arc but report collision on the floor line
 	var start_position: Vector2 = runtime_data.get("position", Vector2.ZERO)
 	var launch_position: Vector2 = runtime_data.get("start_position", start_position)
 	var target_position: Vector2 = runtime_data.get("target_position", start_position)
@@ -171,6 +177,7 @@ static func _should_ignore_hit(hit: Dictionary, pass_over_layers: Array[String])
 	if pass_over_layers.is_empty():
 		return false
 
+	# Rockets can pass over decor layers without exploding early
 	var collider_variant: Variant = hit.get("collider")
 	if not (collider_variant is TileMapLayer):
 		return false

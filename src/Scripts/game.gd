@@ -5,7 +5,7 @@ const RESPAWN_LAYER_20_MASK: int = 1 << 19
 const RESPAWN_TILE_SOURCE_ID: int = 10
 const RESPAWN_TILE_ATLAS_COORDS := Vector2i(25, 2)
 
-# Cache the player, weapons, and HUD nodes once so the scene can update UI cheaply.
+# Cache scene nodes once so gameplay updates stay cheap
 @onready var map: Node2D = $Map
 @onready var player = $Player
 @onready var player_body = $Player/CharacterBody2D
@@ -29,12 +29,13 @@ var last_respawn_index: int = -1
 func _ready() -> void:
 	respawn_rng.randomize()
 	_cache_respawn_positions()
+	# Let the map own spawn points instead of hardcoding them in the player
 	player_body.set_respawn_position_provider(Callable(self, "_get_random_respawn_position"))
 	var initial_respawn_position := _get_random_respawn_position()
 	player_body.set_spawn_position(initial_respawn_position)
 	player_body.global_position = initial_respawn_position
 
-	# Listen for weapon swaps so the HUD can follow whichever weapon is currently equipped.
+	# Keep the HUD attached to the currently equipped weapon
 	weapons.active_weapon_changed.connect(_on_active_weapon_changed)
 	_on_active_weapon_changed(weapons.get_active_weapon())
 	_connect_network_signals()
@@ -44,7 +45,7 @@ func _ready() -> void:
 	Input.set_mouse_mode(Input.MOUSE_MODE_HIDDEN)
 
 func _process(delta: float) -> void:
-	# The respawn overlay depends on runtime player state, so refresh it every frame.
+	# Tick the local timer between server sync messages
 	if not match_has_ended and remaining_match_seconds > 0.0:
 		remaining_match_seconds = maxf(remaining_match_seconds - delta, 0.0)
 
@@ -52,13 +53,13 @@ func _process(delta: float) -> void:
 	timer_ui.call("set_remaining_seconds", remaining_match_seconds)
 
 func _on_active_weapon_changed(weapon: BaseWeapon) -> void:
-	# Stop listening to the old weapon before tracking the newly equipped one.
+	# Stop listening to the old weapon before tracking the new one
 	if observed_weapon != null and observed_weapon.ammo_changed.is_connected(_on_ammo_changed):
 		observed_weapon.ammo_changed.disconnect(_on_ammo_changed)
 
 	observed_weapon = weapon
 
-	# Let the dedicated weapon HUD scene own all visual updates.
+	# Let the weapon HUD own icon, name, and ammo display
 	weapon_switcher_ui.call("show_weapon", observed_weapon)
 	if observed_weapon == null:
 		return
@@ -73,6 +74,7 @@ func _connect_network_signals() -> void:
 	if network_client == null:
 		return
 
+	# Guard connects because this scene can be recreated after a match
 	if not network_client.room_joined.is_connected(_on_room_joined):
 		network_client.room_joined.connect(_on_room_joined)
 
@@ -104,6 +106,7 @@ func apply_network_snapshot() -> void:
 	if network_client == null:
 		return
 
+	# Rebuild local state from data received before the game scene loaded
 	local_player_id = network_client.local_player_id
 	room_id = network_client.local_room_id
 	player_body.set_network_player_id(local_player_id)
@@ -131,6 +134,7 @@ func _on_room_joined(message: Dictionary) -> void:
 func _on_time_synced(message: Dictionary) -> void:
 	var synced_room_id := str(message.get("roomId", ""))
 	if room_id != "" and synced_room_id != "" and synced_room_id != room_id:
+		# Ignore timer packets from an old room
 		return
 
 	remaining_match_seconds = maxf(float(message.get("remainingSeconds", remaining_match_seconds)), 0.0)
@@ -194,6 +198,7 @@ func _on_bullet_spawn_received(message: Dictionary) -> void:
 
 	var weapon_type := _get_bullet_weapon_type(message, remote_body)
 
+	# Replay the server bullet using the shooter's weapon
 	remote_body.spawn_remote_bullet_from_server(
 		Vector2(float(message.get("x", remote_body.global_position.x)), float(message.get("y", remote_body.global_position.y))),
 		float(message.get("angle", 0.0)),
@@ -214,6 +219,7 @@ func _get_bullet_weapon_type(message: Dictionary, remote_body: Player) -> String
 	return remote_body.weapon.get_active_weapon().get_weapon_name() if remote_body.weapon != null and remote_body.weapon.get_active_weapon() != null else ""
 
 func _get_bullet_start_position(message: Dictionary) -> Variant:
+	# Support old and new server field names
 	if message.has("startX") and message.has("startY"):
 		return Vector2(float(message["startX"]), float(message["startY"]))
 
@@ -251,6 +257,7 @@ func _get_or_create_remote_player(player_id: String) -> Player:
 	if existing_remote != null:
 		return existing_remote
 
+	# Spawn remote players from the same scene so visuals stay identical
 	var remote_wrapper := PLAYER_SCENE.instantiate() as Node2D
 	if remote_wrapper == null:
 		return null
@@ -272,6 +279,7 @@ func _apply_local_player_state(message: Dictionary, should_apply_position: bool 
 		return
 
 	if should_apply_position and message.has("x") and message.has("y"):
+		# Trust server position when it sends one for the local player
 		var authoritative_position := Vector2(float(message["x"]), float(message["y"]))
 		player_body.global_position = authoritative_position
 		player_body.set_spawn_position(authoritative_position)
@@ -308,6 +316,7 @@ func _apply_cached_remote_players() -> void:
 	if network_client == null:
 		return
 
+	# Catch up remote players that moved before this scene existed
 	for snapshot_variant in network_client.remote_player_snapshots.values():
 		if typeof(snapshot_variant) != TYPE_DICTIONARY:
 			continue
@@ -356,6 +365,7 @@ func _apply_remote_player_state(message: Dictionary) -> void:
 		var remote_position := Vector2(float(message["x"]), float(message["y"]))
 		var is_respawn_snap := was_dead and not authoritative_is_dead and message.has("health") and int(message["health"]) > 0
 		if is_respawn_snap:
+			# Respawns should appear immediately at the new spawn point
 			remote_body.snap_remote_snapshot(remote_position, aim_angle_degrees)
 		else:
 			remote_body.enqueue_remote_snapshot(remote_position, aim_angle_degrees)
@@ -382,6 +392,7 @@ func _apply_leaderboard_snapshot(message: Dictionary) -> void:
 func _cache_respawn_positions() -> void:
 	respawn_positions.clear()
 
+	# Read spawn markers from the hidden RespawnPoints layer
 	var respawn_layer := _find_respawn_points_layer()
 	if respawn_layer == null:
 		push_error("Game: RespawnPoints TileMapLayer with light mask 20 and visibility layer 20 was not found.")
@@ -400,7 +411,8 @@ func _find_respawn_points_layer() -> TileMapLayer:
 	if map == null:
 		return null
 
-	var respawn_layer := map.get_node_or_null("RespawnPoints") as TileMapLayer
+	# The map scene keeps tile layers under StaticBody2D
+	var respawn_layer := map.find_child("RespawnPoints", true, false) as TileMapLayer
 	if respawn_layer == null:
 		return null
 
@@ -426,6 +438,7 @@ func _get_random_respawn_position() -> Vector2:
 
 	var next_index := respawn_rng.randi_range(0, respawn_positions.size() - 1)
 	while next_index == last_respawn_index:
+		# Avoid spawning twice in the exact same spot when possible
 		next_index = respawn_rng.randi_range(0, respawn_positions.size() - 1)
 
 	last_respawn_index = next_index

@@ -10,7 +10,7 @@ const REMOTE_WALK_ANIMATION_HOLD_TIME: float = 0.12
 const DEFAULT_PLAYER_DISPLAY_NAME := "Player"
 const DAMAGEABLE_PLAYER_GROUP := "damageable_player"
 
-# Tuning values for movement, health, control mode, respawn, and optional AI behavior.
+# Values designers can tune from the inspector
 @export var move_speed: float = 120.0
 @export var max_health: int = 100
 @export var leg_animation_speed: float = 12.0
@@ -33,7 +33,7 @@ const DAMAGEABLE_PLAYER_GROUP := "damageable_player"
 @export var damage_number_rise_distance: float = 22.0
 @export var damage_number_spread: float = 10.0
 
-# Runtime state for health, death flow, leg animation, hit flash, respawn timing, and AI target tracking.
+# Runtime state for health, network sync, sounds, and remote smoothing
 var health: int
 var is_dead: bool = false
 var leg_animation_time: float = 0.0
@@ -78,7 +78,7 @@ var observed_shot_weapon: BaseWeapon = null
 @onready var shoot_sound: AudioStreamPlayer2D = $ShootSound
 
 func _ready() -> void:
-	# Initialize health, remember where this player should respawn, and register for AI targeting if needed.
+	# Start alive and remember the first spawn position
 	health = max_health
 	spawn_position = global_position
 	network_client = get_tree().get_first_node_in_group("network_client") as NetworkClient
@@ -87,7 +87,7 @@ func _ready() -> void:
 		add_to_group("player")
 	add_to_group(DAMAGEABLE_PLAYER_GROUP)
 
-	# Configure child systems so they match whether this character is player-controlled or AI-controlled.
+	# Match camera and weapon input to this player's control mode
 	player_camera.enabled = enable_player_camera
 	weapon.set_input_enabled(accepts_input)
 	weapon.active_weapon_changed.connect(_on_active_weapon_changed)
@@ -96,11 +96,11 @@ func _ready() -> void:
 	_configure_shoot_sound()
 	get_viewport().size_changed.connect(_on_viewport_size_changed)
 
-	# Let the scene force a starting weapon without changing the weapon scene itself.
+	# Let scenes choose a starting weapon without duplicating weapon scenes
 	if default_weapon_id != "":
 		weapon.equip_weapon_by_id(default_weapon_id)
 
-	# Sync all UI and weapon-dependent visuals immediately.
+	# Sync UI and weapon visuals before the first frame
 	_on_active_weapon_changed(weapon.get_active_weapon())
 	update_health_bar()
 	_update_player_name_label()
@@ -111,7 +111,7 @@ func _ready() -> void:
 	_schedule_connect_state_sync()
 
 func _physics_process(delta: float) -> void:
-	# Dead characters stop moving entirely until respawn.
+	# Dead players cannot move until respawn
 	if is_dead:
 		return
 
@@ -121,12 +121,12 @@ func _physics_process(delta: float) -> void:
 
 	var previous_position := global_position
 
-	# Human-controlled players read movement input here; AI characters stay still and only aim/shoot.
+	# Only local players read keyboard movement here
 	var direction := Input.get_vector("left", "right", "up", "down") if accepts_input and match_controls_enabled else Vector2.ZERO
 	velocity = direction * move_speed
 	move_and_slide()
 
-	# Keep movement animation and equipped weapon sway in sync with the body direction.
+	# Keep legs and weapon sway using the same movement direction
 	update_legs(direction, delta)
 	weapon.update_movement(direction)
 	_report_position_sync(previous_position, delta)
@@ -138,7 +138,7 @@ func _process(delta: float) -> void:
 	if accepts_input:
 		_update_active_shot_mix()
 
-	# Death state counts down to respawn; alive AI-controlled dummies can auto-attack player targets.
+	# Dead players wait for respawn; AI dummies keep attacking while alive
 	if is_dead:
 		respawn_timer = maxf(respawn_timer - delta, 0.0)
 		if respawn_timer == 0.0:
@@ -155,7 +155,7 @@ func _process(delta: float) -> void:
 	_update_overhead_ui()
 
 func update_legs(direction: Vector2, delta: float) -> void:
-	# Choose a leg animation band based on movement direction and loop through its frames.
+	# Pick the walk cycle that matches the movement direction
 	var frame_range := Vector2i(15, 21)
 
 	if direction.x < 0.0:
@@ -169,26 +169,26 @@ func update_legs(direction: Vector2, delta: float) -> void:
 		leg_animation_time = 0.0
 		return
 
-	# Advance through the selected directional walk cycle.
+	# Loop inside the selected walk cycle
 	leg_animation_time += delta * leg_animation_speed
 	var frame_count := frame_range.y - frame_range.x + 1
 	legs.frame = frame_range.x + int(leg_animation_time) % frame_count
 
 func update_head_direction_from_weapon() -> void:
-	# The head uses the same 8-direction aim frame as the active weapon.
+	# Match the head direction to the weapon aim
 	head.frame = weapon.get_aim_frame()
 
 func set_health(value: int) -> void:
-	# Clamp manual health changes so UI and gameplay never see values outside valid bounds.
+	# Clamp health so UI and gameplay stay in valid range
 	health = clampi(value, 0, max_health)
 	update_health_bar()
 
 func apply_damage(amount: int, hit_position: Vector2 = Vector2.ZERO, _source_weapon: Node = null) -> void:
-	# Ignore invalid damage and damage received while already dead.
+	# Ignore damage that should not count
 	if is_dead or amount <= 0:
 		return
 
-	# Apply damage, trigger the hit flash, and die if health reaches zero.
+	# Apply local damage for non-server controlled targets
 	health = maxi(health - amount, 0)
 	hit_flash_time = 0.12
 	update_health_bar()
@@ -198,7 +198,7 @@ func apply_damage(amount: int, hit_position: Vector2 = Vector2.ZERO, _source_wea
 		die()
 
 func update_hit_flash(delta: float) -> void:
-	# Briefly tint the player red after taking damage, then restore the normal colors.
+	# Flash red for a moment after taking damage
 	if hit_flash_time > 0.0:
 		hit_flash_time = maxf(hit_flash_time - delta, 0.0)
 		var flash_weight: float = hit_flash_time / 0.12
@@ -210,12 +210,12 @@ func update_hit_flash(delta: float) -> void:
 		head.modulate = Color.WHITE
 
 func update_health_bar() -> void:
-	# Keep the health bar range and fill aligned with the current max/current health.
+	# Keep the health bar in sync with real health
 	health_bar.max_value = max_health
 	health_bar.value = health
 
 func _on_active_weapon_changed(active_weapon: BaseWeapon) -> void:
-	# Whenever the equipped weapon changes, reapply whether this character should control it directly.
+	# Reapply input rules when a new weapon is equipped
 	if active_weapon == null:
 		return
 
@@ -284,6 +284,7 @@ func _queue_shoot_sound(stream: AudioStream, shot_position: Vector2) -> void:
 	if not accepts_input:
 		return
 
+	# Rate limit repeated gun sounds so busy fights stay readable
 	var stream_key := _get_stream_key(stream)
 	if _is_stream_rate_limited(stream_key):
 		return
@@ -295,6 +296,7 @@ func _queue_shoot_sound(stream: AudioStream, shot_position: Vector2) -> void:
 
 	var same_stream_voices := _get_same_stream_voice_indices(stream_key)
 	if same_stream_voices.size() >= shoot_sound_max_simultaneous_per_stream:
+		# Keep closer shots when too many of the same sound are playing
 		var farthest_voice_index := _find_farthest_voice_index(same_stream_voices)
 		if farthest_voice_index == -1:
 			return
@@ -434,7 +436,7 @@ func _on_viewport_size_changed() -> void:
 	_configure_shoot_sound()
 
 func die() -> void:
-	# Enter the dead state, stop interacting with the world, and hide body/UI visuals until respawn.
+	# Hide and disable the player until respawn
 	if is_dead:
 		return
 
@@ -459,7 +461,7 @@ func die() -> void:
 		active_weapon.set_active(false)
 
 func respawn() -> void:
-	# Restore health, position, collision, visuals, and weapon state so the player can act again.
+	# Restore the player so they can move and shoot again
 	health = max_health
 	global_position = _resolve_respawn_position()
 	update_health_bar()
@@ -469,7 +471,7 @@ func respawn() -> void:
 		_send_respawn_state()
 
 func update_auto_attack() -> void:
-	# AI characters lock onto the nearest valid player target and keep aiming at it.
+	# AI picks a live target and keeps aiming at it
 	if not is_valid_attack_target(attack_target):
 		attack_target = _find_nearest_attack_target()
 		if not is_valid_attack_target(attack_target):
@@ -483,7 +485,7 @@ func update_auto_attack() -> void:
 	if active_weapon == null:
 		return
 
-	# Update aim every frame, but only fire once the target is inside attack range.
+	# Aim first, shoot only when close enough
 	active_weapon.set_aim_target(target_body.global_position)
 
 	if global_position.distance_to(target_body.global_position) > attack_range:
@@ -522,14 +524,14 @@ func _clear_active_shot_voices() -> void:
 	last_shot_time_by_stream.clear()
 
 func is_valid_attack_target(target: Node) -> bool:
-	# Ignore missing, freed, or dead targets so AI can reacquire a live player.
+	# Ignore targets that cannot be attacked anymore
 	if target == null or not is_instance_valid(target):
 		return false
 
 	return not bool(target.get("is_dead"))
 
 func _report_position_sync(previous_position: Vector2, delta: float) -> void:
-	# Only the locally controlled character reports movement or idle heartbeats to the websocket server.
+	# Only the local player reports movement to the server
 	if not accepts_input or not match_controls_enabled or network_client == null:
 		return
 
@@ -542,6 +544,7 @@ func _report_position_sync(previous_position: Vector2, delta: float) -> void:
 	if idle_position_heartbeat_time < POSITION_HEARTBEAT_INTERVAL:
 		return
 
+	# Send idle pings so the server still knows where we are
 	idle_position_heartbeat_time = 0.0
 	_send_ping_position()
 
@@ -576,6 +579,7 @@ func _report_weapon_switch(active_weapon: BaseWeapon) -> void:
 	last_reported_weapon_type = weapon_type
 
 func _bind_weapon_shot_signal(active_weapon: BaseWeapon) -> void:
+	# Rebind shot reporting when the equipped weapon changes
 	if observed_shot_weapon != null and observed_shot_weapon.shot_fired.is_connected(_on_weapon_shot_fired):
 		observed_shot_weapon.shot_fired.disconnect(_on_weapon_shot_fired)
 
@@ -593,6 +597,7 @@ func _schedule_connect_state_sync() -> void:
 	if is_remote_proxy or not accepts_input or network_client == null:
 		return
 
+	# Try now, but also wait for the socket if it is still connecting
 	call_deferred("_try_send_connect_state")
 
 	if has_sent_connect_state:
@@ -631,6 +636,7 @@ func _request_server_respawn() -> void:
 	if has_requested_server_respawn or not accepts_input or network_client == null:
 		return
 
+	# Ask the server to accept this respawn once
 	has_requested_server_respawn = true
 	global_position = _resolve_respawn_position()
 	_send_respawn_state()
@@ -680,8 +686,7 @@ func configure_as_remote_proxy() -> void:
 	enable_player_camera = false
 	register_as_player_target = false
 	add_to_group(DAMAGEABLE_PLAYER_GROUP)
-	# Keep remote proxies on the player hit layer so local bullet raycasts can hit them.
-	# Their mask stays empty, and remote movement never calls move_and_slide, so they still do not block gameplay movement.
+	# Let bullets hit remote proxies without making them block movement
 	collision_layer = 2
 	collision_mask = 0
 	velocity = Vector2.ZERO
@@ -722,7 +727,7 @@ func _update_overhead_ui() -> void:
 	if is_dead:
 		return
 
-	# Keep the whole overhead UI crisp in screen space and centered above the player.
+	# Position the nameplate in screen space so it stays sharp
 	var screen_position: Vector2 = get_viewport().get_canvas_transform() * global_position
 	var panel_size: Vector2 = overhead_panel.size
 	var panel_x: float = round(screen_position.x - panel_size.x * 0.5)
@@ -737,6 +742,7 @@ func report_authoritative_hit(target: Node, damage: int, hit_position: Vector2, 
 	if network_client == null or is_remote_proxy or not accepts_input or damage <= 0:
 		return false
 
+	# Only report hits against players the server can identify
 	if target == null or not is_instance_valid(target) or not target.has_method("get_network_player_id"):
 		return false
 
@@ -760,6 +766,7 @@ func report_authoritative_hit(target: Node, damage: int, hit_position: Vector2, 
 
 func apply_authoritative_health_state(new_health: int, authoritative_is_dead: bool, reported_damage: int = 0) -> void:
 	if is_dead and not authoritative_is_dead and respawn_timer > 0.0 and not is_remote_proxy:
+		# Do not let late health packets cancel a local respawn countdown
 		return
 
 	var clamped_health := clampi(new_health, 0, max_health)
@@ -807,10 +814,12 @@ func enqueue_remote_snapshot(position: Vector2, aim_angle_degrees: float = NAN) 
 		remote_latest_angle_degrees = aim_angle_degrees
 
 	if not has_received_remote_snapshot:
+		# First remote packet should snap, not slide from origin
 		snap_remote_snapshot(position, remote_latest_angle_degrees)
 		return
 
 	if remote_snapshot_queue.size() >= MAX_REMOTE_SNAPSHOTS:
+		# Drop old snapshots if the client falls behind
 		remote_snapshot_queue.remove_at(0)
 
 	remote_snapshot_queue.append({
@@ -840,6 +849,7 @@ func set_remote_weapon(weapon_type: String) -> void:
 	if weapon == null or weapon_type == "":
 		return
 
+	# Normalize server weapon names before trying to equip them
 	var normalized_weapon_type := _normalize_weapon_type(weapon_type)
 	if not weapon.equip_weapon_by_id(normalized_weapon_type):
 		weapon.equip_weapon(StringName(normalized_weapon_type))
@@ -866,6 +876,7 @@ func _normalize_weapon_type(weapon_type: String) -> String:
 			return weapon_type
 
 func spawn_remote_bullet_from_server(position: Vector2, angle_radians: float, weapon_type: String, target_position: Variant = null, start_position: Variant = null) -> void:
+	# Snap the shooter to the server position before replaying the shot
 	global_position = position
 	remote_snapshot_queue.clear()
 	set_remote_weapon(weapon_type)
@@ -906,6 +917,7 @@ func _process_remote_movement(delta: float) -> void:
 	if remote_snapshot_queue.is_empty():
 		velocity = Vector2.ZERO
 		if remote_walk_animation_hold_remaining > 0.0 and remote_last_move_direction != Vector2.ZERO:
+			# Hold the walk frame briefly so remote movement does not flicker
 			remote_walk_animation_hold_remaining = maxf(remote_walk_animation_hold_remaining - delta, 0.0)
 			update_legs(remote_last_move_direction, delta)
 			weapon.update_movement(remote_last_move_direction)
@@ -924,7 +936,7 @@ func _process_remote_movement(delta: float) -> void:
 		global_position = target_position
 		remote_snapshot_queue.remove_at(0)
 	else:
-		# Remote replicas should never resolve local collisions; they only smooth server snapshots.
+		# Remote players follow server snapshots without local collision solving
 		global_position = global_position.move_toward(target_position, step_distance)
 
 	remote_last_move_direction = direction
@@ -935,6 +947,7 @@ func _process_remote_movement(delta: float) -> void:
 	_apply_remote_aim(target_position, float(next_snapshot.get("aim_angle_degrees", NAN)))
 
 func _apply_remote_aim(target_position: Vector2, aim_angle_degrees: float) -> void:
+	# Prefer server aim angle, then fall back to movement direction
 	var aim_direction := remote_facing_direction
 
 	if not is_nan(aim_angle_degrees):
@@ -971,6 +984,7 @@ func _report_angle_on_frame_change() -> void:
 	if current_aim_frame == last_sent_aim_frame:
 		return
 
+	# Send only when the 8-direction frame changes to reduce traffic
 	last_sent_aim_frame = current_aim_frame
 	last_sent_angle = _get_current_aim_angle()
 	network_client.send_angle(last_sent_angle)

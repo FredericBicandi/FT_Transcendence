@@ -42,6 +42,7 @@ func _begin_connection_attempt(status_text: String) -> void:
 	if is_returning_to_lobby:
 		return
 
+	# Reset lobby state before trying to join a room again
 	is_room_ready = false
 	local_player_id = ""
 	_clear_preview_remote_players()
@@ -64,6 +65,7 @@ func _on_room_joined(message: Dictionary) -> void:
 	if has_started_game or is_returning_to_lobby:
 		return
 
+	# Show the room preview until the player chooses to join the match
 	is_room_ready = true
 	local_player_id = str(message.get("playerId", ""))
 	_set_status_text("Room found.")
@@ -89,6 +91,7 @@ func _on_connection_lost(reason: String) -> void:
 	if is_returning_to_lobby:
 		return
 
+	# Throw away the live match scene before reconnecting to the lobby
 	if game_instance != null and is_instance_valid(game_instance):
 		game_instance.queue_free()
 
@@ -118,7 +121,7 @@ func _start_game() -> void:
 	_set_background_visible(false)
 	_clear_preview_remote_players()
 
-	# Keep the network node alive in the root scene and add the gameplay scene beside it.
+	# Keep the socket alive while swapping from lobby preview to gameplay
 	game_instance = GAME_SCENE.instantiate()
 	add_child(game_instance)
 	$CanvasLayer.visible = false
@@ -185,6 +188,7 @@ func _apply_initial_preview_players(message: Dictionary) -> void:
 	if message.is_empty():
 		return
 
+	# Draw already-connected players in the lobby preview
 	var players_variant: Variant = message.get("players", message.get("remotePlayers", []))
 	if not (players_variant is Array):
 		return
@@ -199,6 +203,7 @@ func _apply_cached_preview_players() -> void:
 	if network_client == null:
 		return
 
+	# Use cached packets that arrived before the room UI was ready
 	for snapshot_variant in network_client.remote_player_snapshots.values():
 		if typeof(snapshot_variant) != TYPE_DICTIONARY:
 			continue
@@ -210,6 +215,7 @@ func _apply_preview_remote_player_state(message: Dictionary) -> void:
 	if player_id == "" or player_id == local_player_id:
 		return
 
+	# Do not create preview players until the server gives us a position
 	var remote_body := _get_preview_remote_player(player_id)
 	var has_position := message.has("x") and message.has("y")
 	if remote_body == null and not has_position:
@@ -247,6 +253,7 @@ func _apply_preview_remote_player_state(message: Dictionary) -> void:
 		var remote_position := Vector2(float(message["x"]), float(message["y"]))
 		var is_respawn_snap := was_dead and not authoritative_is_dead and message.has("health") and int(message["health"]) > 0
 		if is_respawn_snap:
+			# Respawns should snap so players do not slide from the death spot
 			remote_body.snap_remote_snapshot(remote_position, aim_angle_degrees)
 		else:
 			remote_body.enqueue_remote_snapshot(remote_position, aim_angle_degrees)
@@ -302,6 +309,7 @@ func _return_to_lobby() -> void:
 	if is_returning_to_lobby:
 		return
 
+	# Close the socket before leaving so reconnect logic does not fight the redirect
 	is_returning_to_lobby = true
 	network_client.close_connection()
 	is_room_ready = false

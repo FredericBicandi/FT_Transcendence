@@ -8,6 +8,7 @@ extends Node
 
 func show_weapon(weapon: BaseWeapon) -> void:
 	if weapon == null:
+		# Clear stale HUD data when no weapon is equipped
 		weapon_panel.visible = false
 		weapon_icon.texture = null
 		return

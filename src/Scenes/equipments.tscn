@@ -1,6 +1,6 @@
 [gd_scene format=3 uid="uid://d2656rq6f72ub"]
 
-[ext_resource type="Script" uid="uid://du5boso85u57x" path="res://src/Scripts/weapon_switcher_ui.gd" id="1_weapon_switcher_ui"]
+[ext_resource type="Script" uid="uid://du5boso85u57x" path="res://src/Scripts/components/weapon_switcher_ui.gd" id="1_weapon_switcher_ui"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_nyyru"]
 bg_color = Color(0, 0, 0, 0.38)

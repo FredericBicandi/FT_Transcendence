@@ -1,6 +1,6 @@
 [gd_scene format=3 uid="uid://dimb5ix4olid2"]
 
-[ext_resource type="Script" path="res://src/Scripts/timer_ui.gd" id="1_timer_ui"]
+[ext_resource type="Script" uid="uid://xkkfbr8plsms" path="res://src/Scripts/components/timer_ui.gd" id="1_timer_ui"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_timer_panel"]
 bg_color = Color(0, 0, 0, 0.38)

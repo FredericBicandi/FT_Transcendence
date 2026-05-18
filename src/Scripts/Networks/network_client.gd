@@ -14,8 +14,7 @@ signal bullet_spawn_received(message: Dictionary)
 signal player_left_received(player_id: String)
 signal match_ended(message: Dictionary)
 
-# Keep the server endpoint editable from the scene inspector.
-
+# Keep the server endpoint editable from the inspector
 @export var server_url: String = "wss://pixelfight.live/ws"
 @export var bypass_tls_validation: bool = false
 @export var connection_timeout_seconds: float = 30.0
@@ -36,7 +35,7 @@ var seconds_since_last_server_activity: float = 0.0
 var is_connection_closed_manually: bool = false
 
 func _ready() -> void:
-	# Register in a group so gameplay code can find the client without relying on a fixed node path.
+	# Let gameplay scenes find the websocket client without a hard path
 	add_to_group("network_client")
 
 func _process(delta: float) -> void:
@@ -53,13 +52,14 @@ func _process(delta: float) -> void:
 
 	seconds_since_last_server_activity += delta
 	if connection_timeout_seconds > 0.0 and seconds_since_last_server_activity >= connection_timeout_seconds:
+		# Drop silent sockets so the lobby can reconnect
 		_handle_connection_loss("Connection timed out.")
 		return
 
 	_read_packets()
 
 func connect_to_server() -> Error:
-	# Reset transient connection state before opening a fresh socket connection.
+	# Reset connection state before opening a new socket
 	socket = WebSocketPeer.new()
 	was_open_last_frame = false
 	has_reported_closed_state = false
@@ -87,7 +87,7 @@ func _create_tls_options() -> TLSOptions:
 		return null
 
 	if bypass_tls_validation:
-		# Skip certificate and hostname verification for development servers using self-signed certs.
+		# Allow local test servers with self-signed certs
 		return TLSOptions.client_unsafe()
 
 	return TLSOptions.client()
@@ -235,7 +235,7 @@ func _read_packets() -> void:
 		var parsed: Variant = JSON.parse_string(text)
 		seconds_since_last_server_activity = 0.0
 
-		# Ignore invalid or unexpected payloads so a bad packet never breaks the client loop.
+		# Ignore bad packets so one server message cannot break the client
 		if typeof(parsed) != TYPE_DICTIONARY:
 			push_warning("NetworkClient: ignored invalid JSON packet: %s" % text)
 			continue
@@ -301,6 +301,7 @@ func _store_remote_player_snapshot(message: Dictionary) -> void:
 	if player_id == "":
 		return
 
+	# Merge partial updates so new scenes can rebuild remote players later
 	var existing_snapshot_variant: Variant = remote_player_snapshots.get(player_id, {})
 	var existing_snapshot: Dictionary = {}
 	if typeof(existing_snapshot_variant) == TYPE_DICTIONARY:

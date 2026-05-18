@@ -1,19 +1,27 @@
 class_name BaseWeapon
 extends Node2D
 
-# Shared weapon stats and per-angle sprite setup live in WeaponData.
+# Keep weapon stats and sprite offsets outside the scene
 const WeaponData = preload("res://src/Scripts/Weapons/weapon_data.gd")
 const Projectile = preload("res://src/Scripts/Weapons/projectile.gd")
 const DAMAGEABLE_PLAYER_GROUP := "damageable_player"
+const DEFAULT_MUZZLE_COLLISION_MASK := 1
+const DEFAULT_MUZZLE_WALL_PADDING := 1.5
+const DEFAULT_MUZZLE_WALL_VISUAL_PULLBACK := 4.0
+const DEFAULT_MUZZLE_WALL_MIN_VISUAL_SCALE := 0.6
 
-# UI and game systems can listen to this to refresh ammo counters.
+# Let UI and networking react without polling this node
 signal ammo_changed(current_ammo: int, max_ammo: int)
 signal shot_fired(angle_radians: float, weapon_type: String, start_position: Vector2, target_position: Vector2)
 
-# This weapon instance reads all of its gameplay values from WeaponData using this id.
+# This id chooses the row from WeaponData
 @export var weapon_id: String = WeaponData.DEFAULT_WEAPON_ID
+@export var muzzle_collision_mask: int = DEFAULT_MUZZLE_COLLISION_MASK
+@export var muzzle_wall_padding: float = DEFAULT_MUZZLE_WALL_PADDING
+@export var muzzle_wall_visual_pullback: float = DEFAULT_MUZZLE_WALL_VISUAL_PULLBACK
+@export var muzzle_wall_min_visual_scale: float = DEFAULT_MUZZLE_WALL_MIN_VISUAL_SCALE
 
-# Runtime state for spawned bullets, aiming, recoil, reloads, and optional AI control.
+# Runtime state kept here so each equipped weapon behaves independently
 var active_bullets: Array[Dictionary] = []
 var current_frame_index: int = 0
 var fire_cooldown: float = 0.0
@@ -33,6 +41,9 @@ var collision_mask_override: int = -1
 var reload_pending: bool = false
 var reload_audio_player: AudioStreamPlayer2D
 var is_active_weapon: bool = false
+var has_safe_muzzle_position: bool = false
+var safe_muzzle_position: Vector2 = Vector2.ZERO
+var base_gun_scale: Vector2 = Vector2.ONE
 
 @onready var gun: AnimatedSprite2D = $Gun
 @onready var muzzle_marker: Marker2D = $Gun/Marker2D
@@ -40,26 +51,28 @@ var is_active_weapon: bool = false
 @onready var shoot_audio_source: AudioStreamPlayer2D = $AudioStreamPlayer2D
 
 func _ready() -> void:
-	# Remember the original local position so recoil and movement sway can always return here.
+	# Keep the original local position for recoil and movement sway
 	base_position = position
 	var owner_body: CollisionObject2D = find_owner_body()
 
-	# Prevent this weapon from immediately hitting the player or parent body that owns it.
+	# Do not let bullets hit the body holding this weapon
 	if owner_body != null:
 		bullet_exclude_rids.append(owner_body.get_rid())
 
-	# The scene must provide the gun sprite, muzzle marker, and a bullet sprite template.
+	# Stop early if the weapon scene is missing required nodes
 	if gun == null or muzzle_marker == null or bullet_template == null:
 		push_error("Weapon node %s is missing Gun/Marker2D/Bullets." % name)
 		set_process(false)
 		return
 
-	# Copy bullet visuals from the template once, then remove the template scene node.
+	base_gun_scale = gun.scale
+
+	# Copy bullet visuals once, then remove the editor template
 	bullet_frames = bullet_template.sprite_frames
 	bullet_scale = bullet_template.scale
 	bullet_template.queue_free()
 
-	# Start with a full magazine, align the weapon to its first frame, and keep it hidden until equipped.
+	# Start loaded but hidden until this weapon is equipped
 	current_ammo = get_magazine_size()
 	apply_frame_data(0)
 	set_active(false)
@@ -69,34 +82,34 @@ func _ready() -> void:
 	add_child(reload_audio_player)
 
 func _process(delta: float) -> void:
-	# Count active timers down every frame.
+	# Keep fire and reload timers moving even while hidden
 	fire_cooldown = maxf(fire_cooldown - delta, 0.0)
 	reload_cooldown = maxf(reload_cooldown - delta, 0.0)
 
-	# Smoothly remove recoil so the weapon settles back into place.
+	# Bring the weapon back after recoil without snapping
 	var recoil_recover_speed: float = float(get_weapon_config().get("recoil_recover_speed", 18.0))
 	recoil_offset = recoil_offset.lerp(Vector2.ZERO, clampf(delta * recoil_recover_speed, 0.0, 1.0))
 	position = base_position + movement_offset + recoil_offset
 
-	# Finish the reload the moment the timer reaches zero.
+	# Finish reloads even if the player switched weapons
 	if reload_pending and reload_cooldown == 0.0:
 		current_ammo = get_magazine_size()
 		reload_pending = false
 		emit_ammo_changed()
 
-	# Move every active bullet and resolve hits.
+	# Keep old bullets alive after switching weapons
 	update_bullets(delta)
 
 	if not is_active_weapon:
 		return
 
-	# Aim either at a forced target or at the mouse cursor for player-controlled weapons.
+	# Remote and AI players can force aim without using the mouse
 	if has_aim_target_override:
 		update_aim(aim_target_override)
 	else:
 		update_aim(get_global_mouse_position())
 
-	# Only the local player path reads input directly from this weapon.
+	# Only the local player weapon reads keyboard and mouse input
 	if accepts_player_input:
 		if Input.is_key_pressed(KEY_R):
 			reload()
@@ -105,12 +118,12 @@ func _process(delta: float) -> void:
 			shoot()
 
 func set_active(is_active: bool) -> void:
-	# Hidden weapons stay simulated so reloads and in-flight bullets can finish naturally.
+	# Hidden weapons still simulate reloads and bullets
 	is_active_weapon = is_active
 	visible = is_active
 
 func update_movement(direction: Vector2) -> void:
-	# Add a small position offset so the weapon reacts to character movement.
+	# Add a small offset so the weapon follows movement
 	var config := get_weapon_config()
 	var move_offset: float = config.get("move_offset", 0.0)
 
@@ -121,7 +134,7 @@ func update_movement(direction: Vector2) -> void:
 	movement_offset = direction.normalized() * move_offset
 
 func update_aim(target_position: Vector2) -> void:
-	# Convert world-space aim into one of the 8 weapon sprite directions.
+	# Turn world aim into one of the 8 sprite directions
 	var dir: Vector2 = (target_position - global_position).normalized()
 	var angle: float = rad_to_deg(dir.angle())
 
@@ -134,7 +147,7 @@ func get_aim_frame() -> int:
 	return current_frame_index
 
 func get_bullet_frame() -> int:
-	# Bullets can use a different sprite frame than the gun for the same aim direction.
+	# Let bullets use a different frame than the gun
 	var config := get_weapon_config()
 	var bullet_frames_map: Array = config.get("bullet_frames", [])
 
@@ -162,18 +175,22 @@ func get_spawned_bullet_frame(direction: Vector2) -> int:
 	return get_bullet_frame()
 
 func shoot() -> void:
-	# Never fire while still cooling down or reloading.
+	# Block firing while cooldown or reload is active
 	if fire_cooldown > 0.0 or reload_cooldown > 0.0:
 		return
 
 	var config := get_weapon_config()
 
-	# An empty weapon immediately starts a reload instead of spawning a bullet.
+	# Empty weapons reload instead of dry-firing
 	if current_ammo <= 0:
 		reload()
 		return
 
-	# Consume ammo and start the fire-rate timer before spawning the projectile.
+	# Refresh aim so wall-clamped muzzle data is current
+	var raw_shot_target: Vector2 = aim_target_override if has_aim_target_override else get_global_mouse_position()
+	update_aim(raw_shot_target)
+
+	# Consume ammo before spawning the projectile
 	fire_cooldown = config.get("fire_rate", 0.2)
 	current_ammo -= 1
 	emit_ammo_changed()
@@ -183,16 +200,15 @@ func shoot() -> void:
 		fire_sound = shoot_audio_source.stream
 
 	if fire_sound == null:
-		fire_sound = get_weapon_config().get("fire_sound")
+		fire_sound = config.get("fire_sound")
 
 	if fire_sound:
 		var owner_body := find_owner_body()
 		if owner_body != null and owner_body.has_method("play_shoot_sound"):
 			owner_body.call("play_shoot_sound", fire_sound)
 
-	# Build the bullet travel direction from the muzzle toward the current target.
-	var raw_shot_target: Vector2 = aim_target_override if has_aim_target_override else get_global_mouse_position()
-	var shot_start_position := muzzle_marker.global_position
+	# Use the safe muzzle point so bullets do not spawn inside walls
+	var shot_start_position := get_shot_start_position(config)
 	var shot_target := _resolve_shot_target(shot_start_position, raw_shot_target, config)
 	var bullet_offset := shot_target - shot_start_position
 	var bullet_direction := bullet_offset.normalized() if bullet_offset != Vector2.ZERO else Vector2.RIGHT
@@ -204,7 +220,8 @@ func shoot() -> void:
 		reload()
 
 func spawn_remote_bullet(angle_radians: float, target_position: Variant = null, start_position: Variant = null) -> void:
-	var shot_start_position := muzzle_marker.global_position
+	var config := get_weapon_config()
+	var shot_start_position := get_shot_start_position(config)
 	if start_position is Vector2:
 		shot_start_position = start_position as Vector2
 
@@ -217,16 +234,16 @@ func spawn_remote_bullet(angle_radians: float, target_position: Variant = null, 
 	var bullet_direction := bullet_offset.normalized() if has_target_position and bullet_offset != Vector2.ZERO else Vector2.RIGHT.rotated(angle_radians)
 	update_aim(aim_target)
 	if not (start_position is Vector2):
-		shot_start_position = muzzle_marker.global_position
+		shot_start_position = get_shot_start_position(config)
 
-	apply_recoil(bullet_direction, get_weapon_config())
+	apply_recoil(bullet_direction, config)
 
 	var fire_sound: AudioStream = null
 	if shoot_audio_source != null:
 		fire_sound = shoot_audio_source.stream
 
 	if fire_sound == null:
-		fire_sound = get_weapon_config().get("fire_sound")
+		fire_sound = config.get("fire_sound")
 
 	if fire_sound:
 		var owner_body := find_owner_body()
@@ -237,14 +254,14 @@ func spawn_remote_bullet(angle_radians: float, target_position: Variant = null, 
 	_spawn_bullet(bullet_direction, shot_start_position, true, 0, replay_target)
 
 func apply_recoil(direction: Vector2, config: Dictionary) -> void:
-	# Kick the weapon backward, with a little sideways randomness to avoid a rigid feel.
+	# Add a small random kick so shots do not feel stiff
 	var recoil_distance: float = float(config.get("recoil_distance", 2.5))
 	var recoil_jitter: float = float(config.get("recoil_jitter", 0.35))
 	var sideways := direction.orthogonal() * randf_range(-recoil_jitter, recoil_jitter)
 	recoil_offset = (-direction + sideways).normalized() * recoil_distance
 
 func update_bullets(delta: float) -> void:
-	# Use raycasts between frames so fast bullets cannot skip through targets.
+	# Raycast between frames so fast bullets cannot skip targets
 	var space_state := get_world_2d().direct_space_state
 	var config := get_weapon_config()
 
@@ -253,12 +270,12 @@ func update_bullets(delta: float) -> void:
 		var bullet_instance_id := int(bullet_data.get("instance_id", 0))
 		var bullet := instance_from_id(bullet_instance_id) as AnimatedSprite2D
 
-		# Drop stale entries if the visual node was already destroyed somewhere else.
+		# Drop bullets that were already cleaned up
 		if bullet == null or not is_instance_valid(bullet):
 			active_bullets.remove_at(i)
 			continue
 
-		# Simulate this bullet's next step and test the full segment for a hit.
+		# Check the whole movement step, not only the final point
 		var result := Projectile.tick(bullet_data, delta)
 		var start_position: Vector2 = result["start_position"]
 		var end_position: Vector2 = result["position"]
@@ -272,7 +289,7 @@ func update_bullets(delta: float) -> void:
 		if should_collide and collision_mask != 0:
 			hit = raycast_bullet(space_state, collision_start_position, collision_end_position, collision_mask, pass_over_layers)
 
-		# Stop the bullet on impact, apply damage, and remove it from the active list.
+		# Resolve the hit once and remove the bullet
 		if not hit.is_empty():
 			apply_bullet_hit(hit, damage)
 			bullet.global_position = hit["position"]
@@ -287,7 +304,7 @@ func update_bullets(delta: float) -> void:
 			active_bullets.remove_at(i)
 			continue
 
-		# No impact happened, so keep moving the bullet until its lifetime expires.
+		# Keep flying until lifetime runs out
 		bullet.global_position = end_position
 		Projectile.update_visual_for_velocity(bullet, config, result["velocity"], get_bullet_frame())
 
@@ -342,7 +359,7 @@ func _configure_spawned_bullet(bullet: AnimatedSprite2D, direction: Vector2, sta
 	Projectile.configure_visual(bullet, bullet_frames, bullet_scale, get_weapon_config(), get_spawned_bullet_frame(direction), gun.z_index, direction, start_position)
 
 func find_owner_body() -> CollisionObject2D:
-	# Walk up the scene tree until we find the first physics body that owns this weapon.
+	# Find the body holding this weapon
 	var current: Node = get_parent()
 	while current != null:
 		if current is CollisionObject2D:
@@ -352,7 +369,7 @@ func find_owner_body() -> CollisionObject2D:
 	return null
 
 func apply_bullet_hit(hit: Dictionary, damage: int) -> void:
-	# Local player-owned bullets report proposed hits to the server; non-networked actors still use local damage.
+	# Let the server approve local-player hits before applying damage
 	if damage <= 0:
 		return
 
@@ -476,14 +493,14 @@ func _get_explosion_damage_for_target(center: Vector2, radius: float, max_damage
 	return clampi(ceili(float(max_damage) * falloff), minimum_damage, max_damage)
 
 func reload() -> void:
-	# Ignore reload requests if a reload is already running or the magazine is already full.
+	# Ignore reload when it is already running or not needed
 	if reload_cooldown > 0.0 or current_ammo == get_magazine_size():
 		return
 
 	reload_duration = get_reload_time()
 	reload_cooldown = reload_duration
 	reload_pending = true
-	
+
 	var reload_sound = get_weapon_config().get("reload_sound")
 
 	if reload_sound:
@@ -503,11 +520,11 @@ func get_weapon_name() -> String:
 	return weapon_id
 
 func set_input_enabled(is_enabled: bool) -> void:
-	# Lets another system temporarily take over aiming and shooting.
+	# Let match state or remote control disable weapon input
 	accepts_player_input = is_enabled
 
 func set_aim_target(target_position: Vector2) -> void:
-	# External controllers can force the weapon to aim somewhere other than the mouse.
+	# Remote players and AI aim without the local mouse
 	has_aim_target_override = true
 	aim_target_override = target_position
 
@@ -515,21 +532,22 @@ func clear_aim_target() -> void:
 	has_aim_target_override = false
 
 func set_collision_mask_override(mask: int) -> void:
-	# Useful when one owner needs different bullet collision rules than the default weapon data.
+	# Let special owners use different bullet collision rules
 	collision_mask_override = mask
 
 func reset_state() -> void:
-	# Return the weapon to a clean state when changing scenes, respawning, or clearing projectiles.
+	# Reset everything that should not survive respawn
 	fire_cooldown = 0.0
 	reload_cooldown = 0.0
 	reload_duration = 0.0
 	reload_pending = false
+	has_safe_muzzle_position = false
 	current_ammo = get_magazine_size()
 	movement_offset = Vector2.ZERO
 	recoil_offset = Vector2.ZERO
 	position = base_position
 
-	# Destroy all still-active bullet nodes before forgetting them.
+	# Remove bullet nodes before clearing the tracking list
 	for bullet_data_variant in active_bullets:
 		var bullet_data: Dictionary = bullet_data_variant
 		var bullet_instance_id := int(bullet_data.get("instance_id", 0))
@@ -541,7 +559,7 @@ func reset_state() -> void:
 	emit_ammo_changed()
 
 func get_weapon_icon() -> Texture2D:
-	# Prefer the custom icon from data, but fall back to the first gun sprite frame if needed.
+	# Prefer the data icon, then fall back to the gun sprite
 	var weapon_image: Variant = get_weapon_config().get("image")
 	if weapon_image is Texture2D:
 		return weapon_image as Texture2D
@@ -561,14 +579,14 @@ func get_reload_progress() -> float:
 	return clampf(1.0 - (reload_cooldown / reload_duration), 0.0, 1.0)
 
 func get_weapon_config() -> Dictionary:
-	# Always return valid data by falling back to the default weapon definition.
+	# Fall back so a bad weapon id does not crash the match
 	if WeaponData.WEAPON_DATA.has(weapon_id):
 		return WeaponData.WEAPON_DATA[weapon_id]
 
 	return WeaponData.WEAPON_DATA[WeaponData.DEFAULT_WEAPON_ID]
 
 func angle_to_frame(angle: float) -> int:
-	# Map the full 360 degrees into 8 sprite directions.
+	# Split the full circle into 8 aim frames
 	if angle >= 337.5 or angle < 22.5:
 		return 0
 	if angle < 67.5:
@@ -586,17 +604,101 @@ func angle_to_frame(angle: float) -> int:
 	return 7
 
 func apply_frame_data(frame_index: int) -> void:
-	# Each aim frame changes both the gun sprite frame and the muzzle position used for bullets.
+	# Each aim frame has its own hand and muzzle offset
 	current_frame_index = frame_index
 	gun.frame = frame_index
+	gun.scale = base_gun_scale
+	has_safe_muzzle_position = false
 
 	var config := get_weapon_config()
 	var frame_data: Dictionary = config["frames"][frame_index]
 	gun.position = frame_data["gun_position"]
 	muzzle_marker.position = frame_data["muzzle_offset"]
+	keep_muzzle_out_of_walls(config)
+
+func get_shot_start_position(config: Dictionary) -> Vector2:
+	# Shoot from the wall-safe point when the visual muzzle is clamped
+	if has_safe_muzzle_position:
+		return safe_muzzle_position
+
+	return get_safe_muzzle_position(config, muzzle_marker.global_position)
+
+func keep_muzzle_out_of_walls(config: Dictionary) -> void:
+	if not is_inside_tree() or gun == null or muzzle_marker == null:
+		return
+
+	# Pull the weapon only as much as needed to keep the muzzle valid
+	var desired_muzzle := muzzle_marker.global_position
+	var safe_muzzle := get_safe_muzzle_position(config, desired_muzzle)
+	if safe_muzzle == desired_muzzle:
+		return
+
+	has_safe_muzzle_position = true
+	safe_muzzle_position = safe_muzzle
+
+	var full_delta := to_local(safe_muzzle) - to_local(desired_muzzle)
+	var visual_pullback_limit := maxf(float(config.get("muzzle_wall_visual_pullback", muzzle_wall_visual_pullback)), 0.0)
+	var visual_delta := full_delta.limit_length(visual_pullback_limit)
+	gun.position += visual_delta
+	scale_wall_blocked_weapon(config, safe_muzzle, desired_muzzle)
+
+func scale_wall_blocked_weapon(config: Dictionary, safe_muzzle: Vector2, desired_muzzle: Vector2) -> void:
+	# Shrink a little near walls instead of snapping the whole weapon back
+	var muzzle_vector := desired_muzzle - global_position
+	var muzzle_distance := muzzle_vector.length()
+	if muzzle_distance <= 0.001:
+		return
+
+	var muzzle_direction := muzzle_vector / muzzle_distance
+	var safe_distance := (safe_muzzle - global_position).dot(muzzle_direction)
+	var current_distance := (muzzle_marker.global_position - global_position).dot(muzzle_direction)
+	if current_distance <= safe_distance + 0.001:
+		return
+
+	var marker_projection := (muzzle_marker.global_position - gun.global_position).dot(muzzle_direction)
+	if marker_projection <= 0.001:
+		gun.position += to_local(safe_muzzle) - to_local(muzzle_marker.global_position)
+		return
+
+	var gun_origin_projection := (gun.global_position - global_position).dot(muzzle_direction)
+	var required_marker_projection := maxf(safe_distance - gun_origin_projection, 0.0)
+	var min_visual_scale := clampf(float(config.get("muzzle_wall_min_visual_scale", muzzle_wall_min_visual_scale)), 0.1, 1.0)
+	var scale_factor := clampf(required_marker_projection / marker_projection, min_visual_scale, 1.0)
+	gun.scale = base_gun_scale * scale_factor
+
+	var remaining_delta := to_local(safe_muzzle) - to_local(muzzle_marker.global_position)
+	if remaining_delta.length() > 0.001:
+		gun.position += remaining_delta
+
+func get_safe_muzzle_position(config: Dictionary, desired_muzzle: Vector2) -> Vector2:
+	# Find the closest point before the wall where a bullet can start
+	var collision_mask := int(config.get("muzzle_collision_mask", muzzle_collision_mask))
+	if collision_mask == 0:
+		return desired_muzzle
+
+	var ray_start := global_position
+	var muzzle_vector := desired_muzzle - ray_start
+	var muzzle_distance := muzzle_vector.length()
+	if muzzle_distance <= 0.001:
+		return desired_muzzle
+
+	var query := PhysicsRayQueryParameters2D.create(ray_start, desired_muzzle, collision_mask, bullet_exclude_rids)
+	query.collide_with_areas = false
+	query.collide_with_bodies = true
+	query.hit_from_inside = true
+
+	var hit := get_world_2d().direct_space_state.intersect_ray(query)
+	if hit.is_empty():
+		return desired_muzzle
+
+	var hit_position: Vector2 = hit.get("position", desired_muzzle)
+	var muzzle_direction := muzzle_vector / muzzle_distance
+	var padding := maxf(float(config.get("muzzle_wall_padding", muzzle_wall_padding)), 0.0)
+	var safe_distance := clampf((hit_position - ray_start).dot(muzzle_direction) - padding, 0.0, muzzle_distance)
+	return ray_start + muzzle_direction * safe_distance
 
 func emit_ammo_changed() -> void:
-	# Centralized helper so every ammo update notifies listeners the same way.
+	# Keep every ammo update using the same signal
 	ammo_changed.emit(current_ammo, get_magazine_size())
 
 func _spawn_bullet(direction: Vector2, start_position: Vector2, should_collide: bool, damage_override: int = -1, target_position: Variant = null) -> void:
@@ -608,7 +710,7 @@ func _spawn_bullet(direction: Vector2, start_position: Vector2, should_collide: 
 	_configure_spawned_bullet(bullet, direction, start_position)
 
 	get_tree().current_scene.add_child(bullet)
-	# Failsafe cleanup: even if projectile state desyncs, the visual bullet cannot remain stuck forever.
+	# Cleanup timer keeps bullet visuals from getting stuck forever
 	var bullet_instance_id := bullet.get_instance_id()
 	get_tree().create_timer(bullet_lifetime).timeout.connect(_on_bullet_lifetime_timeout.bind(bullet_instance_id))
 
