@@ -9,6 +9,7 @@ const MAX_REMOTE_SNAPSHOTS: int = 60
 const REMOTE_WALK_ANIMATION_HOLD_TIME: float = 0.12
 const DEFAULT_PLAYER_DISPLAY_NAME := "Player"
 const DAMAGEABLE_PLAYER_GROUP := "damageable_player"
+const HITBOX_POINT_EPSILON := 0.5
 
 # Values designers can tune from the inspector
 @export var move_speed: float = 120.0
@@ -74,7 +75,9 @@ var observed_shot_weapon: BaseWeapon = null
 @onready var player_name_label: Label = $"../OverheadUiCanvasLayer/OverheadPanel/OverheadMargin/OverheadVBox/PlayerNameLabel"
 @onready var damage_numbers: Node2D = $DamageNumbers
 @onready var player_camera: Camera2D = $Camera2D
-@onready var collision_shape: CollisionShape2D = $CollisionShape2D
+@onready var collision_shape: CollisionShape2D = get_node_or_null("body_collision") as CollisionShape2D
+@onready var damage_hitbox: Area2D = get_node_or_null("HitBox") as Area2D
+@onready var damage_hitbox_shape: CollisionShape2D = get_node_or_null("HitBox/CollisionShape2D") as CollisionShape2D
 @onready var shoot_sound: AudioStreamPlayer2D = $ShootSound
 
 func _ready() -> void:
@@ -94,6 +97,7 @@ func _ready() -> void:
 	legs.frame = 0
 	head.z_index = 1
 	_configure_shoot_sound()
+	_validate_collision_shapes()
 	get_viewport().size_changed.connect(_on_viewport_size_changed)
 
 	# Let scenes choose a starting weapon without duplicating weapon scenes
@@ -454,7 +458,7 @@ func die() -> void:
 	legs.visible = false
 	head.visible = false
 	overhead_panel.visible = false
-	collision_shape.set_deferred("disabled", true)
+	_set_collision_shapes_disabled(true)
 
 	var active_weapon := weapon.get_active_weapon()
 	if active_weapon != null:
@@ -699,6 +703,10 @@ func configure_as_remote_proxy() -> void:
 
 	if collision_shape != null:
 		collision_shape.disabled = false
+	if damage_hitbox != null:
+		damage_hitbox.monitorable = true
+	if damage_hitbox_shape != null:
+		damage_hitbox_shape.disabled = false
 
 	if weapon != null:
 		weapon.set_input_enabled(false)
@@ -712,6 +720,16 @@ func set_network_player_id(player_id: String) -> void:
 
 func get_network_player_id() -> String:
 	return network_player_id
+
+func is_projectile_damage_shape(shape_index: int, hit_position: Vector2 = Vector2.INF) -> bool:
+	if damage_hitbox_shape == null or shape_index < 0:
+		return false
+
+	var owner_id := shape_find_owner(shape_index)
+	if owner_id == -1:
+		return false
+
+	return hit_position != Vector2.INF and _is_global_point_inside_damage_hitbox(hit_position)
 
 func _update_player_name_label() -> void:
 	if player_name_label == null:
@@ -798,7 +816,7 @@ func _restore_after_respawn() -> void:
 	legs.visible = true
 	head.visible = true
 	overhead_panel.visible = true
-	collision_shape.set_deferred("disabled", false)
+	_set_collision_shapes_disabled(false)
 
 	weapon.clear_all_projectiles()
 	var active_weapon := weapon.get_active_weapon()
@@ -808,6 +826,37 @@ func _restore_after_respawn() -> void:
 
 func _uses_server_authoritative_health() -> bool:
 	return network_client != null and (accepts_input or is_remote_proxy)
+
+func _validate_collision_shapes() -> void:
+	if collision_shape == null:
+		push_error("Player node %s is missing body_collision." % name)
+	if damage_hitbox == null:
+		push_error("Player node %s is missing HitBox." % name)
+	if damage_hitbox_shape == null:
+		push_error("Player node %s is missing HitBox/CollisionShape2D." % name)
+
+func _set_collision_shapes_disabled(is_disabled: bool) -> void:
+	if collision_shape != null:
+		collision_shape.set_deferred("disabled", is_disabled)
+	if damage_hitbox != null:
+		damage_hitbox.set_deferred("monitorable", not is_disabled)
+	if damage_hitbox_shape != null:
+		damage_hitbox_shape.set_deferred("disabled", is_disabled)
+
+func _is_global_point_inside_damage_hitbox(global_point: Vector2) -> bool:
+	if damage_hitbox_shape == null or damage_hitbox_shape.shape == null:
+		return false
+
+	var local_point := damage_hitbox_shape.to_local(global_point)
+	var shape := damage_hitbox_shape.shape
+	if shape is RectangleShape2D:
+		var half_size := (shape as RectangleShape2D).size * 0.5 + Vector2.ONE * HITBOX_POINT_EPSILON
+		return absf(local_point.x) <= half_size.x and absf(local_point.y) <= half_size.y
+
+	if shape is CircleShape2D:
+		return local_point.length() <= (shape as CircleShape2D).radius + HITBOX_POINT_EPSILON
+
+	return false
 
 func enqueue_remote_snapshot(position: Vector2, aim_angle_degrees: float = NAN) -> void:
 	if not is_nan(aim_angle_degrees):

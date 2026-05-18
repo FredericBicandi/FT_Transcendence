@@ -58,6 +58,9 @@ func _ready() -> void:
 	# Do not let bullets hit the body holding this weapon
 	if owner_body != null:
 		bullet_exclude_rids.append(owner_body.get_rid())
+		var owner_hitbox := owner_body.get_node_or_null("HitBox") as CollisionObject2D
+		if owner_hitbox != null:
+			bullet_exclude_rids.append(owner_hitbox.get_rid())
 
 	# Stop early if the weapon scene is missing required nodes
 	if gun == null or muzzle_marker == null or bullet_template == null:
@@ -682,12 +685,16 @@ func get_safe_muzzle_position(config: Dictionary, desired_muzzle: Vector2) -> Ve
 	if muzzle_distance <= 0.001:
 		return desired_muzzle
 
-	var query := PhysicsRayQueryParameters2D.create(ray_start, desired_muzzle, collision_mask, bullet_exclude_rids)
-	query.collide_with_areas = false
-	query.collide_with_bodies = true
-	query.hit_from_inside = true
-
-	var hit := get_world_2d().direct_space_state.intersect_ray(query)
+	var hit := Projectile.raycast(
+		get_world_2d().direct_space_state,
+		ray_start,
+		desired_muzzle,
+		collision_mask,
+		bullet_exclude_rids,
+		Projectile.get_pass_over_tilemap_layers(config),
+		true,
+		false
+	)
 	if hit.is_empty():
 		return desired_muzzle
 

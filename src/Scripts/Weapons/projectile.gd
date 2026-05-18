@@ -1,6 +1,12 @@
 class_name Projectile
 extends RefCounted
 
+const RAYCAST_IGNORE_NONE := ""
+const RAYCAST_IGNORE_EXCLUDE_RID := "exclude_rid"
+const RAYCAST_IGNORE_ADVANCE := "advance"
+const RAYCAST_SKIP_EPSILON := 0.5
+const MAX_RAYCAST_IGNORE_STEPS := 32
+
 static func uses_arc_physics(config: Dictionary) -> bool:
 	return bool(config.get("uses_ballistic_arc", false))
 
@@ -34,23 +40,48 @@ static func get_pass_over_tilemap_layers(config: Dictionary) -> Array[String]:
 static func get_visual_z_index(config: Dictionary, fallback_z_index: int) -> int:
 	return int(config.get("bullet_z_index", fallback_z_index))
 
-static func raycast(space_state: PhysicsDirectSpaceState2D, from: Vector2, to: Vector2, collision_mask: int, excluded_rids: Array[RID], pass_over_layers: Array[String]) -> Dictionary:
+static func raycast(space_state: PhysicsDirectSpaceState2D, from: Vector2, to: Vector2, collision_mask: int, excluded_rids: Array[RID], pass_over_layers: Array[String], hit_from_inside: bool = false, collide_with_areas: bool = true) -> Dictionary:
 	var local_excluded_rids: Array[RID] = []
 	local_excluded_rids.append_array(excluded_rids)
+	var ray_from := from
+	var ray_delta := to - from
+	var ray_distance := ray_delta.length()
+	if ray_distance <= 0.001:
+		return {}
 
-	while true:
+	var ray_direction := ray_delta / ray_distance
+
+	for _step in range(MAX_RAYCAST_IGNORE_STEPS):
 		# Keep raycasting past layers that this projectile is allowed to fly over
-		var query := PhysicsRayQueryParameters2D.create(from, to, collision_mask, local_excluded_rids)
+		var query := PhysicsRayQueryParameters2D.create(ray_from, to, collision_mask, local_excluded_rids)
+		query.collide_with_areas = collide_with_areas
+		query.collide_with_bodies = true
+		query.hit_from_inside = hit_from_inside
 		var hit: Dictionary = space_state.intersect_ray(query)
 		if hit.is_empty():
 			return {}
 
-		if not _should_ignore_hit(hit, pass_over_layers):
+		var ignore_action := _get_ignore_action(hit, pass_over_layers)
+		if ignore_action == RAYCAST_IGNORE_NONE:
 			return hit
 
-		var hit_rid_variant: Variant = hit.get("rid", RID())
-		if hit_rid_variant is RID:
-			local_excluded_rids.append(hit_rid_variant as RID)
+		if ignore_action == RAYCAST_IGNORE_EXCLUDE_RID:
+			var hit_rid_variant: Variant = hit.get("rid", RID())
+			if hit_rid_variant is RID:
+				local_excluded_rids.append(hit_rid_variant as RID)
+				continue
+
+			return {}
+
+		if ignore_action == RAYCAST_IGNORE_ADVANCE:
+			var hit_position: Vector2 = hit.get("position", ray_from)
+			if hit_position.distance_to(to) <= RAYCAST_SKIP_EPSILON:
+				return {}
+
+			ray_from = hit_position + ray_direction * RAYCAST_SKIP_EPSILON
+			if (ray_from - from).dot(ray_direction) >= ray_distance:
+				return {}
+
 			continue
 
 		return {}
@@ -173,17 +204,38 @@ static func _tick_target_arc(runtime_data: Dictionary, delta: float) -> Dictiona
 		"arc_progress": progress
 	}
 
-static func _should_ignore_hit(hit: Dictionary, pass_over_layers: Array[String]) -> bool:
+static func _get_ignore_action(hit: Dictionary, pass_over_layers: Array[String]) -> String:
+	if _should_ignore_tilemap_hit(hit, pass_over_layers):
+		return RAYCAST_IGNORE_EXCLUDE_RID
+
+	if _should_ignore_projectile_damage_shape_hit(hit):
+		return RAYCAST_IGNORE_ADVANCE
+
+	return RAYCAST_IGNORE_NONE
+
+static func _should_ignore_tilemap_hit(hit: Dictionary, pass_over_layers: Array[String]) -> bool:
 	if pass_over_layers.is_empty():
 		return false
 
-	# Rockets can pass over decor layers without exploding early
 	var collider_variant: Variant = hit.get("collider")
 	if not (collider_variant is TileMapLayer):
 		return false
 
 	var tile_layer := collider_variant as TileMapLayer
 	return pass_over_layers.has(tile_layer.name)
+
+static func _should_ignore_projectile_damage_shape_hit(hit: Dictionary) -> bool:
+	var collider_variant: Variant = hit.get("collider")
+	if not (collider_variant is CollisionObject2D):
+		return false
+
+	var collider := collider_variant as CollisionObject2D
+	if not collider.has_method("is_projectile_damage_shape"):
+		return false
+
+	var shape_index := int(hit.get("shape", -1))
+	var hit_position: Vector2 = hit.get("position", Vector2.INF)
+	return not bool(collider.call("is_projectile_damage_shape", shape_index, hit_position))
 
 static func _to_string_array(values: Variant) -> Array[String]:
 	var result: Array[String] = []
