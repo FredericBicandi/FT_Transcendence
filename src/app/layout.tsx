@@ -4,7 +4,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Pixel Fight",
+  title: "PXIELFIGHT",
   description: "Game dashboard",
 };
 
@@ -12,7 +12,7 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en">
+    <html lang="en">  
       <head>
         <link rel="prefetch" href="/Game/index.js" as="script" />
         <link rel="prefetch" href="/Game/index.wasm" as="fetch" crossOrigin="anonymous" />

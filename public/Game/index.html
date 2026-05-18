@@ -1,220 +1,944 @@
 <!DOCTYPE html>
 <html lang="en">
-	<head>
-		<meta charset="utf-8">
-		<meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0">
-		<title>Ft_Transcendence</title>
-		<style>
-html, body, #canvas {
-	margin: 0;
-	padding: 0;
-	border: 0;
-}
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0">
 
-body {
-	color: white;
-	background-color: black;
-	overflow: hidden;
-	touch-action: none;
-}
+	<style>
+		@font-face {
+			font-family: "Upheaval";
+			src: url("../font/upheavtt.ttf") format("truetype");
+			font-display: swap;
+		}
 
-#canvas {
-	display: block;
-}
+		@font-face {
+			font-family: "Dogica";
+			src: url("../font/dogica.ttf") format("truetype");
+			font-display: swap;
+		}
 
-#canvas:focus {
-	outline: none;
-}
+		:root {
+			--overlay-72: #000000B8;
+			--overlay-38: #00000061;
+			--panel-border: #835D2F;
+			--header-brown: #523A1E;
+			--gold: #EBA82E;
+			--gold-hover: #FFC33F;
+			--gold-pressed: #B87D1C;
+			--steel: #525761;
+			--text-main: #FFFFFF;
+			--text-soft: #F0E2CA;
+			--text-muted: #D5B782;
+			--leaderboard-gold: #FFDC7C;
+			--health-green: #29C649;
+			--name-green: #E2F3DC;
+			--damage-yellow: #FFEB59;
+			--respawn-blue: #DCEBFF;
+			--dungeon-black: #141412;
+			--dungeon-stone: #243A3C;
+			--floor-tan: #9F6C3F;
+			--light-floor: #EDB786;
+			--dirt-brown: #433326;
+		}
 
-#status, #status-splash, #status-progress {
-	position: absolute;
-	left: 0;
-	right: 0;
-}
+		html, body, #canvas {
+			margin: 0;
+			padding: 0;
+			border: 0;
+		}
 
-#status, #status-splash {
-	top: 0;
-	bottom: 0;
-}
+		body {
+			color: var(--text-main);
+			background-color: #000000;
+			overflow: hidden;
+			touch-action: none;
+			font-family: "Dogica", monospace;
+		}
 
-#status {
-	background-color: #242424;
-	display: flex;
-	flex-direction: column;
-	justify-content: center;
-	align-items: center;
-	visibility: hidden;
-}
+		#canvas {
+			display: block;
+		}
 
-#status-splash {
-	max-height: 100%;
-	max-width: 100%;
-	margin: auto;
-}
+		#canvas:focus {
+			outline: none;
+		}
 
-#status-splash.show-image--false {
-	display: none;
-}
+		#status {
+			position: absolute;
+			inset: 0;
+			background-color: var(--dungeon-black);
+			display: flex;
+			justify-content: center;
+			align-items: center;
+			visibility: hidden;
+			z-index: 10;
+			image-rendering: pixelated;
+			overflow: hidden;
+		}
 
-#status-splash.fullsize--true {
-	height: 100%;
-	width: 100%;
-	object-fit: contain;
-}
+		.floor {
+			position: absolute;
+			inset: 0;
+			background-color: #000000;
+			background-image: url("../images/map.png");
+			background-position: center;
+			background-repeat: no-repeat;
+			background-size: cover;
+			filter: brightness(0.72) saturate(0.95);
+			z-index: 0;
+		}
 
-#status-splash.use-filter--false {
-	image-rendering: pixelated;
-}
+		.vignette {
+			position: absolute;
+			inset: 0;
+			background:
+				linear-gradient(rgba(0, 0, 0, 0.18), rgba(0, 0, 0, 0.28)),
+				radial-gradient(ellipse at center, transparent 34%, rgba(0, 0, 0, 0.68) 92%);
+			pointer-events: none;
+			z-index: 1;
+		}
 
-#status-progress, #status-notice {
-	display: none;
-}
+		.scanlines {
+			position: absolute;
+			inset: 0;
+			background: repeating-linear-gradient(
+				0deg,
+				rgba(0, 0, 0, 0.18) 0,
+				rgba(0, 0, 0, 0.18) 1px,
+				transparent 1px,
+				transparent 3px
+			);
+			pointer-events: none;
+			z-index: 5;
+		}
 
-#status-progress {
-	bottom: 10%;
-	width: 50%;
-	margin: 0 auto;
-}
+		.casing {
+			position: absolute;
+			display: none;
+			width: 6px;
+			height: 3px;
+			background: var(--gold);
+			box-shadow:
+				0 0 0 1px #000000,
+				inset 0 -1px 0 var(--gold-pressed);
+			z-index: 2;
+		}
 
-#status-notice {
-	background-color: #5b3943;
-	border-radius: 0.5rem;
-	border: 1px solid #9b3943;
-	color: #e0e0e0;
-	font-family: 'Noto Sans', 'Droid Sans', Arial, sans-serif;
-	line-height: 1.3;
-	margin: 0 2rem;
-	overflow: hidden;
-	padding: 1rem;
-	text-align: center;
-	z-index: 1;
-}
-		</style>
-		<link id="-gd-engine-icon" rel="icon" type="image/png" href="index.icon.png" />
-<link rel="apple-touch-icon" href="index.apple-touch-icon.png"/>
+		.casing-1 { top: 18%; left: 22%; transform: rotate(34deg); }
+		.casing-2 { top: 28%; left: 78%; transform: rotate(-12deg); }
+		.casing-3 { top: 72%; left: 18%; transform: rotate(78deg); }
+		.casing-4 { top: 82%; left: 71%; transform: rotate(-45deg); }
+		.casing-5 { top: 38%; left: 12%; transform: rotate(15deg); }
+		.casing-6 { top: 68%; left: 85%; transform: rotate(-80deg); }
 
-	</head>
-	<body>
-		<canvas id="canvas">
-			Your browser does not support the canvas tag.
-		</canvas>
+		.blood {
+			position: absolute;
+			display: none;
+			background: #6E1818;
+			z-index: 2;
+		}
 
-		<noscript>
-			Your browser does not support JavaScript.
-		</noscript>
+		.blood-1 {
+			top: 24%; left: 14%;
+			width: 28px; height: 18px;
+			box-shadow:
+				6px -4px 0 -2px #6E1818,
+				-8px 6px 0 -4px #6E1818,
+				14px 4px 0 -6px #6E1818,
+				-4px 12px 0 -3px #6E1818;
+			transform: rotate(20deg);
+		}
 
-		<div id="status">
-			<img id="status-splash" class="show-image--true fullsize--true use-filter--true" src="index.png" alt="">
-			<progress id="status-progress"></progress>
-			<div id="status-notice"></div>
+		.blood-2 {
+			top: 76%; left: 72%;
+			width: 22px; height: 16px;
+			box-shadow:
+				-6px 4px 0 -2px #6E1818,
+				8px -6px 0 -4px #6E1818,
+				-12px 8px 0 -5px #6E1818;
+			transform: rotate(-35deg);
+		}
+
+		.crate {
+			position: absolute;
+			display: none;
+			top: 20%;
+			left: 78%;
+			width: 36px;
+			height: 36px;
+			background: var(--dirt-brown);
+			border: 3px solid #2A1F13;
+			box-shadow:
+				inset 0 0 0 2px var(--floor-tan),
+				inset 0 0 0 4px var(--dirt-brown);
+			z-index: 3;
+		}
+
+		.crate::before, .crate::after {
+			content: "";
+			position: absolute;
+			background: #2A1F13;
+		}
+
+		.crate::before {
+			top: 50%;
+			left: 4px;
+			right: 4px;
+			height: 2px;
+		}
+
+		.crate::after {
+			left: 50%;
+			top: 4px;
+			bottom: 4px;
+			width: 2px;
+		}
+
+		.ammo-box {
+			position: absolute;
+			display: none;
+			top: 74%;
+			left: 16%;
+			width: 30px;
+			height: 22px;
+			background: var(--steel);
+			border: 3px solid #1A1A1F;
+			box-shadow: inset 0 0 0 2px var(--gold);
+			z-index: 3;
+		}
+
+		.ammo-box::before {
+			content: "";
+			position: absolute;
+			top: 50%;
+			left: 50%;
+			width: 10px;
+			height: 4px;
+			background: var(--gold);
+			transform: translate(-50%, -50%);
+		}
+
+		.torch {
+			position: absolute;
+			display: none;
+			top: 14%;
+			left: 8%;
+			width: 8px;
+			height: 22px;
+			background: var(--dirt-brown);
+			border: 2px solid #1A1208;
+			z-index: 3;
+		}
+
+		.torch::before {
+			content: "";
+			position: absolute;
+			left: 50%;
+			top: -16px;
+			width: 16px;
+			height: 18px;
+			background: var(--gold);
+			box-shadow:
+				inset 0 -4px 0 var(--gold-pressed),
+				inset 0 4px 0 var(--gold-hover);
+			transform: translateX(-50%);
+			animation: torch-flicker 0.18s steps(2, end) infinite;
+		}
+
+		.torch::after {
+			content: "";
+			position: absolute;
+			left: 50%;
+			top: -42px;
+			width: 220px;
+			height: 220px;
+			background: radial-gradient(circle, rgba(235, 168, 46, 0.22) 0%, transparent 60%);
+			transform: translateX(-50%);
+			pointer-events: none;
+			animation: torch-glow 0.6s ease-in-out infinite alternate;
+		}
+
+		#loader {
+			position: relative;
+			display: flex;
+			flex-direction: column;
+			align-items: center;
+			width: min(82vw, 540px);
+			gap: 20px;
+			z-index: 6;
+		}
+
+		.loader-title {
+			display: grid;
+			margin: 0;
+			color: var(--health-green);
+			font-family: "Upheaval", "Dogica", monospace;
+			font-size: clamp(70px, 9vw, 108px);
+			font-weight: 400;
+			line-height: 0.76;
+			letter-spacing: 0;
+			text-align: center;
+			text-shadow:
+				0 4px 0 #0e4f1c,
+				0 8px 0 #000000,
+				-3px 0 0 #000000,
+				3px 0 0 #000000,
+				0 0 24px rgba(41, 198, 73, 0.4);
+			animation: title-pulse 2.4s ease-in-out infinite;
+		}
+
+		.loader-title span {
+			display: block;
+		}
+
+		.scene {
+			position: relative;
+			width: 100%;
+			height: 140px;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+		}
+
+		.player {
+			position: absolute;
+			left: 50%;
+			top: 50%;
+			width: 28px;
+			height: 32px;
+			transform: translate(-50%, -50%);
+			animation: player-bob 0.9s steps(2, end) infinite;
+			z-index: 4;
+		}
+
+		.player::before {
+			content: "";
+			position: absolute;
+			left: 50%;
+			top: -16px;
+			width: 36px;
+			height: 4px;
+			background: var(--health-green);
+			box-shadow:
+				0 0 0 1px #000000,
+				inset -1px 0 0 rgba(0, 0, 0, 0.25);
+			transform: translateX(-50%);
+		}
+
+		.player::after {
+			content: "PLAYER_01";
+			position: absolute;
+			left: 50%;
+			top: -30px;
+			width: 100px;
+			color: var(--name-green);
+			font-family: "Dogica", monospace;
+			font-size: 7px;
+			text-align: center;
+			text-shadow: 0 1px 0 #000000, 0 0 4px #000000;
+			transform: translateX(-50%);
+			letter-spacing: 0.05em;
+		}
+
+		.player-head {
+			position: absolute;
+			left: 50%;
+			top: 0;
+			width: 22px;
+			height: 18px;
+			background: var(--text-main);
+			box-shadow:
+				0 0 0 2px #000000,
+				inset 0 -4px 0 rgba(0, 0, 0, 0.1);
+			transform: translateX(-50%);
+		}
+
+		.player-head::before {
+			content: "";
+			position: absolute;
+			top: 0;
+			left: 2px;
+			right: 2px;
+			height: 4px;
+			background: #1A1208;
+		}
+
+		.player-head::after {
+			content: "";
+			position: absolute;
+			top: 8px;
+			left: 5px;
+			width: 3px;
+			height: 3px;
+			background: #1A1208;
+			box-shadow: 9px 0 0 #1A1208;
+		}
+
+		.player-body {
+			position: absolute;
+			left: 50%;
+			top: 16px;
+			width: 18px;
+			height: 14px;
+			background: #C93B3B;
+			box-shadow:
+				0 0 0 2px #000000,
+				inset 0 -3px 0 rgba(0, 0, 0, 0.3);
+			transform: translateX(-50%);
+		}
+
+		.weapon-pivot {
+			position: absolute;
+			left: 50%;
+			top: 50%;
+			width: 0;
+			height: 0;
+			transform: translate(-50%, -50%);
+			animation: weapon-sweep 4s ease-in-out infinite;
+			z-index: 5;
+		}
+
+		.player-weapon {
+			position: absolute;
+			left: 6px;
+			top: -2px;
+			width: 22px;
+			height: 5px;
+			background: #9097A1;
+			box-shadow:
+				0 0 0 1px #000000,
+				inset 0 -1px 0 rgba(0, 0, 0, 0.4),
+				inset 0 1px 0 rgba(255, 255, 255, 0.1);
+		}
+
+		.muzzle-flash {
+			position: absolute;
+			left: 26px;
+			top: -4px;
+			width: 10px;
+			height: 9px;
+			background: var(--gold-hover);
+			box-shadow:
+				0 0 0 1px var(--gold),
+				0 0 8px var(--gold);
+			opacity: 0;
+			animation: muzzle-flash 4s ease-in-out infinite;
+		}
+
+		.enemy {
+			position: absolute;
+			width: 18px;
+			height: 22px;
+			z-index: 3;
+		}
+
+		.enemy-head {
+			position: absolute;
+			top: 0;
+			left: 50%;
+			width: 14px;
+			height: 12px;
+			background: var(--text-main);
+			box-shadow: 0 0 0 2px #000000;
+			transform: translateX(-50%);
+		}
+
+		.enemy-body {
+			position: absolute;
+			top: 10px;
+			left: 50%;
+			width: 12px;
+			height: 10px;
+			background: #C93B3B;
+			box-shadow: 0 0 0 2px #000000;
+			transform: translateX(-50%);
+		}
+
+		.enemy::before {
+			content: "";
+			position: absolute;
+			left: 50%;
+			top: -8px;
+			width: 18px;
+			height: 3px;
+			background: var(--health-green);
+			box-shadow: 0 0 0 1px #000000;
+			transform: translateX(-50%);
+		}
+
+		.enemy-1 {
+			left: 8%;
+			animation: enemy-1-walk 4s ease-in-out infinite;
+		}
+
+		.enemy-2 {
+			right: 8%;
+			animation: enemy-2-walk 4s ease-in-out infinite;
+		}
+
+		.hud-panel {
+			width: 100%;
+			background: var(--overlay-72);
+			border: 3px solid var(--panel-border);
+			padding: 16px 18px 14px;
+			box-shadow:
+				0 0 0 3px #000000,
+				inset 0 0 0 1px rgba(0, 0, 0, 0.5);
+			position: relative;
+			box-sizing: border-box;
+		}
+
+		.hud-panel::before,
+		.hud-panel::after {
+			content: "";
+			position: absolute;
+			width: 12px;
+			height: 12px;
+			border: 3px solid var(--gold);
+		}
+
+		.hud-panel::before {
+			top: -3px;
+			left: -3px;
+			border-right: none;
+			border-bottom: none;
+		}
+
+		.hud-panel::after {
+			bottom: -3px;
+			right: -3px;
+			border-left: none;
+			border-top: none;
+		}
+
+		.hud-label-row {
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			gap: 16px;
+			margin-bottom: 10px;
+		}
+
+		.hud-label-left {
+			display: flex;
+			align-items: center;
+			gap: 8px;
+		}
+
+		.hud-icon {
+			width: 8px;
+			height: 8px;
+			background: var(--health-green);
+			box-shadow: 0 0 0 1px #000000;
+			animation: hud-blink 1s steps(2, end) infinite;
+		}
+
+		.hud-label {
+			color: var(--text-main);
+			font-family: "Dogica", monospace;
+			font-size: clamp(8px, 1.4vw, 10px);
+			letter-spacing: 0.08em;
+			text-transform: uppercase;
+			text-shadow: 0 2px 0 #000000;
+		}
+
+		.hud-percent-wrap {
+			position: relative;
+		}
+
+		#loading-percent {
+			color: var(--gold);
+			font-family: "Dogica", monospace;
+			font-size: clamp(9px, 1.5vw, 11px);
+			letter-spacing: 0.08em;
+			text-shadow: 0 2px 0 #000000;
+		}
+
+		.damage-pop {
+			position: absolute;
+			right: 0;
+			top: -4px;
+			color: var(--damage-yellow);
+			font-family: "Dogica", monospace;
+			font-size: clamp(8px, 1.3vw, 10px);
+			text-shadow: 0 1px 0 #000000, 0 0 4px rgba(0, 0, 0, 0.8);
+			pointer-events: none;
+			opacity: 0;
+			letter-spacing: 0.05em;
+			white-space: nowrap;
+		}
+
+		.damage-pop.pop {
+			animation: damage-pop 0.7s ease-out forwards;
+		}
+
+		.progress-shell {
+			height: 22px;
+			padding: 3px;
+			background: #000000;
+			border: 2px solid var(--text-main);
+			box-shadow:
+				inset 0 0 0 1px rgba(0, 0, 0, 0.6),
+				inset 0 -2px 0 rgba(255, 255, 255, 0.05);
+			position: relative;
+			overflow: hidden;
+			box-sizing: border-box;
+		}
+
+		#loading-bar {
+			width: 0%;
+			height: 100%;
+			background:
+				repeating-linear-gradient(
+					90deg,
+					var(--gold) 0,
+					var(--gold) 14px,
+					var(--gold-pressed) 14px,
+					var(--gold-pressed) 20px
+				);
+			box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.3);
+			transition: width 160ms steps(4, end);
+			position: relative;
+			overflow: hidden;
+		}
+
+		#loading-bar::after {
+			content: "";
+			position: absolute;
+			inset: 0;
+			background: linear-gradient(90deg,
+				transparent 0%,
+				rgba(255, 255, 255, 0.35) 50%,
+				transparent 100%);
+			animation: bar-shine 2.4s linear infinite;
+		}
+
+		.hud-tip {
+			margin-top: 10px;
+			color: var(--text-muted);
+			font-family: "Dogica", monospace;
+			font-size: clamp(7px, 1.2vw, 9px);
+			letter-spacing: 0.05em;
+			text-transform: uppercase;
+			text-align: center;
+			text-shadow: 0 1px 0 #000000;
+			min-height: 1.2em;
+			animation: tip-cycle 16s steps(4, jump-none) infinite;
+		}
+
+		#status-notice {
+			display: none;
+			max-width: min(760px, calc(100vw - 32px));
+			background-color: var(--overlay-72);
+			border: 4px solid #C93B3B;
+			box-shadow: 0 0 0 4px #000000;
+			color: var(--text-soft);
+			font-family: "Dogica", monospace;
+			font-size: 12px;
+			line-height: 1.8;
+			margin: 0 2rem;
+			overflow: hidden;
+			padding: 1.25rem;
+			text-align: center;
+			text-transform: uppercase;
+			z-index: 20;
+		}
+
+		@media (max-width: 560px) {
+			#loader {
+				width: min(90vw, 400px);
+				gap: 16px;
+			}
+
+			.scene {
+				height: 110px;
+			}
+		}
+
+		@keyframes title-pulse {
+			0%, 100% {
+				text-shadow:
+					0 4px 0 #0e4f1c,
+					0 8px 0 #000000,
+					-3px 0 0 #000000,
+					3px 0 0 #000000,
+					0 0 24px rgba(41, 198, 73, 0.4);
+			}
+			50% {
+				text-shadow:
+					0 4px 0 #0e4f1c,
+					0 8px 0 #000000,
+					-3px 0 0 #000000,
+					3px 0 0 #000000,
+					0 0 36px rgba(41, 198, 73, 0.7);
+			}
+		}
+
+		@keyframes player-bob {
+			50% {
+				transform: translate(-50%, calc(-50% - 2px));
+			}
+		}
+
+		@keyframes weapon-sweep {
+			0%   { transform: translate(-50%, -50%) rotate(-50deg); }
+			24%  { transform: translate(-50%, -50%) rotate(-50deg); }
+			25%  { transform: translate(-50%, -50%) rotate(-48deg); }
+			49%  { transform: translate(-50%, -50%) rotate(-48deg); }
+			50%  { transform: translate(-50%, -50%) rotate(40deg); }
+			74%  { transform: translate(-50%, -50%) rotate(40deg); }
+			75%  { transform: translate(-50%, -50%) rotate(42deg); }
+			100% { transform: translate(-50%, -50%) rotate(-50deg); }
+		}
+
+		@keyframes muzzle-flash {
+			0%, 23%, 27%, 49%, 53%, 100% { opacity: 0; transform: scale(1); }
+			25%, 51% { opacity: 1; transform: scale(1.4); }
+		}
+
+		@keyframes enemy-1-walk {
+			0%   { transform: translateX(0); }
+			25%  { transform: translateX(40px); }
+			50%  { transform: translateX(40px) scaleX(-1); }
+			75%  { transform: translateX(0) scaleX(-1); }
+			100% { transform: translateX(0); }
+		}
+
+		@keyframes enemy-2-walk {
+			0%   { transform: translateX(0); }
+			25%  { transform: translateX(-40px); }
+			50%  { transform: translateX(-40px) scaleX(-1); }
+			75%  { transform: translateX(0) scaleX(-1); }
+			100% { transform: translateX(0); }
+		}
+
+		@keyframes torch-flicker {
+			50% {
+				background: var(--gold-hover);
+				transform: translateX(-50%) scaleY(1.08);
+			}
+		}
+
+		@keyframes torch-glow {
+			from { opacity: 0.85; }
+			to { opacity: 1; }
+		}
+
+		@keyframes hud-blink {
+			50% {
+				background: var(--gold);
+				box-shadow: 0 0 0 1px #000000, 0 0 6px var(--gold);
+			}
+		}
+
+		@keyframes bar-shine {
+			0%   { transform: translateX(-100%); }
+			100% { transform: translateX(200%); }
+		}
+
+		@keyframes damage-pop {
+			0% {
+				opacity: 0;
+				transform: translateY(0) scale(1);
+			}
+			15% {
+				opacity: 1;
+				transform: translateY(-4px) scale(1.3);
+			}
+			100% {
+				opacity: 0;
+				transform: translateY(-22px) scale(1);
+			}
+		}
+	</style>
+
+	<link id="-gd-engine-icon" rel="icon" type="image/png" href="index.icon.png" />
+	<link rel="apple-touch-icon" href="index.apple-touch-icon.png"/>
+</head>
+
+<body>
+	<canvas id="canvas">
+		Your browser does not support the canvas tag.
+	</canvas>
+
+	<noscript>
+		Your browser does not support JavaScript.
+	</noscript>
+
+	<div id="status">
+		<div class="floor"></div>
+		<div class="vignette"></div>
+
+		<div id="loader">
+			<div class="hud-panel">
+				<div class="hud-label-row">
+					<div class="hud-label-left">
+						<span class="hud-icon"></span>
+						<span class="hud-label">Loading files</span>
+					</div>
+					<div class="hud-percent-wrap">
+						<span id="loading-percent">0%</span>
+					</div>
+				</div>
+				<div class="progress-shell">
+					<div id="loading-bar"></div>
+				</div>
+			</div>
 		</div>
 
-		<script src="index.js"></script>
-		<script>
-const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":true,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":589516,"index.wasm":37685705},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
-const GODOT_THREADS_ENABLED = false;
-const engine = new Engine(GODOT_CONFIG);
+		<div id="status-notice"></div>
+	</div>
 
-(function () {
-	const statusOverlay = document.getElementById('status');
-	const statusProgress = document.getElementById('status-progress');
-	const statusNotice = document.getElementById('status-notice');
+	<script src="index.js"></script>
 
-	let initializing = true;
-	let statusMode = '';
-
-	function setStatusMode(mode) {
-		if (statusMode === mode || !initializing) {
-			return;
-		}
-		if (mode === 'hidden') {
-			statusOverlay.remove();
-			initializing = false;
-			return;
-		}
-		statusOverlay.style.visibility = 'visible';
-		statusProgress.style.display = mode === 'progress' ? 'block' : 'none';
-		statusNotice.style.display = mode === 'notice' ? 'block' : 'none';
-		statusMode = mode;
-	}
-
-	function setStatusNotice(text) {
-		while (statusNotice.lastChild) {
-			statusNotice.removeChild(statusNotice.lastChild);
-		}
-		const lines = text.split('\n');
-		lines.forEach((line) => {
-			statusNotice.appendChild(document.createTextNode(line));
-			statusNotice.appendChild(document.createElement('br'));
-		});
-	}
-
-	function displayFailureNotice(err) {
-		console.error(err);
-		if (err instanceof Error) {
-			setStatusNotice(err.message);
-		} else if (typeof err === 'string') {
-			setStatusNotice(err);
-		} else {
-			setStatusNotice('An unknown error occurred.');
-		}
-		setStatusMode('notice');
-		initializing = false;
-	}
-
-	const missing = Engine.getMissingFeatures({
-		threads: GODOT_THREADS_ENABLED,
-	});
-
-	if (missing.length !== 0) {
-		if (GODOT_CONFIG['serviceWorker'] && GODOT_CONFIG['ensureCrossOriginIsolationHeaders'] && 'serviceWorker' in navigator) {
-			let serviceWorkerRegistrationPromise;
-			try {
-				serviceWorkerRegistrationPromise = navigator.serviceWorker.getRegistration();
-			} catch (err) {
-				serviceWorkerRegistrationPromise = Promise.reject(new Error('Service worker registration failed.'));
-			}
-			// There's a chance that installing the service worker would fix the issue
-			Promise.race([
-				serviceWorkerRegistrationPromise.then((registration) => {
-					if (registration != null) {
-						return Promise.reject(new Error('Service worker already exists.'));
-					}
-					return registration;
-				}).then(() => engine.installServiceWorker()),
-				// For some reason, `getRegistration()` can stall
-				new Promise((resolve) => {
-					setTimeout(() => resolve(), 2000);
-				}),
-			]).then(() => {
-				// Reload if there was no error.
-				window.location.reload();
-			}).catch((err) => {
-				console.error('Error while registering service worker:', err);
-			});
-		} else {
-			// Display the message as usual
-			const missingMsg = 'Error\nThe following features required to run Godot projects on the Web are missing:\n';
-			displayFailureNotice(missingMsg + missing.join('\n'));
-		}
-	} else {
-		setStatusMode('progress');
-		engine.startGame({
-			'onProgress': function (current, total) {
-				if (current > 0 && total > 0) {
-					statusProgress.value = current;
-					statusProgress.max = total;
-				} else {
-					statusProgress.removeAttribute('value');
-					statusProgress.removeAttribute('max');
-				}
+	<script>
+		const GODOT_CONFIG = {
+			"args": [],
+			"canvasResizePolicy": 2,
+			"emscriptenPoolSize": 8,
+			"ensureCrossOriginIsolationHeaders": true,
+			"executable": "index",
+			"experimentalVK": false,
+			"fileSizes": {
+				"index.pck": 567876,
+				"index.wasm": 37685705
 			},
-		}).then(() => {
-			setStatusMode('hidden');
-		}, displayFailureNotice);
-	}
-}());
-		</script>
-	</body>
-</html>
+			"focusCanvas": true,
+			"gdextensionLibs": [],
+			"godotPoolSize": 4
+		};
 
+		const GODOT_THREADS_ENABLED = false;
+		const engine = new Engine(GODOT_CONFIG);
+
+		(function () {
+			const statusOverlay = document.getElementById('status');
+			const loader = document.getElementById('loader');
+			const loadingBar = document.getElementById('loading-bar');
+			const loadingPercent = document.getElementById('loading-percent');
+			const statusNotice = document.getElementById('status-notice');
+
+			let initializing = true;
+			let statusMode = '';
+
+			function setStatusMode(mode) {
+				if (statusMode === mode || !initializing) {
+					return;
+				}
+
+				if (mode === 'hidden') {
+					statusOverlay.remove();
+					initializing = false;
+					return;
+				}
+
+				statusOverlay.style.visibility = 'visible';
+
+				if (mode === 'progress') {
+					loader.style.display = 'flex';
+					statusNotice.style.display = 'none';
+				}
+
+				if (mode === 'notice') {
+					loader.style.display = 'none';
+					statusNotice.style.display = 'block';
+				}
+
+				statusMode = mode;
+			}
+
+			function setStatusNotice(text) {
+				while (statusNotice.lastChild) {
+					statusNotice.removeChild(statusNotice.lastChild);
+				}
+
+				const lines = text.split('\n');
+
+				lines.forEach((line) => {
+					statusNotice.appendChild(document.createTextNode(line));
+					statusNotice.appendChild(document.createElement('br'));
+				});
+			}
+
+			function displayFailureNotice(err) {
+				console.error(err);
+
+				if (err instanceof Error) {
+					setStatusNotice(err.message);
+				} else if (typeof err === 'string') {
+					setStatusNotice(err);
+				} else {
+					setStatusNotice('An unknown error occurred.');
+				}
+
+				setStatusMode('notice');
+				initializing = false;
+			}
+
+			const missing = Engine.getMissingFeatures({
+				threads: GODOT_THREADS_ENABLED,
+			});
+
+			if (missing.length !== 0) {
+				if (
+					GODOT_CONFIG['serviceWorker'] &&
+					GODOT_CONFIG['ensureCrossOriginIsolationHeaders'] &&
+					'serviceWorker' in navigator
+				) {
+					let serviceWorkerRegistrationPromise;
+
+					try {
+						serviceWorkerRegistrationPromise = navigator.serviceWorker.getRegistration();
+					} catch (err) {
+						serviceWorkerRegistrationPromise = Promise.reject(
+							new Error('Service worker registration failed.')
+						);
+					}
+
+					Promise.race([
+						serviceWorkerRegistrationPromise
+							.then((registration) => {
+								if (registration != null) {
+									return Promise.reject(new Error('Service worker already exists.'));
+								}
+
+								return registration;
+							})
+							.then(() => engine.installServiceWorker()),
+
+						new Promise((resolve) => {
+							setTimeout(() => resolve(), 2000);
+						}),
+					])
+					.then(() => {
+						window.location.reload();
+					})
+					.catch((err) => {
+						console.error('Error while registering service worker:', err);
+					});
+				} else {
+					const missingMsg = 'Error\nThe following features required to run Godot projects on the Web are missing:\n';
+					displayFailureNotice(missingMsg + missing.join('\n'));
+				}
+			} else {
+				setStatusMode('progress');
+
+				engine.startGame({
+					'onProgress': function (current, total) {
+						if (current > 0 && total > 0) {
+							const percent = Math.floor((current / total) * 100);
+							loadingBar.style.width = percent + '%';
+							loadingPercent.textContent = percent + '%';
+						} else {
+							loadingBar.style.width = '18%';
+							loadingPercent.textContent = 'Loading...';
+						}
+					},
+				}).then(() => {
+					setStatusMode('hidden');
+				}, displayFailureNotice);
+			}
+		}());
+	</script>
+</body>
+</html>
