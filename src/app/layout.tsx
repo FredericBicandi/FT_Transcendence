@@ -4,7 +4,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "ft_slay.42",
+  title: "Pixel Fight",
   description: "Game dashboard",
 };
 

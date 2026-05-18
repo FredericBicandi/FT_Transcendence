@@ -11,7 +11,7 @@ export default function Home() {
     <main className="relative h-screen w-screen overflow-hidden ">
       {!showGame && (
         <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-6">
-          <h1 className="text-4xl font-bold">ft_slay.42</h1>
+          <h1 className="text-4xl font-bold">pixelfight.42</h1>
 
           <button
             onClick={() => setShowGame(true)}
