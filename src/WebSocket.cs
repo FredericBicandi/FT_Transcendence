@@ -32,6 +32,7 @@ public sealed class Ws
         new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
 
     private readonly ConcurrentDictionary<string, ClientConnection> clients;
+    private int onlinePlayerCount;
 
     // Active match rooms keyed by room id. Rooms are removed when empty or ended.
     private readonly ConcurrentDictionary<string, GameRoom> rooms = new();
@@ -41,6 +42,8 @@ public sealed class Ws
         this.clients = clients;
         _ = RunRoomTimersAsync();
     }
+
+    public int OnlinePlayerCount => Volatile.Read(ref onlinePlayerCount);
 
     // Handles one upgraded /ws connection from connect to cleanup.
     public async Task RunWebSocketApp(HttpContext context)
@@ -55,6 +58,7 @@ public sealed class Ws
         var socket = await context.WebSockets.AcceptWebSocketAsync();
         var connectionId = Helper.GetConnectionId();
         var client = Helper.AcceptPlayer(connectionId, socket);
+        Interlocked.Increment(ref onlinePlayerCount);
 
         Console.WriteLine($"Socket connected: {connectionId}");
 
@@ -110,6 +114,7 @@ public sealed class Ws
             }
 
             socket.Dispose();
+            Interlocked.Decrement(ref onlinePlayerCount);
             Console.WriteLine($"Client disconnected: {client.LogId}");
 
             if (disconnectedRoom is not null && client.HasJoinedGame)
