@@ -1,0 +1,155 @@
+import { useState } from "react";
+import type { PlayerProfile } from "@/models/player/playerProfile.model";
+import type {
+  HomeLanguage,
+  HomeTranslations,
+} from "@/views/home/homeTranslations";
+
+type TopBarActionsProps = {
+  language: HomeLanguage;
+  onProfileClick: () => void;
+  onLanguageChange: (language: HomeLanguage) => void;
+  playerProfile: PlayerProfile | null;
+  translations: HomeTranslations["language"] & {
+    profile: string;
+  };
+};
+
+const brickWallStyle = {
+  backgroundColor: "#212627",
+  backgroundImage:
+    "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='72' height='36' viewBox='0 0 72 36'%3E%3Crect width='72' height='36' fill='%23151819'/%3E%3Crect x='2' y='2' width='32' height='14' fill='%23212627'/%3E%3Crect x='36' y='2' width='34' height='14' fill='%23252b2c'/%3E%3Crect x='2' y='20' width='16' height='14' fill='%23252b2c'/%3E%3Crect x='20' y='20' width='32' height='14' fill='%23212627'/%3E%3Crect x='54' y='20' width='16' height='14' fill='%231f2425'/%3E%3Crect x='5' y='4' width='24' height='2' fill='%23374041' opacity='.55'/%3E%3Crect x='40' y='4' width='18' height='2' fill='%23374041' opacity='.45'/%3E%3Crect x='24' y='22' width='20' height='2' fill='%23374041' opacity='.5'/%3E%3Crect x='7' y='13' width='8' height='2' fill='%23050302' opacity='.22'/%3E%3Crect x='60' y='11' width='6' height='2' fill='%23050302' opacity='.2'/%3E%3Crect x='41' y='30' width='8' height='2' fill='%23050302' opacity='.2'/%3E%3C/svg%3E\")",
+  backgroundSize: "72px 36px",
+};
+
+function AvatarIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      className="h-6 w-6 text-[#f5dfad]"
+      fill="none"
+      viewBox="0 0 24 24"
+    >
+      <path
+        d="M12 12.5c2.21 0 4-1.9 4-4.25S14.21 4 12 4 8 5.9 8 8.25s1.79 4.25 4 4.25Z"
+        fill="currentColor"
+      />
+      <path
+        d="M5 20c.7-3.34 3.3-5.25 7-5.25s6.3 1.91 7 5.25H5Z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+}
+
+function LanguageIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      className="h-7 w-7 text-[#f5dfad]"
+      fill="none"
+      viewBox="0 0 24 24"
+    >
+      <path
+        d="M3.5 12a8.5 8.5 0 1 0 17 0 8.5 8.5 0 0 0-17 0Z"
+        stroke="currentColor"
+        strokeWidth="2"
+      />
+      <path
+        d="M4.5 9h15M4.5 15h15M12 3.5c2 2.25 3 5.08 3 8.5s-1 6.25-3 8.5M12 3.5c-2 2.25-3 5.08-3 8.5s1 6.25 3 8.5"
+        stroke="currentColor"
+        strokeLinecap="square"
+        strokeWidth="1.8"
+      />
+      <path
+        d="M17.5 18.5h3M19 15.5v6M16.6 21.5l2.4-6 2.4 6"
+        stroke="#d9b46b"
+        strokeLinecap="square"
+        strokeLinejoin="round"
+        strokeWidth="2"
+      />
+    </svg>
+  );
+}
+
+export function TopBarActions({
+  language,
+  onLanguageChange,
+  onProfileClick,
+  playerProfile,
+  translations,
+}: TopBarActionsProps) {
+  const [showLanguageMenu, setShowLanguageMenu] = useState(false);
+  const playerName = playerProfile?.playerName ?? "Player";
+  const avatarUrl = playerProfile?.isGuest ? undefined : playerProfile?.avatarUrl;
+  const languageOptions: HomeLanguage[] = ["english", "french", "arabic"];
+
+  return (
+    <div className="absolute right-4 top-4 z-30 flex items-start gap-3 sm:right-6 sm:top-6">
+      <button
+        className="grid min-h-16 min-w-44 grid-cols-[48px_minmax(0,1fr)] grid-rows-2 items-center px-3 py-2 text-left shadow-[0_0_0_3px_#050302,0_4px_0_3px_#111515,inset_0_3px_0_#374041,inset_0_-3px_0_#151819] hover:brightness-110 hover:shadow-[0_0_0_3px_#050302,0_4px_0_3px_#111515,inset_0_3px_0_#465253,inset_0_-3px_0_#151819] active:translate-y-1 active:shadow-[0_0_0_3px_#050302,0_1px_0_3px_#111515,inset_0_2px_0_#374041,inset_0_-2px_0_#151819]"
+        onClick={onProfileClick}
+        style={brickWallStyle}
+        type="button"
+      >
+        <span className="row-span-2 flex h-10 w-10 items-center justify-center overflow-hidden bg-[#151819] shadow-[inset_0_2px_0_#374041,inset_0_-2px_0_#050302]">
+          {avatarUrl ? (
+            <span
+              aria-hidden="true"
+              className="h-full w-full bg-cover bg-center"
+              style={{ backgroundImage: `url("${avatarUrl}")` }}
+            />
+          ) : (
+            <AvatarIcon />
+          )}
+        </span>
+        <span className="truncate text-sm uppercase text-[#f5dfad]">
+          {playerName}
+        </span>
+        <span className="text-xs uppercase text-[#d9b46b]">
+          {translations.profile}
+        </span>
+      </button>
+
+      <div className="relative">
+        <button
+          aria-expanded={showLanguageMenu}
+          aria-label={translations.label}
+          className="flex h-16 min-w-24 flex-col items-center justify-center gap-1 px-3 shadow-[0_0_0_3px_#050302,0_4px_0_3px_#111515,inset_0_3px_0_#374041,inset_0_-3px_0_#151819] hover:brightness-110 hover:shadow-[0_0_0_3px_#050302,0_4px_0_3px_#111515,inset_0_3px_0_#465253,inset_0_-3px_0_#151819] active:translate-y-1 active:shadow-[0_0_0_3px_#050302,0_1px_0_3px_#111515,inset_0_2px_0_#374041,inset_0_-2px_0_#151819]"
+          onClick={() =>
+            setShowLanguageMenu((currentValue) => !currentValue)
+          }
+          style={brickWallStyle}
+          type="button"
+        >
+          <LanguageIcon />
+          <span className="text-xs text-[#d9b46b]">
+            {translations.options[language]}
+          </span>
+        </button>
+
+        {showLanguageMenu && (
+          <div
+            className="absolute right-0 top-[4.75rem] flex w-32 flex-col gap-1 bg-[#151819] p-2 shadow-[0_0_0_3px_#050302,0_4px_0_3px_#111515,inset_0_2px_0_#374041,inset_0_-2px_0_#050302]"
+            role="menu"
+          >
+            {languageOptions.map((languageOption) => (
+              <button
+                className="bg-[#212627] px-3 py-2 text-left text-xs uppercase text-[#f5dfad] shadow-[inset_0_2px_0_#374041,inset_0_-2px_0_#151819] hover:bg-[#2a3031]"
+                key={languageOption}
+                onClick={() => {
+                  onLanguageChange(languageOption);
+                  setShowLanguageMenu(false);
+                }}
+                role="menuitem"
+                type="button"
+              >
+                {translations.options[languageOption]}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

@@ -5,6 +5,7 @@ import { createSupabaseClient } from "@/models/supabase/client.model";
 export type PlayerProfile = {
   playerId: string;
   playerName: string;
+  avatarUrl?: string;
   level: number;
   isGuest: boolean;
 };
@@ -33,6 +34,16 @@ function normalizePlayerLevel(value: unknown) {
   return Number.isFinite(numericLevel) && numericLevel > 0
     ? Math.floor(numericLevel)
     : 0;
+}
+
+function normalizeAvatarUrl(value: unknown) {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const avatarUrl = value.trim();
+
+  return avatarUrl.length > 0 ? avatarUrl : undefined;
 }
 
 function createGuestPlayerProfile(): PlayerProfile {
@@ -103,6 +114,11 @@ export async function loadPlayerProfile(): Promise<PlayerProfile> {
             user.user_metadata?.full_name ??
             user.email?.split("@")[0],
           "Player",
+        ),
+        avatarUrl: normalizeAvatarUrl(
+          user.user_metadata?.avatarUrl ??
+            user.user_metadata?.avatar_url ??
+            user.user_metadata?.picture,
         ),
         level: normalizePlayerLevel(
           user.user_metadata?.level ?? user.app_metadata?.level,

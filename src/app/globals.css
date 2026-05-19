@@ -6,6 +6,12 @@
   font-display: swap;
 }
 
+@font-face {
+  font-family: "Dogica";
+  src: url("/font/dogica.ttf") format("truetype");
+  font-display: swap;
+}
+
 :root {
   --background: #ffffff;
   --foreground: #171717;
@@ -30,4 +36,8 @@ body {
   color: var(--foreground);
   font-family: "Upheaval", monospace;
   letter-spacing: 0;
+}
+
+.chat-font {
+  font-family: "Dogica", "Courier New", monospace;
 }

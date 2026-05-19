@@ -1,24 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { pingSupabase } from "@/models/supabase/client.model";
 import {
   createPlayerProfileSearchParams,
   loadPlayerProfile,
   type PlayerProfile,
 } from "@/models/player/playerProfile.model";
 
-export type SupabaseStatus = "checking" | "connected" | "missing-env" | "error";
-
 const ONLINE_PLAYERS_URL = "https://pixelfight.live/online";
 const ONLINE_PLAYERS_POLL_INTERVAL_MS = 3_000;
-
-const supabaseStatusLabels: Record<SupabaseStatus, string> = {
-  checking: "Checking Supabase...",
-  connected: "Supabase connected",
-  "missing-env": "Supabase env missing",
-  error: "Supabase connection failed",
-};
 
 function readOnlineCount(value: unknown): number | null {
   if (typeof value === "number") {
@@ -87,8 +77,6 @@ export function useHomeController() {
   const [playerProfile, setPlayerProfile] = useState<PlayerProfile | null>(
     null,
   );
-  const [supabaseStatus, setSupabaseStatus] =
-    useState<SupabaseStatus>("checking");
 
   useEffect(() => {
     let mounted = true;
@@ -102,37 +90,6 @@ export function useHomeController() {
     }
 
     resolvePlayerProfile();
-
-    return () => {
-      mounted = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    let mounted = true;
-
-    async function checkSupabase() {
-      try {
-        await pingSupabase();
-
-        if (mounted) {
-          setSupabaseStatus("connected");
-        }
-      } catch (error) {
-        if (!mounted) {
-          return;
-        }
-
-        setSupabaseStatus(
-          error instanceof Error &&
-            error.message.includes("Missing Supabase environment variables")
-            ? "missing-env"
-            : "error",
-        );
-      }
-    }
-
-    checkSupabase();
 
     return () => {
       mounted = false;
@@ -190,8 +147,6 @@ export function useHomeController() {
     onlineCount,
     playerProfile,
     showGame,
-    supabaseStatus,
-    supabaseStatusLabel: supabaseStatusLabels[supabaseStatus],
     playGame: () => {
       if (gameUrl) {
         setShowGame(true);
