@@ -14,10 +14,20 @@ export default function RootLayout({
   return (
     <html lang="en">  
       <head>
-        <link rel="prefetch" href="/game/index.js" as="script" />
-        <link rel="prefetch" href="/game/index.wasm" as="fetch" crossOrigin="anonymous" />
-        <link rel="prefetch" href="/game/index.pck" as="fetch" crossOrigin="anonymous" />
-        <link rel="prefetch" href="/game/index.audio.worklet.js" as="script" />
+        <link rel="prefetch" href="/Game/index.js" as="script" />
+        <link
+          rel="prefetch"
+          href="/Game/index.wasm"
+          as="fetch"
+          crossOrigin="anonymous"
+        />
+        <link
+          rel="prefetch"
+          href="/Game/index.pck"
+          as="fetch"
+          crossOrigin="anonymous"
+        />
+        <link rel="prefetch" href="/Game/index.audio.worklet.js" as="script" />
       </head>
       <body>{children}</body>
     </html>
