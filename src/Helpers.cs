@@ -33,16 +33,14 @@ public static class Helper
         return true;
     }
 
-    // TODO:: get the real player ID by username from the dashboard
-    public static string GetPlayerId() =>
+    public static string GetConnectionId() =>
         Guid.NewGuid().ToString("N");
     
-    public static ClientConnection AcceptPlayer(string playerId, WebSocket clientSocket, string roomId)
+    public static ClientConnection AcceptPlayer(string connectionId, WebSocket clientSocket)
     {
         return new ClientConnection(
-            playerId,
-            clientSocket,
-            roomId
+            connectionId,
+            clientSocket
         );
     }
     
