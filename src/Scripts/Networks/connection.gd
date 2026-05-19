@@ -25,7 +25,8 @@ func _ready() -> void:
 	network_client.connection_established.connect(_on_connection_established)
 	network_client.connection_failed.connect(_on_connection_failed)
 	network_client.connection_lost.connect(_on_connection_lost)
-	network_client.room_joined.connect(_on_room_joined)
+	network_client.room_reserved.connect(_on_room_ready)
+	network_client.room_joined.connect(_on_room_ready)
 	network_client.time_synced.connect(_on_time_synced)
 	network_client.player_move_received.connect(_on_preview_player_move_received)
 	network_client.player_angle_received.connect(_on_preview_player_angle_received)
@@ -58,17 +59,17 @@ func _on_connection_established() -> void:
 	if has_started_game:
 		return
 
-	_set_status_text("Connected. Waiting for a room...")
+	_set_status_text("Connected. Reserving a room...")
 	_set_room_ready_ui_visible(false)
 
-func _on_room_joined(message: Dictionary) -> void:
+func _on_room_ready(message: Dictionary) -> void:
 	if has_started_game or is_returning_to_lobby:
 		return
 
 	# Show the room preview until the player chooses to join the match
 	is_room_ready = true
 	local_player_id = str(message.get("playerId", ""))
-	_set_status_text("Room found.")
+	_set_status_text("Room reserved.")
 	_apply_leaderboard_snapshot(message)
 	_apply_initial_preview_players(message)
 	_apply_cached_preview_players()

@@ -4,6 +4,7 @@ extends Node
 signal connection_established
 signal connection_failed
 signal connection_lost(reason: String)
+signal room_reserved(message: Dictionary)
 signal room_joined(message: Dictionary)
 signal time_synced(message: Dictionary)
 signal player_move_received(message: Dictionary)
@@ -18,12 +19,16 @@ signal match_ended(message: Dictionary)
 @export var server_url: String = "wss://pixelfight.live/ws"
 @export var bypass_tls_validation: bool = false
 @export var connection_timeout_seconds: float = 30.0
+@export var player_id: String = ""
+@export var player_name: String = "Player"
+@export var player_level: int = 1
 
 var socket: WebSocketPeer = WebSocketPeer.new()
 var was_open_last_frame: bool = false
 var has_reported_closed_state: bool = false
 var has_connected_once: bool = false
 var has_reported_connection_loss: bool = false
+var has_sent_room_reservation_request: bool = false
 var local_player_id: String = ""
 var local_room_id: String = ""
 var match_duration_seconds: int = 0
@@ -59,12 +64,15 @@ func _process(delta: float) -> void:
 	_read_packets()
 
 func connect_to_server() -> Error:
+	_prepare_player_profile()
+
 	# Reset connection state before opening a new socket
 	socket = WebSocketPeer.new()
 	was_open_last_frame = false
 	has_reported_closed_state = false
 	has_connected_once = false
 	has_reported_connection_loss = false
+	has_sent_room_reservation_request = false
 	local_player_id = ""
 	local_room_id = ""
 	match_duration_seconds = 0
@@ -129,13 +137,28 @@ func send_angle(angle: float) -> void:
 		}
 	)
 
-func send_on_connect(x: float, y: float, angle: float, weapon_type: String) -> void:
+func send_on_connect() -> void:
+	if socket.get_ready_state() != WebSocketPeer.STATE_OPEN or has_sent_room_reservation_request:
+		return
+
+	_prepare_player_profile()
+	_send_json(
+		{
+			"type": "on_connect",
+			"playerId": player_id,
+			"playerName": player_name,
+			"level": player_level
+		}
+	)
+	has_sent_room_reservation_request = true
+
+func send_on_join(x: float, y: float, angle: float, weapon_type: String) -> void:
 	if socket.get_ready_state() != WebSocketPeer.STATE_OPEN:
 		return
 
 	_send_json(
 		{
-			"type": "on_connect",
+			"type": "on_join",
 			"x": x,
 			"y": y,
 			"angle": angle,
@@ -211,6 +234,7 @@ func _handle_state_changes(state: int) -> void:
 		has_reported_closed_state = false
 		has_reported_connection_loss = false
 		seconds_since_last_server_activity = 0.0
+		send_on_connect()
 		connection_established.emit()
 		return
 
@@ -272,13 +296,11 @@ func _handle_message(message: Dictionary) -> void:
 			var left_player_id := str(message.get("playerId", message.get("id", "")))
 			remote_player_snapshots.erase(left_player_id)
 			player_left_received.emit(left_player_id)
+		"room_reserved":
+			_apply_room_assignment(message)
+			room_reserved.emit(message)
 		"room_joined":
-			local_player_id = str(message.get("playerId", ""))
-			local_room_id = str(message.get("roomId", ""))
-			match_duration_seconds = int(message.get("durationSeconds", 0))
-			remaining_seconds = float(message.get("remainingSeconds", match_duration_seconds))
-			match_finished = false
-			last_room_joined_message = message.duplicate(true)
+			_apply_room_assignment(message)
 			room_joined.emit(message)
 		"time_sync":
 			remaining_seconds = float(message.get("remainingSeconds", remaining_seconds))
@@ -295,6 +317,92 @@ func _send_json(payload: Dictionary) -> void:
 	var error := socket.send_text(data)
 	if error != OK:
 		push_warning("NetworkClient: failed to send packet (error %d)" % error)
+
+func _prepare_player_profile() -> void:
+	_apply_web_player_profile_overrides()
+
+	player_id = player_id.strip_edges()
+	player_name = player_name.strip_edges()
+	player_level = maxi(player_level, 1)
+
+	if player_id == "":
+		player_id = _generate_fallback_player_id()
+	if player_name == "":
+		player_name = "Player"
+
+func _apply_web_player_profile_overrides() -> void:
+	if not OS.has_feature("web"):
+		return
+
+	var search_variant: Variant = JavaScriptBridge.eval("window.location.search || ''", true)
+	if typeof(search_variant) != TYPE_STRING:
+		return
+
+	var query_params := _parse_query_params(str(search_variant))
+	player_id = _pick_string_query_param(query_params, ["playerId", "player_id", "userId", "user_id", "id"], player_id)
+	player_name = _pick_string_query_param(query_params, ["playerName", "player_name", "username", "name"], player_name)
+	player_level = _pick_int_query_param(query_params, ["level", "playerLevel", "player_level"], player_level)
+
+func _parse_query_params(query_string: String) -> Dictionary:
+	var query := query_string.strip_edges()
+	if query.begins_with("?"):
+		query = query.substr(1)
+
+	var params: Dictionary = {}
+	for pair_text in query.split("&", false):
+		var pair := pair_text.split("=", true, 1)
+		if pair.size() == 0:
+			continue
+
+		var key := _decode_query_component(pair[0])
+		if key == "":
+			continue
+
+		var value := _decode_query_component(pair[1] if pair.size() > 1 else "")
+		params[key] = value
+
+	return params
+
+func _decode_query_component(value: String) -> String:
+	return value.replace("+", " ").uri_decode()
+
+func _pick_string_query_param(params: Dictionary, keys: Array[String], fallback: String) -> String:
+	for key in keys:
+		if not params.has(key):
+			continue
+
+		var value := str(params[key]).strip_edges()
+		if value != "":
+			return value
+
+	return fallback
+
+func _pick_int_query_param(params: Dictionary, keys: Array[String], fallback: int) -> int:
+	for key in keys:
+		if not params.has(key):
+			continue
+
+		var value := str(params[key]).strip_edges()
+		if value.is_valid_int():
+			return int(value)
+
+	return fallback
+
+func _generate_fallback_player_id() -> String:
+	var rng := RandomNumberGenerator.new()
+	rng.randomize()
+	return "client-%d-%d" % [int(Time.get_unix_time_from_system()), rng.randi()]
+
+func _apply_room_assignment(message: Dictionary) -> void:
+	local_player_id = str(message.get("playerId", player_id))
+	local_room_id = str(message.get("roomId", local_room_id))
+	match_duration_seconds = int(message.get("durationSeconds", match_duration_seconds))
+	remaining_seconds = float(message.get("remainingSeconds", remaining_seconds if remaining_seconds > 0.0 else match_duration_seconds))
+	match_finished = false
+	last_room_joined_message = message.duplicate(true)
+
+	if local_player_id != "":
+		player_id = local_player_id
 
 func _store_remote_player_snapshot(message: Dictionary) -> void:
 	var player_id := str(message.get("playerId", message.get("id", "")))

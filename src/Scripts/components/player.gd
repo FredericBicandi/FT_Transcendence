@@ -60,7 +60,7 @@ var last_sent_aim_frame: int = -1
 var remote_latest_angle_degrees: float = NAN
 var remote_last_move_direction: Vector2 = Vector2.ZERO
 var remote_walk_animation_hold_remaining: float = 0.0
-var has_sent_connect_state: bool = false
+var has_sent_join_state: bool = false
 var last_reported_weapon_type: String = ""
 var network_player_id: String = ""
 var next_shot_sequence: int = 0
@@ -112,7 +112,7 @@ func _ready() -> void:
 	_configure_damage_numbers()
 	last_sent_angle = _get_current_aim_angle()
 	last_sent_aim_frame = weapon.get_aim_frame()
-	_schedule_connect_state_sync()
+	_schedule_join_state_sync()
 
 func _physics_process(delta: float) -> void:
 	# Dead players cannot move until respawn
@@ -560,8 +560,8 @@ func _send_ping_position() -> void:
 	last_sent_angle = _get_current_aim_angle()
 	network_client.send_idle(global_position.x, global_position.y, last_sent_angle)
 
-func send_connect_state() -> void:
-	if has_sent_connect_state or is_remote_proxy or not accepts_input or network_client == null:
+func send_join_state() -> void:
+	if has_sent_join_state or is_remote_proxy or not accepts_input or network_client == null:
 		return
 
 	global_position = _resolve_respawn_position()
@@ -569,7 +569,7 @@ func send_connect_state() -> void:
 	if not _send_full_player_state():
 		return
 
-	has_sent_connect_state = true
+	has_sent_join_state = true
 
 func _report_weapon_switch(active_weapon: BaseWeapon) -> void:
 	if active_weapon == null or not accepts_input or not match_controls_enabled or network_client == null:
@@ -597,29 +597,29 @@ func _on_weapon_shot_fired(angle_radians: float, weapon_type: String, start_posi
 
 	network_client.send_shoot(angle_radians, weapon_type, global_position, start_position, target_position)
 
-func _schedule_connect_state_sync() -> void:
+func _schedule_join_state_sync() -> void:
 	if is_remote_proxy or not accepts_input or network_client == null:
 		return
 
 	# Try now, but also wait for the socket if it is still connecting
-	call_deferred("_try_send_connect_state")
+	call_deferred("_try_send_join_state")
 
-	if has_sent_connect_state:
+	if has_sent_join_state:
 		return
 
 	if not network_client.connection_established.is_connected(_on_network_connection_established):
 		network_client.connection_established.connect(_on_network_connection_established)
 
-func _try_send_connect_state() -> void:
-	send_connect_state()
+func _try_send_join_state() -> void:
+	send_join_state()
 
-	if has_sent_connect_state and network_client != null and network_client.connection_established.is_connected(_on_network_connection_established):
+	if has_sent_join_state and network_client != null and network_client.connection_established.is_connected(_on_network_connection_established):
 		network_client.connection_established.disconnect(_on_network_connection_established)
 
 func _on_network_connection_established() -> void:
-	send_connect_state()
+	send_join_state()
 
-	if has_sent_connect_state and network_client != null and network_client.connection_established.is_connected(_on_network_connection_established):
+	if has_sent_join_state and network_client != null and network_client.connection_established.is_connected(_on_network_connection_established):
 		network_client.connection_established.disconnect(_on_network_connection_established)
 
 func _send_respawn_state() -> void:
@@ -665,7 +665,7 @@ func _send_full_player_state() -> bool:
 		return false
 
 	last_sent_angle = _get_current_aim_angle()
-	network_client.send_on_connect(
+	network_client.send_on_join(
 		global_position.x,
 		global_position.y,
 		last_sent_angle,
