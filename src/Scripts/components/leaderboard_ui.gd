@@ -148,8 +148,16 @@ func _create_leaderboard_row(entry: Dictionary) -> Control:
 
 func _normalize_leaderboard_entry(entry: Dictionary) -> Dictionary:
 	# Accept both server naming styles so old payloads still work
-	var normalized_player_name := str(entry.get("player_name", entry.get("playerName", "Unknown")))
-	var normalized_player_id := str(entry.get("player_id", entry.get("playerId", normalized_player_name)))
+	var normalized_player_name := _get_first_non_empty_entry_string(
+		entry,
+		["player_name", "playerName", "display_name", "displayName", "username", "name", "nickname"],
+		"Unknown"
+	)
+	var normalized_player_id := _get_first_non_empty_entry_string(
+		entry,
+		["player_id", "playerId", "user_id", "userId", "id"],
+		normalized_player_name
+	)
 
 	return {
 		"player_id": normalized_player_id,
@@ -158,6 +166,18 @@ func _normalize_leaderboard_entry(entry: Dictionary) -> Dictionary:
 		"deaths": int(entry.get("deaths", 0)),
 		"score": int(entry.get("score", 0))
 	}
+
+
+func _get_first_non_empty_entry_string(entry: Dictionary, keys: Array[String], fallback: String) -> String:
+	for key in keys:
+		if not entry.has(key):
+			continue
+
+		var value := str(entry[key]).strip_edges()
+		if value != "":
+			return value
+
+	return fallback
 
 
 func _get_leaderboard_label_color(entry: Dictionary, column_key: String) -> Color:

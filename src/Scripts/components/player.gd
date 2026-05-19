@@ -63,6 +63,7 @@ var remote_walk_animation_hold_remaining: float = 0.0
 var has_sent_join_state: bool = false
 var last_reported_weapon_type: String = ""
 var network_player_id: String = ""
+var network_player_display_name: String = ""
 var next_shot_sequence: int = 0
 var has_requested_server_respawn: bool = false
 var observed_shot_weapon: BaseWeapon = null
@@ -715,11 +716,18 @@ func configure_as_remote_proxy() -> void:
 			active_weapon.set_aim_target(global_position + remote_facing_direction * REMOTE_AIM_DISTANCE)
 
 func set_network_player_id(player_id: String) -> void:
-	network_player_id = player_id
+	network_player_id = player_id.strip_edges()
 	_update_player_name_label()
 
 func get_network_player_id() -> String:
 	return network_player_id
+
+func set_network_player_display_name(player_name: String) -> void:
+	network_player_display_name = player_name.strip_edges()
+	_update_player_name_label()
+
+func get_network_player_display_name() -> String:
+	return network_player_display_name
 
 func is_projectile_damage_shape(shape_index: int, hit_position: Vector2 = Vector2.INF) -> bool:
 	if damage_hitbox_shape == null or shape_index < 0:
@@ -735,7 +743,8 @@ func _update_player_name_label() -> void:
 	if player_name_label == null:
 		return
 
-	player_name_label.text = network_player_id if network_player_id != "" else DEFAULT_PLAYER_DISPLAY_NAME
+	var display_name := network_player_display_name.strip_edges()
+	player_name_label.text = display_name if display_name != "" else DEFAULT_PLAYER_DISPLAY_NAME
 
 func _update_overhead_ui() -> void:
 	if overhead_panel == null:

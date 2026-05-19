@@ -110,6 +110,7 @@ func apply_network_snapshot() -> void:
 	local_player_id = network_client.local_player_id
 	room_id = network_client.local_room_id
 	player_body.set_network_player_id(local_player_id)
+	player_body.set_network_player_display_name(network_client.get_local_player_display_name(network_client.last_room_joined_message))
 	leaderboard_ui.call("set_local_player_id", local_player_id)
 	remaining_match_seconds = maxf(network_client.remaining_seconds, 0.0)
 	match_has_ended = network_client.match_finished
@@ -120,9 +121,14 @@ func apply_network_snapshot() -> void:
 	_apply_cached_remote_players()
 
 func _on_room_joined(message: Dictionary) -> void:
-	local_player_id = str(message.get("playerId", ""))
+	if network_client != null and network_client.local_player_id != "":
+		local_player_id = network_client.local_player_id
+	else:
+		local_player_id = str(message.get("playerId", message.get("id", "")))
+
 	room_id = str(message.get("roomId", ""))
 	player_body.set_network_player_id(local_player_id)
+	player_body.set_network_player_display_name(network_client.get_local_player_display_name(message))
 	leaderboard_ui.call("set_local_player_id", local_player_id)
 	remaining_match_seconds = maxf(float(message.get("remainingSeconds", 0.0)), 0.0)
 	match_has_ended = false
@@ -252,7 +258,7 @@ func _get_bullet_target_position(message: Dictionary) -> Variant:
 
 	return null
 
-func _get_or_create_remote_player(player_id: String) -> Player:
+func _get_or_create_remote_player(player_id: String, player_display_name: String = "") -> Player:
 	var existing_remote := _get_remote_player(player_id)
 	if existing_remote != null:
 		return existing_remote
@@ -270,6 +276,7 @@ func _get_or_create_remote_player(player_id: String) -> Player:
 
 	remote_body.configure_as_remote_proxy()
 	remote_body.set_network_player_id(player_id)
+	remote_body.set_network_player_display_name(player_display_name)
 	add_child(remote_wrapper)
 	remote_players[player_id] = remote_wrapper
 	return remote_body
@@ -333,10 +340,14 @@ func _apply_remote_player_state(message: Dictionary) -> void:
 	if remote_body == null and not has_position:
 		return
 
+	var remote_display_name := network_client.get_player_display_name(message, player_id) if network_client != null else ""
 	if remote_body == null:
-		remote_body = _get_or_create_remote_player(player_id)
+		remote_body = _get_or_create_remote_player(player_id, remote_display_name)
 	if remote_body == null:
 		return
+
+	if remote_display_name != "":
+		remote_body.set_network_player_display_name(remote_display_name)
 
 	var was_dead := remote_body.is_dead
 	var weapon_type := str(message.get("weaponType", message.get("weaponHolding", message.get("weapon", ""))))
@@ -388,6 +399,24 @@ func _apply_leaderboard_snapshot(message: Dictionary) -> void:
 	var leaderboard_variant: Variant = message.get("leaderboard", [])
 	if leaderboard_variant is Array:
 		leaderboard_ui.call("apply_server_leaderboard_snapshot", leaderboard_variant)
+
+	_apply_player_display_names(message)
+
+func _apply_player_display_names(message: Dictionary) -> void:
+	if network_client == null:
+		return
+
+	player_body.set_network_player_display_name(network_client.get_local_player_display_name(message))
+
+	for player_id_variant in remote_players.keys():
+		var player_id := str(player_id_variant)
+		var player_display_name := network_client.get_player_display_name(message, player_id)
+		if player_display_name == "":
+			continue
+
+		var remote_body := _get_remote_player(player_id)
+		if remote_body != null:
+			remote_body.set_network_player_display_name(player_display_name)
 
 func _cache_respawn_positions() -> void:
 	respawn_positions.clear()

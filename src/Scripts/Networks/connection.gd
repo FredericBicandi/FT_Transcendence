@@ -68,7 +68,11 @@ func _on_room_ready(message: Dictionary) -> void:
 
 	# Show the room preview until the player chooses to join the match
 	is_room_ready = true
-	local_player_id = str(message.get("playerId", ""))
+	if network_client.local_player_id != "":
+		local_player_id = network_client.local_player_id
+	else:
+		local_player_id = str(message.get("playerId", message.get("id", "")))
+
 	_set_status_text("Room reserved.")
 	_apply_leaderboard_snapshot(message)
 	_apply_initial_preview_players(message)
@@ -150,13 +154,29 @@ func _apply_leaderboard_snapshot(message: Dictionary) -> void:
 	if message.is_empty():
 		return
 
-	var player_id := str(message.get("playerId", ""))
+	var player_id := network_client.local_player_id
+	if player_id == "":
+		player_id = str(message.get("playerId", message.get("id", "")))
+
 	if player_id != "":
 		leaderboard_ui.call("set_local_player_id", player_id)
 
 	var leaderboard_variant: Variant = message.get("leaderboard", [])
 	if leaderboard_variant is Array:
 		leaderboard_ui.call("apply_server_leaderboard_snapshot", leaderboard_variant)
+
+	_apply_preview_display_names(message)
+
+func _apply_preview_display_names(message: Dictionary) -> void:
+	for player_id_variant in preview_remote_players.keys():
+		var player_id := str(player_id_variant)
+		var player_display_name := network_client.get_player_display_name(message, player_id)
+		if player_display_name == "":
+			continue
+
+		var remote_body := _get_preview_remote_player(player_id)
+		if remote_body != null:
+			remote_body.set_network_player_display_name(player_display_name)
 
 func _on_preview_player_move_received(message: Dictionary) -> void:
 	if has_started_game or not is_room_ready:
@@ -222,10 +242,14 @@ func _apply_preview_remote_player_state(message: Dictionary) -> void:
 	if remote_body == null and not has_position:
 		return
 
+	var remote_display_name := network_client.get_player_display_name(message, player_id)
 	if remote_body == null:
-		remote_body = _get_or_create_preview_remote_player(player_id)
+		remote_body = _get_or_create_preview_remote_player(player_id, remote_display_name)
 	if remote_body == null:
 		return
+
+	if remote_display_name != "":
+		remote_body.set_network_player_display_name(remote_display_name)
 
 	var was_dead := remote_body.is_dead
 	var weapon_type := str(message.get("weaponType", message.get("weaponHolding", message.get("weapon", ""))))
@@ -261,7 +285,7 @@ func _apply_preview_remote_player_state(message: Dictionary) -> void:
 	elif not is_nan(aim_angle_degrees):
 		remote_body.update_remote_angle(aim_angle_degrees)
 
-func _get_or_create_preview_remote_player(player_id: String) -> Player:
+func _get_or_create_preview_remote_player(player_id: String, player_display_name: String = "") -> Player:
 	var existing_remote := _get_preview_remote_player(player_id)
 	if existing_remote != null:
 		return existing_remote
@@ -278,6 +302,7 @@ func _get_or_create_preview_remote_player(player_id: String) -> Player:
 
 	remote_body.configure_as_remote_proxy()
 	remote_body.set_network_player_id(player_id)
+	remote_body.set_network_player_display_name(player_display_name)
 	add_child(remote_wrapper)
 	preview_remote_players[player_id] = remote_wrapper
 	return remote_body

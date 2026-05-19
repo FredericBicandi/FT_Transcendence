@@ -330,6 +330,77 @@ func _prepare_player_profile() -> void:
 	if player_name == "":
 		player_name = "Player"
 
+func get_local_player_display_name(message: Dictionary) -> String:
+	var display_name := get_player_display_name(
+		message,
+		local_player_id if local_player_id != "" else player_id,
+		player_name
+	)
+	return display_name if display_name != "" else "Player"
+
+func get_player_display_name(message: Dictionary, target_player_id: String, fallback: String = "") -> String:
+	var normalized_player_id := target_player_id.strip_edges()
+	var fallback_name := fallback.strip_edges()
+
+	if not message.is_empty():
+		var direct_player_id := _extract_player_id(message)
+		var direct_name := _extract_player_display_name(message, direct_player_id != "")
+		if direct_name != "" and (normalized_player_id == "" or direct_player_id == normalized_player_id):
+			return direct_name
+
+		for collection_key in ["players", "remotePlayers", "leaderboard"]:
+			var collection_variant: Variant = message.get(collection_key, [])
+			if not (collection_variant is Array):
+				continue
+
+			for entry_variant in collection_variant:
+				if typeof(entry_variant) != TYPE_DICTIONARY:
+					continue
+
+				var entry := entry_variant as Dictionary
+				if _extract_player_id(entry) != normalized_player_id:
+					continue
+
+				var entry_name := _extract_player_display_name(entry)
+				if entry_name != "":
+					return entry_name
+
+	if normalized_player_id != "":
+		var snapshot_variant: Variant = remote_player_snapshots.get(normalized_player_id, {})
+		if typeof(snapshot_variant) == TYPE_DICTIONARY:
+			var snapshot := snapshot_variant as Dictionary
+			var snapshot_name := _extract_player_display_name(snapshot)
+			if snapshot_name != "":
+				return snapshot_name
+
+	return fallback_name
+
+func _extract_player_id(message: Dictionary) -> String:
+	for key in ["playerId", "player_id", "userId", "user_id", "id"]:
+		if not message.has(key):
+			continue
+
+		var value := str(message[key]).strip_edges()
+		if value != "":
+			return value
+
+	return ""
+
+func _extract_player_display_name(message: Dictionary, include_generic_name_fields: bool = true) -> String:
+	var keys: Array[String] = ["playerName", "player_name", "displayName", "display_name"]
+	if include_generic_name_fields:
+		keys.append_array(["username", "name", "nickname"])
+
+	for key in keys:
+		if not message.has(key):
+			continue
+
+		var value := str(message[key]).strip_edges()
+		if value != "":
+			return value
+
+	return ""
+
 func _apply_web_player_profile_overrides() -> void:
 	if not OS.has_feature("web"):
 		return
@@ -394,7 +465,8 @@ func _generate_fallback_player_id() -> String:
 	return "client-%d-%d" % [int(Time.get_unix_time_from_system()), rng.randi()]
 
 func _apply_room_assignment(message: Dictionary) -> void:
-	local_player_id = str(message.get("playerId", player_id))
+	var assigned_player_id := _extract_player_id(message)
+	local_player_id = assigned_player_id if assigned_player_id != "" else player_id
 	local_room_id = str(message.get("roomId", local_room_id))
 	match_duration_seconds = int(message.get("durationSeconds", match_duration_seconds))
 	remaining_seconds = float(message.get("remainingSeconds", remaining_seconds if remaining_seconds > 0.0 else match_duration_seconds))
@@ -404,8 +476,10 @@ func _apply_room_assignment(message: Dictionary) -> void:
 	if local_player_id != "":
 		player_id = local_player_id
 
+	player_name = get_local_player_display_name(message)
+
 func _store_remote_player_snapshot(message: Dictionary) -> void:
-	var player_id := str(message.get("playerId", message.get("id", "")))
+	var player_id := _extract_player_id(message)
 	if player_id == "":
 		return
 
