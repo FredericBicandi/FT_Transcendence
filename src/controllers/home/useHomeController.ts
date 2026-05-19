@@ -2,6 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { pingSupabase } from "@/models/supabase/client.model";
+import {
+  createPlayerProfileSearchParams,
+  loadPlayerProfile,
+  type PlayerProfile,
+} from "@/models/player/playerProfile.model";
 
 export type SupabaseStatus = "checking" | "connected" | "missing-env" | "error";
 
@@ -14,8 +19,29 @@ const supabaseStatusLabels: Record<SupabaseStatus, string> = {
 
 export function useHomeController() {
   const [showGame, setShowGame] = useState(false);
+  const [playerProfile, setPlayerProfile] = useState<PlayerProfile | null>(
+    null,
+  );
   const [supabaseStatus, setSupabaseStatus] =
     useState<SupabaseStatus>("checking");
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function resolvePlayerProfile() {
+      const profile = await loadPlayerProfile();
+
+      if (mounted) {
+        setPlayerProfile(profile);
+      }
+    }
+
+    resolvePlayerProfile();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -48,11 +74,21 @@ export function useHomeController() {
     };
   }, []);
 
+  const gameUrl = playerProfile
+    ? `/game/?${createPlayerProfileSearchParams(playerProfile).toString()}`
+    : null;
+
   return {
+    gameUrl,
     onlineCount: 0,
+    playerProfile,
     showGame,
     supabaseStatus,
     supabaseStatusLabel: supabaseStatusLabels[supabaseStatus],
-    playGame: () => setShowGame(true),
+    playGame: () => {
+      if (gameUrl) {
+        setShowGame(true);
+      }
+    },
   };
 }

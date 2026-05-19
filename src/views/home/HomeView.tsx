@@ -8,6 +8,7 @@ import { useHomeController } from "@/controllers/home/useHomeController";
 
 export function HomeView() {
   const {
+    gameUrl,
     onlineCount,
     showGame,
     supabaseStatus,
@@ -34,7 +35,9 @@ export function HomeView() {
 
           <LoginSignupButton />
 
-          <p className="text-sm text-gray-400">Loading game in background...</p>
+          <p className="text-sm text-gray-400">
+            {gameUrl ? "Loading game in background..." : "Preparing player..."}
+          </p>
 
           <SupabaseStatusBadge
             label={supabaseStatusLabel}
@@ -43,13 +46,16 @@ export function HomeView() {
         </div>
       )}
 
-      <iframe
-        src="/Game/index.html"
-        className="relative z-20 h-full w-full border-0"
-        style={{
-          visibility: showGame ? "visible" : "hidden",
-        }}
-      />
+      {gameUrl && (
+        <iframe
+          title="PixelFight game"
+          src={gameUrl}
+          className="relative z-20 h-full w-full border-0"
+          style={{
+            visibility: showGame ? "visible" : "hidden",
+          }}
+        />
+      )}
     </main>
   );
 }
