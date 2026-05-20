@@ -88,7 +88,7 @@ static func raycast(space_state: PhysicsDirectSpaceState2D, from: Vector2, to: V
 
 	return {}
 
-static func build_runtime_data(config: Dictionary, bullet: AnimatedSprite2D, direction: Vector2, bullet_lifetime: float, should_collide: bool, damage_override: int, collision_mask_override: int, pass_over_layers: Array[String], target_position: Variant = null) -> Dictionary:
+static func build_runtime_data(config: Dictionary, bullet: Node2D, direction: Vector2, bullet_lifetime: float, should_collide: bool, damage_override: int, collision_mask_override: int, pass_over_layers: Array[String], target_position: Variant = null) -> Dictionary:
 	var speed: float = float(config.get("bullet_speed", 300.0))
 	var velocity: Vector2 = direction * speed
 	if uses_arc_physics(config):

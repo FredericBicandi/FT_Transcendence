@@ -111,5 +111,32 @@ const WEAPON_DATA := {
 			{ "gun_position": Vector2(0, -1), "muzzle_offset": Vector2(4, -7) },
 			{ "gun_position": Vector2(2, 0), "muzzle_offset": Vector2(10, -8) }
 		]
-	}
+	},
+	"Shotgun": {
+	"image": preload("res://Assets/Textures/Guns/Shotgun/image.png"),
+	"fire_sound": preload("res://Assets/Audio/Weapons/shotgunshot.mp3"),
+	"reload_sound": preload("res://Assets/Audio/Weapons/shotgunreload.mp3"),
+	"damage": 8,
+	"fire_rate": 0.75,
+	"ammo_mag_size": 5,
+	"reload_time": 0.6,
+	"bullet_speed": 260.0,
+	"bullet_lifetime": 0.8,
+	"bullet_collision_mask": 3,
+	"passes_over_tilemap_layers": ["Water"],
+	"move_offset": 1.2,
+	"recoil_distance": 4.0,
+	"recoil_jitter": 0.6,
+	"recoil_recover_speed": 14.0,
+	"frames": [
+		{ "gun_position": Vector2(0, 1), "muzzle_offset": Vector2(12, 0) },
+		{ "gun_position": Vector2(2, 1), "muzzle_offset": Vector2(10, 8) },
+		{ "gun_position": Vector2(0, 2), "muzzle_offset": Vector2(5, 9) },
+		{ "gun_position": Vector2(-2, 1), "muzzle_offset": Vector2(-10, 8) },
+		{ "gun_position": Vector2(0, 1), "muzzle_offset": Vector2(-12, 0) },
+		{ "gun_position": Vector2(-2, 0), "muzzle_offset": Vector2(-10, -9) },
+		{ "gun_position": Vector2(0, -1), "muzzle_offset": Vector2(4, -7) },
+		{ "gun_position": Vector2(2, 0), "muzzle_offset": Vector2(10, -8) }
+	]
+}
 }
