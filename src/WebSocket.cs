@@ -118,24 +118,7 @@ public sealed class Ws
             Console.WriteLine($"Client disconnected: {client.LogId}");
 
             if (disconnectedRoom is not null && client.HasJoinedGame)
-            {
-                var leaderboard = disconnectedRoom.LeaderboardSnapshot();
-
-                // Only players in the same room should see this player leave.
-                await BroadcastToRoomAsync(disconnectedRoom, new
-                {
-                    type = "player_left",
-                    playerId = client.PlayerId,
-                    leaderboard
-                });
-
-                await BroadcastToRoomAsync(disconnectedRoom, new
-                {
-                    type = "leaderboard_update",
-                    roomId = disconnectedRoom.RoomId,
-                    leaderboard
-                });
-            }
+                await BroadcastPlayerLeftAsync(disconnectedRoom, client.PlayerId);
         }
     }
 
@@ -177,6 +160,52 @@ public sealed class Ws
         }
 
         return hadJoined ? room : null;
+    }
+
+    private async Task LeaveRoomAsync(ClientConnection client, string reason)
+    {
+        if (!client.HasPlayerId || !client.HasRoom)
+        {
+            Console.WriteLine($"leave_match before on_connect from {client.LogId}");
+            return;
+        }
+
+        var roomId = client.RoomId;
+        var playerId = client.PlayerId;
+        var leftRoom = RemovePlayerFromRoom(client);
+        client.LeaveRoom();
+
+        Console.WriteLine($"Player left match: playerId={playerId}, roomId={roomId}, reason={reason}");
+
+        await SendJsonAsync(client, new
+        {
+            type = "match_left",
+            playerId,
+            roomId
+        });
+
+        if (leftRoom is not null)
+            await BroadcastPlayerLeftAsync(leftRoom, playerId);
+    }
+
+    private async Task BroadcastPlayerLeftAsync(GameRoom room, string playerId)
+    {
+        var leaderboard = room.LeaderboardSnapshot();
+
+        // Only players remaining in the same room should see this player leave.
+        await BroadcastToRoomAsync(room, new
+        {
+            type = "player_left",
+            playerId,
+            leaderboard
+        });
+
+        await BroadcastToRoomAsync(room, new
+        {
+            type = "leaderboard_update",
+            roomId = room.RoomId,
+            leaderboard
+        });
     }
 
     private async Task RunRoomTimersAsync()
@@ -527,6 +556,16 @@ public sealed class Ws
                 return;
             }
 
+            if (type == "leave_match")
+            {
+                if (!TryReadLeaveMatch(root, message, client, out _))
+                    return;
+
+                await LeaveRoomAsync(client, "client_request");
+
+                return;
+            }
+
             if (type == "move")
             {
                 if (!RequireJoined(client, type, message))
@@ -847,6 +886,16 @@ public sealed class Ws
             isDead = result.IsDead
         });
 
+        if (result.IsDead)
+        {
+            await BroadcastToRoomAsync(room, new
+            {
+                type = "kill_feed",
+                killer = shooter.PlayerName,
+                killed = target.PlayerName
+            });
+        }
+
         if (shouldUpdateLeaderboard)
         {
             await BroadcastToRoomAsync(room, new
@@ -1023,6 +1072,38 @@ public sealed class Ws
             level > MaxPlayerLevel)
         {
             Console.WriteLine($"Invalid on_connect level from {logId}: {message}");
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool TryReadLeaveMatch(
+        JsonElement root,
+        string message,
+        ClientConnection client,
+        out string roomId)
+    {
+        roomId = string.Empty;
+
+        if (!client.HasPlayerId || !client.HasRoom)
+        {
+            Console.WriteLine($"leave_match before on_connect from {client.LogId}: {message}");
+            return false;
+        }
+
+        if (!Helper.TryGetString(root, "playerId", out var playerId) ||
+            playerId.Length > MaxPlayerIdLength ||
+            playerId != client.PlayerId)
+        {
+            Console.WriteLine($"Invalid leave_match player id from {client.LogId}: {message}");
+            return false;
+        }
+
+        if (!Helper.TryGetString(root, "roomId", out roomId) ||
+            roomId != client.RoomId)
+        {
+            Console.WriteLine($"Invalid leave_match room id from {client.LogId}: {message}");
             return false;
         }
 
@@ -1449,7 +1530,7 @@ public readonly record struct LeaderboardEntry(
     [property: JsonPropertyName("level")]
     int Level,
     [property: JsonPropertyName("score")]
-    int Score,
+    double Score,
     [property: JsonPropertyName("kills")]
     int Kills,
     [property: JsonPropertyName("deaths")]
@@ -1473,7 +1554,7 @@ public readonly record struct LeaderboardEntry(
     public LeaderboardEntry WithDamage(double damage, bool killed) =>
         this with
         {
-            Score = killed ? Score + 1 : Score,
+            Score = Score + damage,
             Kills = killed ? Kills + 1 : Kills,
             DamageDealt = DamageDealt + damage
         };
@@ -1571,6 +1652,25 @@ public sealed class ClientConnection
         }
 
         Interlocked.Exchange(ref lastActivityUtcTicks, DateTimeOffset.UtcNow.UtcTicks);
+    }
+
+    public void LeaveRoom()
+    {
+        lock (stateLock)
+        {
+            roomId = null;
+            hasState = false;
+            x = default;
+            y = default;
+            angle = default;
+            weapon = string.Empty;
+            health = 100.0;
+            isDead = false;
+            processedShotHits.Clear();
+        }
+
+        Interlocked.Exchange(ref lastActivityUtcTicks, DateTimeOffset.UtcNow.UtcTicks);
+        Interlocked.Exchange(ref idleSinceUtcTicks, 0);
     }
 
     public bool TryGetStateSnapshot(out PlayerState state)
