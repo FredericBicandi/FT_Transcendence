@@ -1,4 +1,7 @@
 import type { HomeTranslations } from "@/views/home/homeTranslations";
+import { createSupabaseClient } from "@/models/supabase/client.model";
+
+const appUrl = process.env.NEXT_PUBLIC_APP_URL;
 
 type AuthModalProps = {
   onClose: () => void;
@@ -90,6 +93,17 @@ function MailIcon() {
 }
 
 export function AuthModal({ onClose, translations }: AuthModalProps) {
+  async function signInWithGoogle() {
+    const supabase = createSupabaseClient();
+
+    await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: "https://pixelfight.live/auth/callback",
+      },
+    });
+  }
+
   return (
     <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/35 px-4 backdrop-blur-[2px]">
       <div className="relative flex min-h-[32rem] w-[min(23rem,calc(100vw-2rem))] flex-col justify-center gap-8 bg-[#212627]/95 px-7 py-16 shadow-[0_0_0_4px_#050302,0_8px_0_4px_#111515,inset_0_4px_0_#374041,inset_0_-4px_0_#151819] sm:min-h-[36rem] sm:px-8">
@@ -126,6 +140,7 @@ export function AuthModal({ onClose, translations }: AuthModalProps) {
         <div className="grid grid-cols-2 gap-3">
           <button
             className="flex h-14 items-center justify-center gap-2 bg-[#151819] text-sm uppercase text-[#f5dfad] shadow-[0_0_0_2px_#050302,inset_0_3px_0_#374041,inset_0_-3px_0_#050302] hover:bg-[#2a3031] active:translate-y-0.5"
+            onClick={signInWithGoogle}
             type="button"
           >
             <GoogleIcon />

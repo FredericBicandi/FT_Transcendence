@@ -8,6 +8,7 @@ import { OnlinePlayersBadge } from "@/components/home/OnlinePlayersBadge";
 import { PlayButton } from "@/components/home/PlayButton";
 import { ProfileModal } from "@/components/home/ProfileModal";
 import { TopBarActions } from "@/components/home/TopBarActions";
+import { UsernameSetupModal } from "@/components/home/UsernameSetupModal";
 import { useHomeController } from "@/controllers/home/useHomeController";
 import {
   homeTranslations,
@@ -29,9 +30,13 @@ export function HomeView() {
     gameUrl,
     onlineCount,
     playerProfile,
+    refreshPlayerProfile,
+    signOut,
     showGame,
     playGame,
   } = useHomeController();
+  const needsUsernameSetup =
+    playerProfile !== null && !playerProfile.isGuest && playerProfile.needsUsername;
 
   useEffect(() => {
     const savedLanguage = window.localStorage.getItem(LANGUAGE_STORAGE_KEY);
@@ -44,6 +49,11 @@ export function HomeView() {
   useEffect(() => {
     window.localStorage.setItem(LANGUAGE_STORAGE_KEY, language);
   }, [language]);
+
+  function handlePlayGame() {
+    setShowProfileModal(false);
+    playGame();
+  }
 
   return (
     <main
@@ -60,34 +70,44 @@ export function HomeView() {
         aria-hidden="true"
       />
 
-      <TopBarActions
-        language={language}
-        onLanguageChange={setLanguage}
-        onProfileClick={() => setShowProfileModal(true)}
-        playerProfile={playerProfile}
-        translations={{
-          ...translations.language,
-          profile: translations.profile.profile,
-        }}
-      />
-      <GlobalChat
-        playerProfile={playerProfile}
-        translations={translations.chat}
-      />
+      {!showGame && (
+        <>
+          <TopBarActions
+            language={language}
+            onLanguageChange={setLanguage}
+            onProfileClick={() => {
+              if (!needsUsernameSetup) {
+                setShowProfileModal(true);
+              }
+            }}
+            playerProfile={playerProfile}
+            translations={{
+              ...translations.language,
+              profile: translations.profile.profile,
+            }}
+          />
+          <GlobalChat
+            playerProfile={playerProfile}
+            translations={translations.chat}
+          />
+        </>
+      )}
 
       {!showGame && (
         <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-6">
-          <PlayButton label={translations.home.play} onClick={playGame} />
+          <PlayButton label={translations.home.play} onClick={handlePlayGame} />
 
           <OnlinePlayersBadge
             label={translations.home.online}
             onlineCount={onlineCount}
           />
 
-          <LoginSignupButton
-            label={translations.home.loginSignup}
-            onClick={() => setShowAuthModal(true)}
-          />
+          {playerProfile?.isGuest && (
+            <LoginSignupButton
+              label={translations.home.loginSignup}
+              onClick={() => setShowAuthModal(true)}
+            />
+          )}
         </div>
       )}
 
@@ -97,22 +117,28 @@ export function HomeView() {
           translations={translations.auth}
         />
       )}
-      {showProfileModal && (
+      {showProfileModal && !showGame && (
         <ProfileModal
           onClose={() => setShowProfileModal(false)}
+          onLogout={signOut}
+          onProfileUpdated={refreshPlayerProfile}
+          playerProfile={playerProfile}
+          translations={translations.profile}
+        />
+      )}
+      {needsUsernameSetup && (
+        <UsernameSetupModal
+          onProfileUpdated={refreshPlayerProfile}
           playerProfile={playerProfile}
           translations={translations.profile}
         />
       )}
 
-      {gameUrl && (
+      {showGame && gameUrl && (
         <iframe
           title="PixelFight game"
           src={gameUrl}
           className="relative z-20 h-full w-full border-0"
-          style={{
-            visibility: showGame ? "visible" : "hidden",
-          }}
         />
       )}
     </main>

@@ -1,14 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   createPlayerProfileSearchParams,
   loadPlayerProfile,
   type PlayerProfile,
 } from "@/models/player/playerProfile.model";
+import { createSupabaseClient } from "@/models/supabase/client.model";
 
 const ONLINE_PLAYERS_URL = "https://pixelfight.live/online";
 const ONLINE_PLAYERS_POLL_INTERVAL_MS = 3_000;
+const EXIT_GAME_MESSAGE_TYPE = "EXIT_GAME";
 
 function readOnlineCount(value: unknown): number | null {
   if (typeof value === "number") {
@@ -71,12 +73,26 @@ async function fetchOnlinePlayerCount(signal: AbortSignal) {
   throw new Error("Online players response was not recognized.");
 }
 
+function isExitGameMessage(value: unknown) {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "type" in value &&
+    value.type === EXIT_GAME_MESSAGE_TYPE
+  );
+}
+
 export function useHomeController() {
   const [onlineCount, setOnlineCount] = useState(0);
   const [showGame, setShowGame] = useState(false);
   const [playerProfile, setPlayerProfile] = useState<PlayerProfile | null>(
     null,
   );
+
+  const refreshPlayerProfile = useCallback(async () => {
+    const profile = await loadPlayerProfile();
+    setPlayerProfile(profile);
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -95,6 +111,19 @@ export function useHomeController() {
       mounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    const supabase = createSupabaseClient();
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(() => {
+      refreshPlayerProfile();
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [refreshPlayerProfile]);
 
   useEffect(() => {
     let mounted = true;
@@ -138,6 +167,23 @@ export function useHomeController() {
     };
   }, []);
 
+  useEffect(() => {
+    function handleGameMessage(event: MessageEvent<unknown>) {
+      if (
+        event.origin === window.location.origin &&
+        isExitGameMessage(event.data)
+      ) {
+        setShowGame(false);
+      }
+    }
+
+    window.addEventListener("message", handleGameMessage);
+
+    return () => {
+      window.removeEventListener("message", handleGameMessage);
+    };
+  }, []);
+
   const gameUrl = playerProfile
     ? `/Game/index.html?${createPlayerProfileSearchParams(playerProfile).toString()}`
     : null;
@@ -146,7 +192,14 @@ export function useHomeController() {
     gameUrl,
     onlineCount,
     playerProfile,
+    refreshPlayerProfile,
     showGame,
+    signOut: async () => {
+      const supabase = createSupabaseClient();
+      await supabase.auth.signOut();
+      await refreshPlayerProfile();
+      setShowGame(false);
+    },
     playGame: () => {
       if (gameUrl) {
         setShowGame(true);

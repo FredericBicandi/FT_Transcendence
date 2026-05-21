@@ -1,39 +1,28 @@
 import { ChangeEvent, useEffect, useState } from "react";
-import type { PlayerProfile } from "@/models/player/playerProfile.model";
+import {
+  isUsernameTakenError,
+  saveAuthenticatedPlayerProfile,
+  type PlayerProfile,
+} from "@/models/player/playerProfile.model";
 import type { HomeTranslations } from "@/views/home/homeTranslations";
 
 type ProfileModalProps = {
   onClose: () => void;
+  onLogout: () => Promise<void>;
+  onProfileUpdated: () => Promise<void>;
   playerProfile: PlayerProfile | null;
   translations: HomeTranslations["profile"];
 };
 
-const matchLogs = [
-  {
-    playedAt: "05/19 14:27",
-    kills: 12,
-    deaths: 4,
-    score: 2180,
-  },
-  {
-    playedAt: "05/19 13:52",
-    kills: 7,
-    deaths: 6,
-    score: 1435,
-  },
-  {
-    playedAt: "05/18 21:10",
-    kills: 18,
-    deaths: 3,
-    score: 3120,
-  },
-  {
-    playedAt: "05/18 20:34",
-    kills: 5,
-    deaths: 8,
-    score: 980,
-  },
-];
+type MatchLog = {
+  deaths: number;
+  kills: number;
+  playedAt: string;
+  playTime: string;
+  score: number;
+};
+
+const matchLogs: MatchLog[] = [];
 
 const brickWallStyle = {
   backgroundColor: "rgba(33, 38, 39, 0.68)",
@@ -103,6 +92,36 @@ function PencilIcon() {
   );
 }
 
+function LockIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      className="h-5 w-5"
+      fill="none"
+      viewBox="0 0 24 24"
+    >
+      <path
+        d="M7 10V8a5 5 0 0 1 10 0v2"
+        stroke="currentColor"
+        strokeLinecap="square"
+        strokeWidth="2"
+      />
+      <path
+        d="M5 10h14v10H5V10Z"
+        stroke="currentColor"
+        strokeLinejoin="round"
+        strokeWidth="2"
+      />
+      <path
+        d="M12 14v3"
+        stroke="currentColor"
+        strokeLinecap="square"
+        strokeWidth="2"
+      />
+    </svg>
+  );
+}
+
 function MatchLogIcon() {
   return (
     <svg
@@ -129,6 +148,8 @@ function MatchLogIcon() {
 
 export function ProfileModal({
   onClose,
+  onLogout,
+  onProfileUpdated,
   playerProfile,
   translations,
 }: ProfileModalProps) {
@@ -138,8 +159,12 @@ export function ProfileModal({
   const [avatarPreviewUrl, setAvatarPreviewUrl] = useState<string | undefined>(
     playerProfile?.isGuest ? undefined : playerProfile?.avatarUrl,
   );
+  const [avatarDataUrl, setAvatarDataUrl] = useState<string | undefined>();
+  const [saveStatus, setSaveStatus] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const isAuthenticatedPlayer = playerProfile ? !playerProfile.isGuest : false;
   const level = playerProfile?.level ?? 0;
-  const expPercent = 64;
+  const expPercent = Math.min(playerProfile?.currentXp ?? 0, 100);
 
   useEffect(() => {
     return () => {
@@ -150,12 +175,18 @@ export function ProfileModal({
   }, [avatarPreviewUrl]);
 
   function changeAvatar(event: ChangeEvent<HTMLInputElement>) {
+    if (!isAuthenticatedPlayer) {
+      event.target.value = "";
+      return;
+    }
+
     const file = event.target.files?.[0];
 
     if (!file) {
       return;
     }
 
+    setSaveStatus(null);
     setAvatarPreviewUrl((currentUrl) => {
       if (currentUrl?.startsWith("blob:")) {
         URL.revokeObjectURL(currentUrl);
@@ -163,12 +194,55 @@ export function ProfileModal({
 
       return URL.createObjectURL(file);
     });
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        setAvatarDataUrl(reader.result);
+      }
+    };
+    reader.readAsDataURL(file);
+  }
+
+  async function applyProfileChanges() {
+    const normalizedPlayerName = playerName.trim();
+
+    if (!playerProfile || !isAuthenticatedPlayer || !normalizedPlayerName) {
+      return;
+    }
+
+    setIsSaving(true);
+    setSaveStatus(null);
+
+    try {
+      await saveAuthenticatedPlayerProfile({
+        avatarUrl: avatarDataUrl ?? playerProfile?.avatarUrl,
+        playerId: playerProfile.playerId,
+        playerName: normalizedPlayerName,
+      });
+
+      await onProfileUpdated();
+      setSaveStatus(translations.saveSuccess);
+    } catch (error) {
+      setSaveStatus(
+        isUsernameTakenError(error)
+          ? translations.usernameTaken
+          : translations.saveFailed,
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function logout() {
+    await onLogout();
+    onClose();
   }
 
   return (
     <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/35 px-4 backdrop-blur-[2px]">
       <section
-        className="relative grid max-h-[calc(100vh-3rem)] w-[min(58rem,calc(100vw-2rem))] grid-cols-1 gap-8 overflow-y-auto px-7 py-14 shadow-[0_0_0_4px_#050302,0_8px_0_4px_#111515,inset_0_4px_0_#374041,inset_0_-4px_0_#151819] md:grid-cols-[0.9fr_1.1fr] md:px-9"
+        className="relative grid max-h-[calc(100vh-3rem)] w-[min(70rem,calc(100vw-2rem))] grid-cols-1 gap-8 overflow-y-auto px-7 py-14 shadow-[0_0_0_4px_#050302,0_8px_0_4px_#111515,inset_0_4px_0_#374041,inset_0_-4px_0_#151819] md:grid-cols-[20rem_minmax(0,1fr)] md:px-9"
         style={brickWallStyle}
       >
         <button
@@ -190,7 +264,7 @@ export function ProfileModal({
             </span>
           </div>
 
-          <label className="group relative flex h-40 w-40 cursor-pointer items-center justify-center overflow-hidden bg-[#151819] shadow-[0_0_0_3px_#050302,inset_0_4px_0_#374041,inset_0_-4px_0_#050302]">
+          <label className={`group relative flex h-40 w-40 items-center justify-center overflow-hidden bg-[#151819] shadow-[0_0_0_3px_#050302,inset_0_4px_0_#374041,inset_0_-4px_0_#050302] ${isAuthenticatedPlayer ? "cursor-pointer" : "cursor-not-allowed opacity-80"}`}>
             {avatarPreviewUrl ? (
               <span
                 aria-hidden="true"
@@ -201,24 +275,29 @@ export function ProfileModal({
               <AvatarIcon />
             )}
             <span className="absolute inset-0 hidden items-center justify-center bg-black/55 text-[#f5dfad] group-hover:flex">
-              <PencilIcon />
+              {isAuthenticatedPlayer ? <PencilIcon /> : <LockIcon />}
             </span>
             <input
               accept="image/*"
               aria-label={translations.photoInput}
               className="sr-only"
+              disabled={!isAuthenticatedPlayer}
               onChange={changeAvatar}
               type="file"
             />
           </label>
 
-          <label className="flex h-14 w-full max-w-sm items-center gap-3 bg-[#151819] px-4 shadow-[inset_0_3px_0_#050302,inset_0_-3px_0_#374041] focus-within:shadow-[0_0_0_2px_#b8893b,inset_0_3px_0_#050302,inset_0_-3px_0_#374041]">
-            <PencilIcon />
+          <label className={`flex h-14 w-full max-w-sm items-center gap-3 bg-[#151819] px-4 text-[#d9b46b] shadow-[inset_0_3px_0_#050302,inset_0_-3px_0_#374041] ${isAuthenticatedPlayer ? "focus-within:shadow-[0_0_0_2px_#b8893b,inset_0_3px_0_#050302,inset_0_-3px_0_#374041]" : "cursor-not-allowed opacity-80"}`}>
+            {isAuthenticatedPlayer ? <PencilIcon /> : <LockIcon />}
             <input
               aria-label={translations.usernameInput}
-              className="min-w-0 flex-1 bg-transparent text-base uppercase text-[#f5dfad] outline-none"
+              className="min-w-0 flex-1 bg-transparent text-base uppercase text-[#f5dfad] outline-none disabled:cursor-not-allowed disabled:text-[#d9b46b]/70"
+              disabled={!isAuthenticatedPlayer}
               maxLength={18}
-              onChange={(event) => setPlayerName(event.target.value)}
+              onChange={(event) => {
+                setSaveStatus(null);
+                setPlayerName(event.target.value);
+              }}
               value={playerName}
             />
           </label>
@@ -239,11 +318,29 @@ export function ProfileModal({
           </div>
 
           <button
-            className="h-12 w-full max-w-sm bg-[#344326] text-lg uppercase text-[#d9b46b] shadow-[0_0_0_3px_#050302,0_4px_0_3px_#172111,inset_0_3px_0_#53663a,inset_0_-3px_0_#202b17] hover:bg-[#40522d] hover:text-[#ead08a] active:translate-y-1 active:shadow-[0_0_0_3px_#050302,0_1px_0_3px_#172111,inset_0_2px_0_#53663a,inset_0_-2px_0_#202b17]"
+            className="h-12 w-full max-w-sm bg-[#344326] text-lg uppercase text-[#d9b46b] shadow-[0_0_0_3px_#050302,0_4px_0_3px_#172111,inset_0_3px_0_#53663a,inset_0_-3px_0_#202b17] hover:bg-[#40522d] hover:text-[#ead08a] active:translate-y-1 active:shadow-[0_0_0_3px_#050302,0_1px_0_3px_#172111,inset_0_2px_0_#53663a,inset_0_-2px_0_#202b17] disabled:cursor-not-allowed disabled:bg-[#303536] disabled:text-[#8a8170] disabled:shadow-[0_0_0_3px_#050302,0_4px_0_3px_#151819,inset_0_3px_0_#4a5051,inset_0_-3px_0_#202425] disabled:hover:bg-[#303536] disabled:hover:text-[#8a8170] disabled:active:translate-y-0"
+            disabled={!isAuthenticatedPlayer || isSaving}
+            onClick={applyProfileChanges}
             type="button"
           >
-            Apply
+            {isSaving ? translations.applying : translations.apply}
           </button>
+
+          {saveStatus && (
+            <p className="text-center text-sm uppercase text-[#d9b46b]">
+              {saveStatus}
+            </p>
+          )}
+
+          {isAuthenticatedPlayer && (
+            <button
+              className="h-10 w-full max-w-sm bg-[#151819] text-sm uppercase text-[#f5dfad] shadow-[0_0_0_2px_#050302,inset_0_2px_0_#374041,inset_0_-2px_0_#050302] hover:bg-[#2a3031] active:translate-y-0.5"
+              onClick={logout}
+              type="button"
+            >
+              {translations.logout}
+            </button>
+          )}
         </div>
 
         <div className="flex min-h-[24rem] flex-col gap-5">
@@ -254,25 +351,37 @@ export function ProfileModal({
             </h2>
           </div>
 
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-[#151819] shadow-[0_0_0_3px_#050302,inset_0_3px_0_#374041,inset_0_-3px_0_#050302]">
-            <div className="grid grid-cols-[1.4fr_repeat(3,0.65fr)] bg-black/35 px-5 py-4 text-base uppercase text-[#d9b46b]">
+          <div className="flex min-h-0 flex-1 flex-col overflow-x-auto overflow-y-hidden bg-[#151819] shadow-[0_0_0_3px_#050302,inset_0_3px_0_#374041,inset_0_-3px_0_#050302] [scrollbar-color:#b8893b_rgba(0,0,0,0.35)]">
+            <div className="grid min-w-[38rem] grid-cols-[1.35fr_0.85fr_0.65fr_0.65fr_0.75fr] bg-black/35 px-5 py-4 text-base uppercase text-[#d9b46b]">
               <span>{translations.dateTime}</span>
+              <span>{translations.playTime}</span>
               <span>{translations.kills}</span>
               <span>{translations.death}</span>
               <span>{translations.score}</span>
             </div>
-            <div className="flex-1 overflow-y-auto [scrollbar-color:#b8893b_rgba(0,0,0,0.35)]">
-              {matchLogs.map((matchLog) => (
-                <div
-                  className="grid min-h-16 grid-cols-[1.4fr_repeat(3,0.65fr)] items-center px-5 py-4 text-base text-[#f5dfad] odd:bg-[#212627]/55 even:bg-[#1b2021]/55"
-                  key={matchLog.playedAt}
-                >
-                  <span>{matchLog.playedAt}</span>
-                  <span>{matchLog.kills}</span>
-                  <span>{matchLog.deaths}</span>
-                  <span>{matchLog.score}</span>
+            <div className="min-w-[38rem] flex-1 overflow-y-auto [scrollbar-color:#b8893b_rgba(0,0,0,0.35)]">
+              {isAuthenticatedPlayer && matchLogs.length > 0 ? (
+                matchLogs.map((matchLog) => (
+                  <div
+                    className="grid min-h-16 grid-cols-[1.35fr_0.85fr_0.65fr_0.65fr_0.75fr] items-center px-5 py-4 text-base text-[#f5dfad] odd:bg-[#212627]/55 even:bg-[#1b2021]/55"
+                    key={matchLog.playedAt}
+                  >
+                    <span>{matchLog.playedAt}</span>
+                    <span>{matchLog.playTime}</span>
+                    <span>{matchLog.kills}</span>
+                    <span>{matchLog.deaths}</span>
+                    <span>{matchLog.score}</span>
+                  </div>
+                ))
+              ) : isAuthenticatedPlayer ? (
+                <div className="flex min-h-64 items-center justify-center px-5 py-8 text-center text-base uppercase text-[#d9b46b]">
+                  {translations.noMatchLogs}
                 </div>
-              ))}
+              ) : (
+                <div className="flex min-h-64 items-center justify-center px-5 py-8 text-center text-base uppercase text-[#d9b46b]">
+                  {translations.signInToSaveMatchLogs}
+                </div>
+              )}
             </div>
           </div>
         </div>

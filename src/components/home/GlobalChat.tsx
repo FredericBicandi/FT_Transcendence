@@ -82,6 +82,7 @@ export function GlobalChat({
 }: GlobalChatProps) {
   const [messages, setMessages] = useState(dummyMessages);
   const [draftMessage, setDraftMessage] = useState("");
+  const canSendMessages = playerProfile ? !playerProfile.isGuest : false;
   const playerName = playerProfile?.playerName ?? "Player";
   const coloredMessages = useMemo(
     () =>
@@ -94,6 +95,10 @@ export function GlobalChat({
 
   function sendMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    if (!canSendMessages) {
+      return;
+    }
 
     const text = draftMessage.trim();
 
@@ -133,10 +138,13 @@ export function GlobalChat({
       >
         <input
           aria-label={translations.inputLabel}
-          className="h-8 w-full bg-[#212627]/85 px-2 text-[10px] text-[#f5dfad] outline-none shadow-[inset_0_2px_0_#374041,inset_0_-2px_0_#151819] placeholder:text-[#d9b46b]/55 focus:shadow-[0_0_0_2px_#b8893b,inset_0_2px_0_#374041,inset_0_-2px_0_#151819]"
+          className="h-8 w-full bg-[#212627]/85 px-2 text-[10px] text-[#f5dfad] outline-none shadow-[inset_0_2px_0_#374041,inset_0_-2px_0_#151819] placeholder:text-[#d9b46b]/55 disabled:cursor-not-allowed disabled:text-[#d9b46b]/70 focus:shadow-[0_0_0_2px_#b8893b,inset_0_2px_0_#374041,inset_0_-2px_0_#151819]"
+          disabled={!canSendMessages}
           maxLength={140}
           onChange={(event) => setDraftMessage(event.target.value)}
-          placeholder={translations.placeholder}
+          placeholder={
+            canSendMessages ? translations.placeholder : translations.signInToSend
+          }
           value={draftMessage}
         />
       </form>

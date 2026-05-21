@@ -10,6 +10,7 @@ export type HomeTranslations = {
   chat: {
     inputLabel: string;
     placeholder: string;
+    signInToSend: string;
   };
   home: {
     loginSignup: string;
@@ -21,16 +22,28 @@ export type HomeTranslations = {
     options: Record<HomeLanguage, string>;
   };
   profile: {
+    apply: string;
+    applying: string;
+    chooseUsername: string;
     close: string;
+    confirm: string;
     dateTime: string;
     death: string;
     exp: string;
     kills: string;
     level: string;
+    logout: string;
     matchLog: string;
+    noMatchLogs: string;
     photoInput: string;
+    playTime: string;
     profile: string;
+    saveFailed: string;
+    saveSuccess: string;
     score: string;
+    signInToSaveMatchLogs: string;
+    usernameTaken: string;
+    usernameRequired: string;
     usernameInput: string;
   };
 };
@@ -46,6 +59,7 @@ export const homeTranslations: Record<HomeLanguage, HomeTranslations> = {
     chat: {
       inputLabel: "Global chat message",
       placeholder: "Type message...",
+      signInToSend: "Sign in to chat",
     },
     home: {
       loginSignup: "Login / Sign Up",
@@ -61,16 +75,28 @@ export const homeTranslations: Record<HomeLanguage, HomeTranslations> = {
       },
     },
     profile: {
+      apply: "Apply",
+      applying: "Applying...",
+      chooseUsername: "Choose your username",
       close: "Close profile popup",
+      confirm: "Confirm",
       dateTime: "Date / Time",
       death: "Death",
       exp: "Exp",
       kills: "Kills",
       level: "Level",
+      logout: "Logout",
       matchLog: "Match Log",
+      noMatchLogs: "No match logs yet",
       photoInput: "Choose profile photo",
+      playTime: "Play Time",
       profile: "Profile",
+      saveFailed: "Could not save profile",
+      saveSuccess: "Profile saved",
       score: "Score",
+      signInToSaveMatchLogs: "Sign in to save match logs",
+      usernameTaken: "Username already taken",
+      usernameRequired: "Enter a username",
       usernameInput: "Player username",
     },
   },
@@ -84,6 +110,7 @@ export const homeTranslations: Record<HomeLanguage, HomeTranslations> = {
     chat: {
       inputLabel: "Message du chat global",
       placeholder: "Ecrire un message...",
+      signInToSend: "Connectez-vous pour chatter",
     },
     home: {
       loginSignup: "Connexion / Inscription",
@@ -99,16 +126,28 @@ export const homeTranslations: Record<HomeLanguage, HomeTranslations> = {
       },
     },
     profile: {
+      apply: "Appliquer",
+      applying: "Application...",
+      chooseUsername: "Choisissez votre nom",
       close: "Fermer le profil",
+      confirm: "Confirmer",
       dateTime: "Date / Heure",
       death: "Mort",
       exp: "Exp",
       kills: "Kills",
       level: "Niveau",
+      logout: "Deconnexion",
       matchLog: "Historique",
+      noMatchLogs: "Aucun historique",
       photoInput: "Choisir une photo",
+      playTime: "Temps",
       profile: "Profil",
+      saveFailed: "Impossible de sauvegarder",
+      saveSuccess: "Profil sauvegarde",
       score: "Score",
+      signInToSaveMatchLogs: "Connectez-vous pour sauvegarder les historiques",
+      usernameTaken: "Nom deja utilise",
+      usernameRequired: "Entrez un nom",
       usernameInput: "Nom du joueur",
     },
   },
@@ -122,6 +161,7 @@ export const homeTranslations: Record<HomeLanguage, HomeTranslations> = {
     chat: {
       inputLabel: "رسالة الدردشة العامة",
       placeholder: "اكتب رسالة...",
+      signInToSend: "سجل للدردشة",
     },
     home: {
       loginSignup: "دخول / تسجيل",
@@ -137,16 +177,28 @@ export const homeTranslations: Record<HomeLanguage, HomeTranslations> = {
       },
     },
     profile: {
+      apply: "تطبيق",
+      applying: "جاري التطبيق...",
+      chooseUsername: "اختر اسمك",
       close: "اغلاق الملف الشخصي",
+      confirm: "تاكيد",
       dateTime: "التاريخ / الوقت",
       death: "الموت",
       exp: "الخبرة",
       kills: "قتل",
       level: "المستوى",
+      logout: "خروج",
       matchLog: "سجل المباريات",
+      noMatchLogs: "لا يوجد سجل بعد",
       photoInput: "اختر صورة الملف",
+      playTime: "المدة",
       profile: "الملف",
+      saveFailed: "تعذر حفظ الملف",
+      saveSuccess: "تم حفظ الملف",
       score: "النقاط",
+      signInToSaveMatchLogs: "سجل الدخول لحفظ سجل المباريات",
+      usernameTaken: "الاسم مستخدم",
+      usernameRequired: "ادخل اسما",
       usernameInput: "اسم اللاعب",
     },
   },
