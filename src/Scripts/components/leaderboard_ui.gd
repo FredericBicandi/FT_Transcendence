@@ -69,6 +69,17 @@ func set_leaderboard_entries(entries: Array) -> void:
 func apply_server_leaderboard_snapshot(entries: Array) -> void:
 	set_leaderboard_entries(entries)
 
+func get_entry_for_player(player_id: String) -> Dictionary:
+	var normalized_player_id := player_id.strip_edges()
+	if normalized_player_id == "":
+		return {}
+
+	for entry in leaderboard_entries:
+		if str(entry.get("player_id", "")).strip_edges() == normalized_player_id:
+			return entry.duplicate(true)
+
+	return {}
+
 
 func update_leaderboard_entry(entry: Dictionary) -> void:
 	var normalized_entry := _normalize_leaderboard_entry(entry)
@@ -163,7 +174,7 @@ func _normalize_leaderboard_entry(entry: Dictionary) -> Dictionary:
 		"player_id": normalized_player_id,
 		"player_name": normalized_player_name,
 		"kills": int(entry.get("kills", 0)),
-		"deaths": int(entry.get("deaths", 0)),
+		"deaths": int(entry.get("deaths", entry.get("death", 0))),
 		"score": int(entry.get("score", 0))
 	}
 

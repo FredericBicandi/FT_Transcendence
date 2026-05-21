@@ -13,6 +13,9 @@ signal player_weapon_switch_received(message: Dictionary)
 signal player_health_received(message: Dictionary)
 signal bullet_spawn_received(message: Dictionary)
 signal player_left_received(player_id: String)
+signal leaderboard_updated(message: Dictionary)
+signal match_left(message: Dictionary)
+signal kill_feed_received(message: Dictionary)
 signal match_ended(message: Dictionary)
 
 # Keep the server endpoint editable from the inspector
@@ -227,6 +230,25 @@ func send_shoot(angle: float, weapon_type: String, shooter_position: Vector2, st
 
 	_send_json(payload)
 
+func send_leave_match() -> void:
+	if socket.get_ready_state() != WebSocketPeer.STATE_OPEN:
+		return
+
+	var payload := {
+		"type": "leave_match"
+	}
+
+	if local_player_id != "":
+		payload["playerId"] = local_player_id
+	elif player_id != "":
+		payload["playerId"] = player_id
+
+	if local_room_id != "":
+		payload["roomId"] = local_room_id
+		payload["room_id"] = local_room_id
+
+	_send_json(payload)
+
 func _handle_state_changes(state: int) -> void:
 	if state == WebSocketPeer.STATE_OPEN and not was_open_last_frame:
 		was_open_last_frame = true
@@ -296,6 +318,15 @@ func _handle_message(message: Dictionary) -> void:
 			var left_player_id := str(message.get("playerId", message.get("id", "")))
 			remote_player_snapshots.erase(left_player_id)
 			player_left_received.emit(left_player_id)
+			if message.has("leaderboard"):
+				leaderboard_updated.emit(message)
+		"leaderboard_update":
+			leaderboard_updated.emit(message)
+		"match_left":
+			_apply_match_left(message)
+			match_left.emit(message)
+		"kill_feed":
+			kill_feed_received.emit(message)
 		"room_reserved":
 			_apply_room_assignment(message)
 			room_reserved.emit(message)
@@ -467,7 +498,7 @@ func _generate_fallback_player_id() -> String:
 func _apply_room_assignment(message: Dictionary) -> void:
 	var assigned_player_id := _extract_player_id(message)
 	local_player_id = assigned_player_id if assigned_player_id != "" else player_id
-	local_room_id = str(message.get("roomId", local_room_id))
+	local_room_id = str(message.get("roomId", message.get("room_id", local_room_id)))
 	match_duration_seconds = int(message.get("durationSeconds", match_duration_seconds))
 	remaining_seconds = float(message.get("remainingSeconds", remaining_seconds if remaining_seconds > 0.0 else match_duration_seconds))
 	match_finished = false
@@ -477,6 +508,22 @@ func _apply_room_assignment(message: Dictionary) -> void:
 		player_id = local_player_id
 
 	player_name = get_local_player_display_name(message)
+
+func _apply_match_left(message: Dictionary) -> void:
+	var left_player_id := _extract_player_id(message)
+	if left_player_id != "" and local_player_id != "" and left_player_id != local_player_id:
+		return
+
+	var left_room_id := str(message.get("roomId", message.get("room_id", "")))
+	if left_room_id != "" and local_room_id != "" and left_room_id != local_room_id:
+		return
+
+	local_room_id = ""
+	match_duration_seconds = 0
+	remaining_seconds = 0.0
+	match_finished = false
+	last_room_joined_message = {}
+	remote_player_snapshots.clear()
 
 func _store_remote_player_snapshot(message: Dictionary) -> void:
 	var player_id := _extract_player_id(message)

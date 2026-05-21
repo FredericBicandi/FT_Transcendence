@@ -33,6 +33,8 @@ func _ready() -> void:
 	network_client.player_weapon_switch_received.connect(_on_preview_player_weapon_switch_received)
 	network_client.player_health_received.connect(_on_preview_player_health_received)
 	network_client.player_left_received.connect(_on_preview_player_left_received)
+	network_client.leaderboard_updated.connect(_on_leaderboard_updated)
+	network_client.match_left.connect(_on_match_left)
 	network_client.match_ended.connect(_on_match_ended)
 	join_button.pressed.connect(_on_join_button_pressed)
 	dashboard_button.pressed.connect(_on_dashboard_button_pressed)
@@ -85,6 +87,12 @@ func _on_time_synced(message: Dictionary) -> void:
 
 	_apply_leaderboard_snapshot(message)
 
+func _on_leaderboard_updated(message: Dictionary) -> void:
+	if has_started_game or is_returning_to_lobby:
+		return
+
+	_apply_leaderboard_snapshot(message)
+
 func _on_connection_failed() -> void:
 	has_started_game = false
 	is_room_ready = false
@@ -108,7 +116,13 @@ func _on_connection_lost(reason: String) -> void:
 	_begin_connection_attempt("%s Reconnecting..." % reason)
 
 func _on_match_ended(_message: Dictionary) -> void:
-	_return_to_lobby()
+	if has_started_game and game_instance != null and is_instance_valid(game_instance):
+		return
+
+	_return_to_lobby(false)
+
+func _on_match_left(_message: Dictionary) -> void:
+	_reset_after_match_exit()
 
 func _on_join_button_pressed() -> void:
 	if has_started_game or not is_room_ready:
@@ -331,11 +345,22 @@ func _clear_preview_remote_players() -> void:
 
 	preview_remote_players.clear()
 
-func _return_to_lobby() -> void:
+func _return_to_lobby(should_notify_server: bool = true) -> void:
 	if is_returning_to_lobby:
 		return
 
-	# Close the socket before leaving so reconnect logic does not fight the redirect
+	if should_notify_server:
+		network_client.send_leave_match()
+
+	if OS.has_feature("web"):
+		_reset_after_match_exit()
+		JavaScriptBridge.eval(
+			"window.parent.postMessage({ type: 'EXIT_GAME', reason: 'manual' }, '*'); if (window.parent === window) { window.location.href = '%s'; }" % LOBBY_URL,
+			false
+		)
+		return
+
+	# Native builds cannot ask a parent React page to hide the game.
 	is_returning_to_lobby = true
 	network_client.close_connection()
 	is_room_ready = false
@@ -350,8 +375,18 @@ func _return_to_lobby() -> void:
 	has_started_game = false
 	$CanvasLayer.visible = false
 
-	if OS.has_feature("web"):
-		JavaScriptBridge.eval("window.location.href = '%s';" % LOBBY_URL)
-		return
-
 	OS.shell_open(LOBBY_URL)
+
+func _reset_after_match_exit() -> void:
+	if game_instance != null and is_instance_valid(game_instance):
+		game_instance.queue_free()
+
+	game_instance = null
+	has_started_game = false
+	is_room_ready = false
+	local_player_id = network_client.local_player_id
+	_clear_preview_remote_players()
+	_set_background_visible(true)
+	_set_room_ready_ui_visible(false)
+	_set_status_text("Connected.")
+	$CanvasLayer.visible = true

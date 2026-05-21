@@ -51,6 +51,9 @@ func equip_weapon(weapon_key: StringName) -> bool:
 
 	active_weapon = next_weapon
 	active_weapon.set_active(true)
+	active_weapon.set_input_enabled(input_enabled)
+	if input_enabled and Input.is_action_pressed("click"):
+		active_weapon.lock_fire_until_click_released()
 	active_weapon_changed.emit(active_weapon)
 	return true
 
@@ -92,6 +95,10 @@ func get_active_weapon() -> BaseWeapon:
 
 func set_input_enabled(is_enabled: bool) -> void:
 	input_enabled = is_enabled
+	if active_weapon != null:
+		active_weapon.set_input_enabled(is_enabled)
+		if is_enabled and Input.is_action_pressed("click"):
+			active_weapon.lock_fire_until_click_released()
 
 func clear_all_projectiles() -> void:
 	# Clear every weapon so hidden bullets do not survive respawn

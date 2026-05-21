@@ -24,13 +24,14 @@ func shoot() -> void:
 	emit_ammo_changed()
 	_play_fire_sound()
 	var shot_start_position := get_shot_start_position(config)
-	var base_offset := raw_shot_target - shot_start_position
+	var desired_shot_target := get_current_frame_shot_target(shot_start_position, config) if should_use_current_frame_for_shot(raw_shot_target) else raw_shot_target
+	var base_offset := desired_shot_target - shot_start_position
 	var base_direction := base_offset.normalized() if base_offset != Vector2.ZERO else Vector2.RIGHT
 	apply_recoil(base_direction, config)
 	for i in range(PELLET_COUNT):
 		var spread := randf_range(-PELLET_SPREAD, PELLET_SPREAD)
 		_spawn_bullet(base_direction.rotated(spread), shot_start_position, true, -1, null)
-	shot_fired.emit(base_direction.angle(), get_weapon_name(), shot_start_position, raw_shot_target)
+	shot_fired.emit(base_direction.angle(), get_weapon_name(), shot_start_position, desired_shot_target)
 	if current_ammo <= 0:
 		reload()
 

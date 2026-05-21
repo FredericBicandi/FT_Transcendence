@@ -497,7 +497,7 @@ animations = [{
 }],
 "loop": true,
 "name": &"default",
-"speed": 5.0
+"speed": 30.0
 }]
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_g01q4"]
@@ -614,11 +614,6 @@ texture = ExtResource("4_16nc3")
 
 [node name="Rocket_Launcher" type="Node2D" parent="." unique_id=869868688]
 script = SubResource("GDScript_w4ncs")
-weapon_id = null
-muzzle_collision_mask = null
-muzzle_wall_padding = null
-muzzle_wall_visual_pullback = null
-muzzle_wall_min_visual_scale = null
 
 [node name="AudioStreamPlayer2D" type="AudioStreamPlayer2D" parent="Rocket_Launcher" unique_id=2113824659]
 stream = ExtResource("6_7eos3")

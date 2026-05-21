@@ -38,6 +38,7 @@ var is_active_weapon: bool = false
 var has_safe_muzzle_position: bool = false
 var safe_muzzle_position: Vector2 = Vector2.ZERO
 var base_gun_scale: Vector2 = Vector2.ONE
+var fire_locked_until_click_released: bool = false
 
 @onready var gun: AnimatedSprite2D = $Gun
 @onready var muzzle_marker: Marker2D = $Gun/Marker2D
@@ -95,6 +96,10 @@ func _process(delta: float) -> void:
 	if accepts_player_input:
 		if Input.is_key_pressed(KEY_R):
 			reload()
+		if fire_locked_until_click_released:
+			if not Input.is_action_pressed("click"):
+				fire_locked_until_click_released = false
+			return
 		if Input.is_action_pressed("click"):
 			shoot()
 
@@ -114,6 +119,10 @@ func _create_bullet_node() -> Node2D:
 
 func _update_bullet_visual(bullet: Node2D, result: Dictionary) -> void:
 	pass
+
+func _play_impact_effect(position: Vector2) -> void:
+	_apply_impact_screen_shake(position)
+	_play_impact_sound(position)
 
 func _free_bullet_node(bullet_instance_id: int) -> void:
 	var bullet := instance_from_id(bullet_instance_id) as Node2D
@@ -168,6 +177,24 @@ func get_spawned_bullet_frame(direction: Vector2) -> int:
 		return get_projectile_frame_for_direction(direction)
 	return get_bullet_frame()
 
+func get_current_frame_direction() -> Vector2:
+	return Vector2.RIGHT.rotated(deg_to_rad(float(current_frame_index) * 45.0)).normalized()
+
+func should_use_current_frame_for_shot(target_position: Vector2) -> bool:
+	if has_aim_target_override:
+		return false
+
+	var owner_body := find_owner_body()
+	if owner_body == null or not owner_body.has_method("is_local_aim_target_on_self"):
+		return false
+
+	return bool(owner_body.call("is_local_aim_target_on_self", target_position))
+
+func get_current_frame_shot_target(start_position: Vector2, config: Dictionary) -> Vector2:
+	var bullet_speed := maxf(float(config.get("bullet_speed", 320.0)), 1.0)
+	var bullet_lifetime := maxf(float(config.get("bullet_lifetime", 1.0)), 0.1)
+	return start_position + get_current_frame_direction() * bullet_speed * bullet_lifetime
+
 func shoot() -> void:
 	if fire_cooldown > 0.0 or reload_cooldown > 0.0:
 		return
@@ -188,7 +215,9 @@ func shoot() -> void:
 	_play_fire_sound()
 
 	var shot_start_position := get_shot_start_position(config)
-	var shot_target := _resolve_shot_target(shot_start_position, raw_shot_target, config)
+	var frame_shot_target := get_current_frame_shot_target(shot_start_position, config)
+	var desired_shot_target := frame_shot_target if should_use_current_frame_for_shot(raw_shot_target) else raw_shot_target
+	var shot_target := _resolve_shot_target(shot_start_position, desired_shot_target, config)
 	var bullet_offset := shot_target - shot_start_position
 	var bullet_direction := bullet_offset.normalized() if bullet_offset != Vector2.ZERO else Vector2.RIGHT
 	apply_recoil(bullet_direction, config)
@@ -232,6 +261,37 @@ func _play_fire_sound() -> void:
 		if owner_body != null and owner_body.has_method("play_shoot_sound"):
 			owner_body.call("play_shoot_sound", fire_sound)
 
+func _play_impact_sound(position: Vector2) -> void:
+	var impact_sound: AudioStream = get_weapon_config().get("impact_sound")
+	if impact_sound == null:
+		return
+
+	var current_scene := get_tree().current_scene
+	if current_scene == null:
+		return
+
+	var impact_audio := AudioStreamPlayer2D.new()
+	impact_audio.stream = impact_sound
+	impact_audio.max_distance = float(get_weapon_config().get("impact_sound_max_distance", 700.0))
+	impact_audio.attenuation = float(get_weapon_config().get("impact_sound_attenuation", 1.0))
+	impact_audio.volume_db = float(get_weapon_config().get("impact_sound_volume_db", 0.0))
+	current_scene.add_child(impact_audio)
+	impact_audio.global_position = position
+	impact_audio.finished.connect(impact_audio.queue_free)
+	impact_audio.play()
+
+func _apply_impact_screen_shake(position: Vector2) -> void:
+	var config := get_weapon_config()
+	var shake_radius := float(config.get("impact_shake_radius", 0.0))
+	var shake_strength := float(config.get("impact_shake_strength", 0.0))
+	var shake_duration := float(config.get("impact_shake_duration", 0.0))
+	if shake_radius <= 0.0 or shake_strength <= 0.0 or shake_duration <= 0.0:
+		return
+
+	for candidate in get_tree().get_nodes_in_group("player"):
+		if candidate != null and candidate.has_method("apply_screen_shake"):
+			candidate.call("apply_screen_shake", position, shake_radius, shake_strength, shake_duration)
+
 func apply_recoil(direction: Vector2, config: Dictionary) -> void:
 	var recoil_distance: float = float(config.get("recoil_distance", 2.5))
 	var recoil_jitter: float = float(config.get("recoil_jitter", 0.35))
@@ -264,6 +324,7 @@ func update_bullets(delta: float) -> void:
 			hit = raycast_bullet(space_state, collision_start_position, collision_end_position, collision_mask, pass_over_layers)
 
 		if not hit.is_empty():
+			_play_impact_effect(hit.get("position", bullet.global_position))
 			apply_bullet_hit(hit, damage)
 			bullet.global_position = hit["position"]
 			bullet.queue_free()
@@ -271,6 +332,7 @@ func update_bullets(delta: float) -> void:
 			continue
 
 		if bool(result.get("landed", false)):
+			_play_impact_effect(end_position)
 			apply_bullet_hit({ "position": end_position }, damage)
 			bullet.global_position = end_position
 			bullet.queue_free()
@@ -465,6 +527,11 @@ func get_weapon_name() -> String:
 
 func set_input_enabled(is_enabled: bool) -> void:
 	accepts_player_input = is_enabled
+	if not is_enabled:
+		fire_locked_until_click_released = false
+
+func lock_fire_until_click_released() -> void:
+	fire_locked_until_click_released = Input.is_action_pressed("click")
 
 func set_aim_target(target_position: Vector2) -> void:
 	has_aim_target_override = true
@@ -634,9 +701,11 @@ func _on_bullet_lifetime_timeout(bullet_instance_id: int) -> void:
 		var bullet_data := active_bullets[i]
 		if int(bullet_data.get("instance_id", 0)) != bullet_instance_id:
 			continue
-		if bullet_data.has("target_position") and int(bullet_data.get("damage", 0)) > 0:
+		if bullet_data.has("target_position"):
 			var impact_position: Vector2 = bullet_data.get("ground_position", bullet_data.get("target_position", bullet_data.get("position", Vector2.ZERO)))
-			apply_bullet_hit({ "position": impact_position }, int(bullet_data.get("damage", 0)))
+			_play_impact_effect(impact_position)
+			if int(bullet_data.get("damage", 0)) > 0:
+				apply_bullet_hit({ "position": impact_position }, int(bullet_data.get("damage", 0)))
 		active_bullets.remove_at(i)
 		break
 	_free_bullet_node(bullet_instance_id)

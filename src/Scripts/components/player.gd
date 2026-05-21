@@ -33,6 +33,7 @@ const HITBOX_POINT_EPSILON := 0.5
 @export var shoot_sound_volume_jitter_db: float = 1.5
 @export var damage_number_rise_distance: float = 22.0
 @export var damage_number_spread: float = 10.0
+@export var local_self_aim_radius: float = 24.0
 
 # Runtime state for health, network sync, sounds, and remote smoothing
 var health: int
@@ -67,6 +68,11 @@ var network_player_display_name: String = ""
 var next_shot_sequence: int = 0
 var has_requested_server_respawn: bool = false
 var observed_shot_weapon: BaseWeapon = null
+var camera_base_offset: Vector2 = Vector2.ZERO
+var camera_shake_remaining: float = 0.0
+var camera_shake_duration: float = 0.0
+var camera_shake_strength: float = 0.0
+var camera_shake_rng := RandomNumberGenerator.new()
 
 @onready var head: AnimatedSprite2D = $Head
 @onready var legs: AnimatedSprite2D = $Leg
@@ -93,7 +99,9 @@ func _ready() -> void:
 
 	# Match camera and weapon input to this player's control mode
 	player_camera.enabled = enable_player_camera
-	weapon.set_input_enabled(accepts_input)
+	camera_base_offset = player_camera.offset
+	camera_shake_rng.randomize()
+	weapon.set_input_enabled(_are_local_weapon_controls_enabled())
 	weapon.active_weapon_changed.connect(_on_active_weapon_changed)
 	legs.frame = 0
 	head.z_index = 1
@@ -120,6 +128,12 @@ func _physics_process(delta: float) -> void:
 	if is_dead:
 		return
 
+	if not match_controls_enabled:
+		velocity = Vector2.ZERO
+		update_legs(Vector2.ZERO, delta)
+		weapon.update_movement(Vector2.ZERO)
+		return
+
 	if is_remote_proxy:
 		_process_remote_movement(delta)
 		return
@@ -139,20 +153,22 @@ func _physics_process(delta: float) -> void:
 func _process(delta: float) -> void:
 	shoot_sound_cooldown_remaining = maxf(shoot_sound_cooldown_remaining - delta, 0.0)
 	listener_sound_time += delta
+	_update_camera_shake(delta)
 	_report_angle_on_frame_change()
 	if accepts_input:
 		_update_active_shot_mix()
 
 	# Dead players wait for respawn; AI dummies keep attacking while alive
 	if is_dead:
-		respawn_timer = maxf(respawn_timer - delta, 0.0)
-		if respawn_timer == 0.0:
-			if _uses_server_authoritative_health():
-				_request_server_respawn()
-			else:
-				respawn()
+		if match_controls_enabled:
+			respawn_timer = maxf(respawn_timer - delta, 0.0)
+			if respawn_timer == 0.0:
+				if _uses_server_authoritative_health():
+					_request_server_respawn()
+				else:
+					respawn()
 	else:
-		if auto_attack_players:
+		if auto_attack_players and match_controls_enabled:
 			update_auto_attack()
 
 	update_hit_flash(delta)
@@ -224,11 +240,16 @@ func _on_active_weapon_changed(active_weapon: BaseWeapon) -> void:
 	if active_weapon == null:
 		return
 
-	active_weapon.set_input_enabled(accepts_input and match_controls_enabled)
 	_bind_weapon_shot_signal(active_weapon)
 
 	if is_remote_proxy:
+		active_weapon.set_input_enabled(false)
 		active_weapon.set_aim_target(global_position + remote_facing_direction * REMOTE_AIM_DISTANCE)
+		return
+
+	active_weapon.set_input_enabled(_are_local_weapon_controls_enabled())
+	if is_dead:
+		active_weapon.set_active(false)
 		return
 
 	_report_weapon_switch(active_weapon)
@@ -460,9 +481,11 @@ func die() -> void:
 	head.visible = false
 	overhead_panel.visible = false
 	_set_collision_shapes_disabled(true)
+	weapon.set_input_enabled(false)
 
 	var active_weapon := weapon.get_active_weapon()
 	if active_weapon != null:
+		active_weapon.set_input_enabled(false)
 		active_weapon.set_active(false)
 
 func respawn() -> void:
@@ -680,9 +703,16 @@ func set_match_controls_enabled(is_enabled: bool) -> void:
 	match_controls_enabled = is_enabled
 	velocity = Vector2.ZERO
 	idle_position_heartbeat_time = 0.0
+	if not is_enabled:
+		remote_snapshot_queue.clear()
+		remote_walk_animation_hold_remaining = 0.0
+		remote_last_move_direction = Vector2.ZERO
+		update_legs(Vector2.ZERO, 0.0)
+		if weapon != null:
+			weapon.update_movement(Vector2.ZERO)
 
 	if weapon != null:
-		weapon.set_input_enabled(accepts_input and match_controls_enabled)
+		weapon.set_input_enabled(_are_local_weapon_controls_enabled())
 		last_sent_aim_frame = weapon.get_aim_frame()
 
 func configure_as_remote_proxy() -> void:
@@ -791,6 +821,38 @@ func report_authoritative_hit(target: Node, damage: int, hit_position: Vector2, 
 	network_client.send_hit(target_player_id, weapon_type, damage, shot_id, global_position.x, global_position.y, shot_angle, Time.get_ticks_msec())
 	return true
 
+func is_local_aim_target_on_self(raw_target: Vector2) -> bool:
+	if is_remote_proxy or not accepts_input or is_dead:
+		return false
+
+	var self_aim_radius := maxf(local_self_aim_radius, 0.0)
+	if self_aim_radius <= 0.0:
+		return false
+
+	return raw_target.distance_to(_get_local_aim_center()) <= self_aim_radius
+
+func apply_screen_shake(source_position: Vector2, radius: float, strength: float, duration: float) -> void:
+	if not accepts_input or player_camera == null or not player_camera.enabled:
+		return
+	if radius <= 0.0 or strength <= 0.0 or duration <= 0.0:
+		return
+
+	var distance := global_position.distance_to(source_position)
+	if distance > radius:
+		return
+
+	var falloff := 1.0 - clampf(distance / radius, 0.0, 1.0)
+	var next_strength := strength * falloff
+	var current_visible_strength := camera_shake_strength * (camera_shake_remaining / maxf(camera_shake_duration, 0.001))
+	if next_strength < current_visible_strength:
+		camera_shake_remaining = maxf(camera_shake_remaining, duration)
+		camera_shake_duration = maxf(camera_shake_duration, duration)
+		return
+
+	camera_shake_strength = next_strength
+	camera_shake_remaining = duration
+	camera_shake_duration = duration
+
 func apply_authoritative_health_state(new_health: int, authoritative_is_dead: bool, reported_damage: int = 0) -> void:
 	if is_dead and not authoritative_is_dead and respawn_timer > 0.0 and not is_remote_proxy:
 		# Do not let late health packets cancel a local respawn countdown
@@ -828,13 +890,37 @@ func _restore_after_respawn() -> void:
 	_set_collision_shapes_disabled(false)
 
 	weapon.clear_all_projectiles()
+	weapon.set_input_enabled(_are_local_weapon_controls_enabled())
 	var active_weapon := weapon.get_active_weapon()
 	if active_weapon != null:
-		active_weapon.set_input_enabled(accepts_input and match_controls_enabled)
+		active_weapon.set_input_enabled(_are_local_weapon_controls_enabled())
 		active_weapon.set_active(true)
+
+func _are_local_weapon_controls_enabled() -> bool:
+	return accepts_input and match_controls_enabled and not is_dead
 
 func _uses_server_authoritative_health() -> bool:
 	return network_client != null and (accepts_input or is_remote_proxy)
+
+func _update_camera_shake(delta: float) -> void:
+	if player_camera == null or not player_camera.enabled:
+		return
+
+	if camera_shake_remaining <= 0.0:
+		if player_camera.offset != camera_base_offset:
+			player_camera.offset = camera_base_offset
+		return
+
+	camera_shake_remaining = maxf(camera_shake_remaining - delta, 0.0)
+	var fade := camera_shake_remaining / maxf(camera_shake_duration, 0.001)
+	var current_strength := camera_shake_strength * fade * fade
+	player_camera.offset = camera_base_offset + Vector2(
+		camera_shake_rng.randf_range(-current_strength, current_strength),
+		camera_shake_rng.randf_range(-current_strength, current_strength)
+	)
+
+	if camera_shake_remaining == 0.0:
+		player_camera.offset = camera_base_offset
 
 func _validate_collision_shapes() -> void:
 	if collision_shape == null:
@@ -866,6 +952,12 @@ func _is_global_point_inside_damage_hitbox(global_point: Vector2) -> bool:
 		return local_point.length() <= (shape as CircleShape2D).radius + HITBOX_POINT_EPSILON
 
 	return false
+
+func _get_local_aim_center() -> Vector2:
+	if head != null:
+		return head.global_position
+
+	return global_position
 
 func enqueue_remote_snapshot(position: Vector2, aim_angle_degrees: float = NAN) -> void:
 	if not is_nan(aim_angle_degrees):
