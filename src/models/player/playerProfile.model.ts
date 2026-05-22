@@ -14,13 +14,14 @@ export type PlayerProfile = {
 
 const PLAYER_PROFILE_STORAGE_KEY = "playerProfile";
 const MAX_GUEST_NAME_LENGTH = 10;
+const NEW_AUTHENTICATED_PLAYER_LEVEL = 1;
 const USERNAME_TAKEN_ERROR = "USERNAME_TAKEN";
 
 type ProfileRow = {
   current_xp: unknown;
   id: string;
   level: unknown;
-  profile_url: unknown;
+  picture_url: unknown;
   username: unknown;
 };
 
@@ -34,17 +35,17 @@ function normalizePlayerName(value: unknown, fallback: string) {
   return normalizedName.length > 0 ? normalizedName : fallback;
 }
 
-function normalizePlayerLevel(value: unknown) {
+function normalizePlayerLevel(value: unknown, fallback = 0) {
   const numericLevel =
     typeof value === "number"
       ? value
       : typeof value === "string"
         ? Number(value)
-        : 0;
+        : fallback;
 
   return Number.isFinite(numericLevel) && numericLevel > 0
     ? Math.floor(numericLevel)
-    : 0;
+    : fallback;
 }
 
 function normalizeCurrentXp(value: unknown) {
@@ -66,6 +67,13 @@ function normalizeAvatarUrl(value: unknown) {
   const avatarUrl = value.trim();
 
   return avatarUrl.length > 0 ? avatarUrl : undefined;
+}
+
+function getUserAvatarUrl(userMetadata: Record<string, unknown> | undefined) {
+  return (
+    normalizeAvatarUrl(userMetadata?.avatar_url) ??
+    normalizeAvatarUrl(userMetadata?.picture)
+  );
 }
 
 function createGuestPlayerProfile(): PlayerProfile {
@@ -124,6 +132,7 @@ function loadGuestPlayerProfile(): PlayerProfile {
 }
 
 function createAuthenticatedPlayerProfile(
+  fallbackAvatarUrl: string | undefined,
   userId: string,
   profile: ProfileRow | null,
 ) {
@@ -132,9 +141,12 @@ function createAuthenticatedPlayerProfile(
   return {
     playerId: userId,
     playerName: playerName || "Player",
-    avatarUrl: normalizeAvatarUrl(profile?.profile_url),
+    avatarUrl: normalizeAvatarUrl(profile?.picture_url) ?? fallbackAvatarUrl,
     currentXp: normalizeCurrentXp(profile?.current_xp),
-    level: normalizePlayerLevel(profile?.level),
+    level: normalizePlayerLevel(
+      profile?.level,
+      NEW_AUTHENTICATED_PLAYER_LEVEL,
+    ),
     isGuest: false,
     needsUsername: !playerName,
   };
@@ -148,17 +160,18 @@ export async function loadPlayerProfile(): Promise<PlayerProfile> {
     } = await supabase.auth.getUser();
 
     if (user) {
+      const userAvatarUrl = getUserAvatarUrl(user.user_metadata);
       const { data, error } = await supabase
         .from("profiles")
-        .select("id, level, username, current_xp, profile_url")
+        .select("id, level, username, current_xp, picture_url")
         .eq("id", user.id)
         .maybeSingle<ProfileRow>();
 
       if (error) {
-        return createAuthenticatedPlayerProfile(user.id, null);
+        return createAuthenticatedPlayerProfile(userAvatarUrl, user.id, null);
       }
 
-      return createAuthenticatedPlayerProfile(user.id, data);
+      return createAuthenticatedPlayerProfile(userAvatarUrl, user.id, data);
     }
   } catch {
     // Supabase is optional for guests, including local runs without env vars.
@@ -198,7 +211,7 @@ async function upsertProfileDetails({
       .from("profiles")
       .update({
         username: playerName,
-        profile_url: avatarUrl ?? null,
+        picture_url: avatarUrl ?? null,
       })
       .eq("id", playerId);
 
@@ -212,8 +225,8 @@ async function upsertProfileDetails({
   const { error } = await supabase.from("profiles").insert({
     id: playerId,
     username: playerName,
-    profile_url: avatarUrl ?? null,
-    level: 0,
+    picture_url: avatarUrl ?? null,
+    level: NEW_AUTHENTICATED_PLAYER_LEVEL,
     current_xp: 0,
   });
 

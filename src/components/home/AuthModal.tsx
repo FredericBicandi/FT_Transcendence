@@ -1,7 +1,6 @@
 import type { HomeTranslations } from "@/views/home/homeTranslations";
+import { getAuthCallbackUrl } from "@/models/app/appUrl.model";
 import { createSupabaseClient } from "@/models/supabase/client.model";
-
-const appUrl = process.env.NEXT_PUBLIC_APP_URL;
 
 type AuthModalProps = {
   onClose: () => void;
@@ -99,7 +98,7 @@ export function AuthModal({ onClose, translations }: AuthModalProps) {
     await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: "https://pixelfight.live/auth/callback",
+        redirectTo: getAuthCallbackUrl(),
       },
     });
   }

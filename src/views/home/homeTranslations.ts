@@ -14,6 +14,7 @@ export type HomeTranslations = {
   };
   home: {
     loginSignup: string;
+    loading: string;
     online: string;
     play: string;
   };
@@ -63,6 +64,7 @@ export const homeTranslations: Record<HomeLanguage, HomeTranslations> = {
     },
     home: {
       loginSignup: "Login / Sign Up",
+      loading: "Loading...",
       online: "online",
       play: "Play",
     },
@@ -114,6 +116,7 @@ export const homeTranslations: Record<HomeLanguage, HomeTranslations> = {
     },
     home: {
       loginSignup: "Connexion / Inscription",
+      loading: "Chargement...",
       online: "en ligne",
       play: "Jouer",
     },
@@ -165,6 +168,7 @@ export const homeTranslations: Record<HomeLanguage, HomeTranslations> = {
     },
     home: {
       loginSignup: "دخول / تسجيل",
+      loading: "جاري التحميل...",
       online: "متصل",
       play: "العب",
     },

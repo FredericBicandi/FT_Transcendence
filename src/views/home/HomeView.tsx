@@ -28,6 +28,7 @@ export function HomeView() {
   const translations = homeTranslations[language];
   const {
     gameUrl,
+    isPlayerProfileLoading,
     onlineCount,
     playerProfile,
     refreshPlayerProfile,
@@ -36,7 +37,10 @@ export function HomeView() {
     playGame,
   } = useHomeController();
   const needsUsernameSetup =
-    playerProfile !== null && !playerProfile.isGuest && playerProfile.needsUsername;
+    !isPlayerProfileLoading &&
+    playerProfile !== null &&
+    !playerProfile.isGuest &&
+    playerProfile.needsUsername;
 
   useEffect(() => {
     const savedLanguage = window.localStorage.getItem(LANGUAGE_STORAGE_KEY);
@@ -95,7 +99,17 @@ export function HomeView() {
 
       {!showGame && (
         <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-6">
-          <PlayButton label={translations.home.play} onClick={handlePlayGame} />
+          {isPlayerProfileLoading ? (
+            <div className="bg-[#151819] px-6 py-4 text-sm uppercase text-[#f5dfad] shadow-[0_0_0_3px_#050302,0_4px_0_3px_#111515,inset_0_3px_0_#374041,inset_0_-3px_0_#050302]">
+              {translations.home.loading}
+            </div>
+          ) : (
+            <PlayButton
+              disabled={!gameUrl || needsUsernameSetup}
+              label={translations.home.play}
+              onClick={handlePlayGame}
+            />
+          )}
 
           <OnlinePlayersBadge
             label={translations.home.online}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   createPlayerProfileSearchParams,
   loadPlayerProfile,
@@ -83,40 +83,77 @@ function isExitGameMessage(value: unknown) {
 }
 
 export function useHomeController() {
+  const isMountedRef = useRef(true);
+  const profileRequestIdRef = useRef(0);
   const [onlineCount, setOnlineCount] = useState(0);
   const [showGame, setShowGame] = useState(false);
+  const [isPlayerProfileLoading, setIsPlayerProfileLoading] = useState(true);
   const [playerProfile, setPlayerProfile] = useState<PlayerProfile | null>(
     null,
   );
 
   const refreshPlayerProfile = useCallback(async () => {
-    const profile = await loadPlayerProfile();
-    setPlayerProfile(profile);
+    const requestId = profileRequestIdRef.current + 1;
+    profileRequestIdRef.current = requestId;
+    setIsPlayerProfileLoading(true);
+
+    try {
+      const profile = await loadPlayerProfile();
+
+      if (
+        isMountedRef.current &&
+        profileRequestIdRef.current === requestId
+      ) {
+        setPlayerProfile(profile);
+      }
+    } finally {
+      if (
+        isMountedRef.current &&
+        profileRequestIdRef.current === requestId
+      ) {
+        setIsPlayerProfileLoading(false);
+      }
+    }
   }, []);
 
   useEffect(() => {
-    let mounted = true;
+    const requestId = profileRequestIdRef.current + 1;
+    profileRequestIdRef.current = requestId;
 
     async function resolvePlayerProfile() {
-      const profile = await loadPlayerProfile();
+      try {
+        const profile = await loadPlayerProfile();
 
-      if (mounted) {
-        setPlayerProfile(profile);
+        if (
+          isMountedRef.current &&
+          profileRequestIdRef.current === requestId
+        ) {
+          setPlayerProfile(profile);
+        }
+      } finally {
+        if (
+          isMountedRef.current &&
+          profileRequestIdRef.current === requestId
+        ) {
+          setIsPlayerProfileLoading(false);
+        }
       }
     }
 
     resolvePlayerProfile();
 
     return () => {
-      mounted = false;
+      isMountedRef.current = false;
+      profileRequestIdRef.current += 1;
     };
-  }, []);
+  }, [refreshPlayerProfile]);
 
   useEffect(() => {
     const supabase = createSupabaseClient();
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(() => {
+      setShowGame(false);
       refreshPlayerProfile();
     });
 
@@ -185,11 +222,18 @@ export function useHomeController() {
   }, []);
 
   const gameUrl = playerProfile
-    ? `/Game/index.html?${createPlayerProfileSearchParams(playerProfile).toString()}`
+    ? `/Game/index.html?${createPlayerProfileSearchParams(
+        playerProfile,
+      ).toString()}`
     : null;
+  const canPlayGame =
+    !isPlayerProfileLoading &&
+    gameUrl !== null &&
+    (playerProfile?.isGuest || !playerProfile?.needsUsername);
 
   return {
     gameUrl,
+    isPlayerProfileLoading,
     onlineCount,
     playerProfile,
     refreshPlayerProfile,
@@ -201,7 +245,7 @@ export function useHomeController() {
       setShowGame(false);
     },
     playGame: () => {
-      if (gameUrl) {
+      if (canPlayGame) {
         setShowGame(true);
       }
     },
