@@ -11,6 +11,7 @@ public sealed class Ws
     private static readonly TimeSpan HeartbeatCheckInterval = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan IdleTimeout = TimeSpan.FromSeconds(60);
     private static readonly TimeSpan TimeSyncInterval = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan EndedRoomRetention = TimeSpan.FromSeconds(15);
     private const double MinAimAngleDegrees = 0.0;
     private const double MaxAimAngleDegrees = 360.0;
     private const int MaxMessageBytes = 16 * 1024;
@@ -23,6 +24,7 @@ public sealed class Ws
     private const double DefaultPlayerHealth = 100.0;
     private const double DefaultSpawnX = 0.0;
     private const double DefaultSpawnY = 0.0;
+    internal const double DefaultSpawnAngle = 0.0;
     private const double MaxHitDamage = DefaultPlayerHealth;
     private const double MinRocketLauncherDamage = 1.0;
     private const double MaxRocketLauncherDamage = 80.0;
@@ -34,7 +36,7 @@ public sealed class Ws
     private readonly ConcurrentDictionary<string, ClientConnection> clients;
     private int onlinePlayerCount;
 
-    // Active match rooms keyed by room id. Rooms are removed when empty or ended.
+    // Active match rooms keyed by room id. Ended rooms are retained briefly for final client packets.
     private readonly ConcurrentDictionary<string, GameRoom> rooms = new();
 
     public Ws(ConcurrentDictionary<string, ClientConnection> clients)
@@ -152,8 +154,8 @@ public sealed class Ws
         var hadJoined = client.HasJoinedGame;
         room.RemovePlayer(client.PlayerId);
 
-        // Empty rooms are no longer useful and should not receive timer ticks.
-        if (room.IsEmpty)
+        // Empty active rooms are no longer useful. Ended rooms stay briefly for final state/leave packets.
+        if (room.IsEmpty && room.State != GameRoomState.Ended)
         {
             rooms.TryRemove(room.RoomId, out _);
             return null;
@@ -220,6 +222,12 @@ public sealed class Ws
             {
                 try
                 {
+                    if (room.State == GameRoomState.Ended)
+                    {
+                        CleanupEndedRoomIfExpired(room);
+                        continue;
+                    }
+
                     if (room.State != GameRoomState.Running)
                         continue;
 
@@ -227,7 +235,7 @@ public sealed class Ws
 
                     if (remainingSeconds <= 0)
                     {
-                        // Time is up: end the match once and clean up its sockets.
+                        // Time is up: end the match once, but keep the room briefly for final packets.
                         await EndRoomAsync(room);
                         continue;
                     }
@@ -256,39 +264,51 @@ public sealed class Ws
 
         Console.WriteLine($"Room ended by time limit: {room.RoomId}");
 
-        await BroadcastToRoomAsync(room, new
-        {
-            type = "match_ended",
-            roomId = room.RoomId,
-            reason = "time_limit",
-            leaderboard = room.LeaderboardSnapshot()
-        });
+        await BroadcastMatchEndedAsync(room);
+    }
 
-        foreach (var playerId in room.PlayerIdsSnapshot())
-        {
-            if (!clients.TryGetValue(playerId, out var client))
-                continue;
+    private void CleanupEndedRoomIfExpired(GameRoom room)
+    {
+        var endedAtUtc = room.EndedAtUtc;
+        if (endedAtUtc is null || DateTime.UtcNow - endedAtUtc.Value < EndedRoomRetention)
+            return;
 
-            try
-            {
-                // Simpler cleanup policy: close sockets and let normal disconnect cleanup run.
-                if (client.Socket.State is WebSocketState.Open or WebSocketState.CloseReceived)
-                {
-                    await client.Socket.CloseAsync(
-                        WebSocketCloseStatus.NormalClosure,
-                        "Match ended",
-                        CancellationToken.None
-                    );
-                }
-            }
-            catch (Exception ex) when (IsExpectedWebSocketDisconnect(ex))
-            {
-                Console.WriteLine($"Match-end close skipped for {playerId}: {ex.Message}");
-            }
+        if (rooms.TryRemove(room.RoomId, out _))
+            Console.WriteLine($"Cleaned up ended room after retention: {room.RoomId}");
+    }
+
+    private async Task<bool> EndRoomIfExpiredAsync(GameRoom room)
+    {
+        if (room.State == GameRoomState.Running && room.RemainingSeconds <= 0)
+        {
+            await EndRoomAsync(room);
+            return true;
         }
 
-        rooms.TryRemove(room.RoomId, out _);
+        return false;
     }
+
+    private async Task<bool> EnsureRoomRunningAsync(GameRoom room)
+    {
+        await EndRoomIfExpiredAsync(room);
+        return room.State == GameRoomState.Running;
+    }
+
+    private Task BroadcastMatchEndedAsync(GameRoom room) =>
+        BroadcastToRoomAsync(room, MatchEndedPayload(room));
+
+    private Task SendMatchEndedAsync(ClientConnection client, GameRoom room) =>
+        SendJsonAsync(client, MatchEndedPayload(room));
+
+    private static object MatchEndedPayload(GameRoom room) => new
+    {
+        type = "match_ended",
+        roomId = room.RoomId,
+        room_id = room.RoomId,
+        remainingSeconds = 0,
+        durationSeconds = room.DurationSeconds,
+        leaderboard = room.LeaderboardSnapshot()
+    };
 
     // Closes stale sockets when the client stops sending gameplay messages.
     private async Task MonitorHeartbeatAsync(ClientConnection client, CancellationToken cancellationToken)
@@ -472,7 +492,18 @@ public sealed class Ws
                 }
 
                 var room = client.HasRoom ? rooms.GetValueOrDefault(client.RoomId) : null;
-                if (room is null || room.State == GameRoomState.Ended)
+                if (room is not null)
+                {
+                    await EndRoomIfExpiredAsync(room);
+
+                    if (room.State == GameRoomState.Ended)
+                    {
+                        await SendMatchEndedAsync(client, room);
+                        return;
+                    }
+                }
+
+                if (room is null)
                     room = AssignRoom(playerId);
 
                 client.AssignRoom(room.RoomId);
@@ -501,18 +532,19 @@ public sealed class Ws
                     return;
                 }
 
-                if (!TryReadPlayerState(root, message, client.PlayerId, "on_join", out var x, out var y, out var angle, out var weapon))
-                    return;
-
                 if (!rooms.TryGetValue(client.RoomId, out var room))
                     return;
 
+                await EndRoomIfExpiredAsync(room);
+
                 if (room.State == GameRoomState.Ended)
                 {
-                    room.RemovePlayer(client.PlayerId);
-                    room = AssignRoom(client.PlayerId);
-                    client.AssignRoom(room.RoomId);
+                    await SendMatchEndedAsync(client, room);
+                    return;
                 }
+
+                if (!TryReadPlayerState(root, message, client.PlayerId, "on_join", out var x, out var y, out var angle, out var weapon))
+                    return;
 
                 var health = client.MarkJoined(x, y, angle, weapon);
                 room.MarkPlayerJoined(client.PlayerId, client.PlayerName, client.Level);
@@ -566,9 +598,26 @@ public sealed class Ws
                 return;
             }
 
+            if (type == "ping")
+            {
+                client.MarkHeartbeat();
+                await SendJsonAsync(client, new
+                {
+                    type = "pong"
+                });
+
+                return;
+            }
+
+            if (type == "pong")
+            {
+                client.MarkHeartbeat();
+                return;
+            }
+
             if (type == "move")
             {
-                if (!RequireJoined(client, type, message))
+                if (!await RequireActiveJoinedAsync(client, type, message))
                     return;
 
                 if (!TryReadMove(root, message, client.PlayerId, out var x, out var y, out var angle))
@@ -594,9 +643,15 @@ public sealed class Ws
                 if (!client.HasJoinedGame)
                     return;
 
+                if (!rooms.TryGetValue(client.RoomId, out var room) ||
+                    !await EnsureRoomRunningAsync(room))
+                {
+                    return;
+                }
+
                 var snapshot = client.GetAuthoritativeHealthSnapshot();
 
-                await BroadcastToRoomAsync(client.RoomId, new
+                await BroadcastToRoomAsync(room, new
                 {
                     type = "player_heartbeat",
                     playerId = client.PlayerId,
@@ -609,7 +664,7 @@ public sealed class Ws
 
             if (type == "angle")
             {
-                if (!RequireJoined(client, type, message))
+                if (!await RequireActiveJoinedAsync(client, type, message))
                     return;
 
                 if (!TryReadAngle(root, message, client.PlayerId, out var angle))
@@ -629,7 +684,7 @@ public sealed class Ws
 
             if (type == "hit")
             {
-                if (!RequireJoined(client, type, message))
+                if (!await RequireActiveJoinedAsync(client, type, message))
                     return;
 
                 if (!TryReadHit(root, message, client.PlayerId, out var hit))
@@ -649,7 +704,7 @@ public sealed class Ws
 
             if (type == "respawn")
             {
-                if (!RequireJoined(client, type, message))
+                if (!await RequireActiveJoinedAsync(client, type, message))
                     return;
 
                 if (!TryReadOptionalRespawnPosition(root, message, client.PlayerId, out var spawnX, out var spawnY))
@@ -662,12 +717,11 @@ public sealed class Ws
                     type = "player_health",
                     playerId = client.PlayerId,
                     health = result.Health,
+                    isDead = result.IsDead,
+                    reason = "respawn",
                     x = result.X,
                     y = result.Y,
-                    damage = 0,
-                    sourcePlayerId = client.PlayerId,
-                    weaponType = "respawn",
-                    isDead = result.IsDead
+                    angle = result.Angle
                 });
 
                 return;
@@ -675,7 +729,7 @@ public sealed class Ws
 
             if (type == "idle")
             {
-                if (!RequireJoined(client, type, message))
+                if (!await RequireActiveJoinedAsync(client, type, message))
                     return;
 
                 if (!TryReadIdle(root, message, client.PlayerId, out var x, out var y, out var angle))
@@ -697,7 +751,7 @@ public sealed class Ws
 
             if (type == "idle_heartbeat")
             {
-                if (!RequireJoined(client, type, message))
+                if (!await RequireActiveJoinedAsync(client, type, message))
                     return;
 
                 if (!TryReadIdle(root, message, client.PlayerId, out var x, out var y, out var angle))
@@ -719,7 +773,7 @@ public sealed class Ws
 
             if (type == "weapon_switch")
             {
-                if (!RequireJoined(client, type, message))
+                if (!await RequireActiveJoinedAsync(client, type, message))
                     return;
 
                 if (!TryReadWeapon(root, message, client.PlayerId, "weapon_switch", out var weapon))
@@ -740,7 +794,7 @@ public sealed class Ws
 
             if (type == "shoot")
             {
-                if (!RequireJoined(client, type, message))
+                if (!await RequireActiveJoinedAsync(client, type, message))
                     return;
 
                 if (!TryReadShoot(root, message, client.PlayerId, out var shoot))
@@ -831,10 +885,47 @@ public sealed class Ws
         return false;
     }
 
+    private async Task<bool> RequireActiveJoinedAsync(ClientConnection client, string messageType, string message)
+    {
+        if (!RequireJoined(client, messageType, message))
+            return false;
+
+        if (!rooms.TryGetValue(client.RoomId, out var room))
+        {
+            Console.WriteLine($"{messageType} for missing room from {client.PlayerId}: {message}");
+            return false;
+        }
+
+        var endedFromThisPacket = await EndRoomIfExpiredAsync(room);
+
+        if (room.State == GameRoomState.Running)
+            return true;
+
+        if (room.State == GameRoomState.Ended)
+        {
+            Console.WriteLine($"Ignored {messageType} after match end from {client.PlayerId} in room {room.RoomId}");
+            if (!endedFromThisPacket)
+                await SendMatchEndedAsync(client, room);
+
+            return false;
+        }
+
+        Console.WriteLine($"Ignored {messageType} in non-running room {room.RoomId} from {client.PlayerId}: state={room.State}");
+        return false;
+    }
+
     private async Task ResolveHitAsync(ClientConnection shooter, HitRequest hit)
     {
         if (!rooms.TryGetValue(shooter.RoomId, out var room))
             return;
+
+        if (!await EnsureRoomRunningAsync(room))
+        {
+            if (room.State == GameRoomState.Ended)
+                await SendMatchEndedAsync(shooter, room);
+
+            return;
+        }
 
         if (!clients.TryGetValue(shooter.PlayerId, out var currentShooter) ||
             currentShooter.RoomId != shooter.RoomId)
@@ -881,9 +972,9 @@ public sealed class Ws
             playerId = target.PlayerId,
             health = result.Health,
             damage = result.Damage,
-            sourcePlayerId = shooter.PlayerId,
-            weaponType = hit.WeaponType,
-            isDead = result.IsDead
+            isDead = result.IsDead,
+            attackerId = shooter.PlayerId,
+            attackerWeaponType = hit.WeaponType
         });
 
         if (result.IsDead)
@@ -1379,10 +1470,11 @@ public sealed class GameRoom
     }
 
     public string RoomId { get; }
-    public int MaxPlayers { get; } = 16;
+    public int MaxPlayers { get; } = 8;
     public DateTime? StartTimeUtc { get; private set; }
     public DateTime? EndTimeUtc { get; private set; }
-    public int DurationSeconds { get; } = 600;
+    public DateTime? EndedAtUtc { get; private set; }
+    public int DurationSeconds { get; } = 300;
     public GameRoomState State { get; private set; } = GameRoomState.Waiting;
     public IReadOnlyCollection<string> Players => playerIds.Keys.ToArray();
 
@@ -1391,6 +1483,8 @@ public sealed class GameRoom
         EndTimeUtc is null
             ? DurationSeconds
             : Math.Max(0, (int)Math.Ceiling((EndTimeUtc.Value - DateTime.UtcNow).TotalSeconds));
+
+    public bool HasExpired => State == GameRoomState.Running && RemainingSeconds <= 0;
 
     public bool IsEmpty => playerIds.IsEmpty;
 
@@ -1404,7 +1498,7 @@ public sealed class GameRoom
         lock (syncRoot)
         {
             // Do not let clients reserve ended or full rooms.
-            if (State == GameRoomState.Ended || playerIds.Count >= MaxPlayers)
+            if (State == GameRoomState.Ended || HasExpired || playerIds.Count >= MaxPlayers)
                 return false;
 
             playerIds[playerId] = 0;
@@ -1441,9 +1535,14 @@ public sealed class GameRoom
 
     public void RemovePlayer(string playerId)
     {
-        playerIds.TryRemove(playerId, out _);
-        joinedPlayerIds.TryRemove(playerId, out _);
-        leaderboard.TryRemove(playerId, out _);
+        lock (syncRoot)
+        {
+            playerIds.TryRemove(playerId, out _);
+            joinedPlayerIds.TryRemove(playerId, out _);
+
+            if (State != GameRoomState.Ended)
+                leaderboard.TryRemove(playerId, out _);
+        }
     }
 
     public string[] PlayerIdsSnapshot() =>
@@ -1484,6 +1583,7 @@ public sealed class GameRoom
                 return false;
 
             State = GameRoomState.Ended;
+            EndedAtUtc = DateTime.UtcNow;
             return true;
         }
     }
@@ -1516,7 +1616,7 @@ public readonly record struct ShotTargetKey(string ShotId, string TargetPlayerId
 
 public readonly record struct HealthSnapshot(double Health, bool IsDead);
 
-public readonly record struct RespawnResult(double Health, bool IsDead, double X, double Y);
+public readonly record struct RespawnResult(double Health, bool IsDead, double X, double Y, double Angle);
 
 public readonly record struct DamageResult(double Health, double Damage, bool IsDead);
 
@@ -1814,9 +1914,10 @@ public sealed class ClientConnection
             isDead = false;
             x = spawnX;
             y = spawnY;
+            angle = Ws.DefaultSpawnAngle;
             processedShotHits.Clear();
 
-            return new RespawnResult(health, isDead, x, y);
+            return new RespawnResult(health, isDead, x, y, angle);
         }
     }
 }

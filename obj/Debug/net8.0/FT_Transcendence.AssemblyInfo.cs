@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("FT_Transcendence")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+4da462c63afc595e36eb0145ce5b0f5f3caa5c25")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+57d5f5110fcd22ad79e145992eb3710eb2dfac6c")]
 [assembly: System.Reflection.AssemblyProductAttribute("FT_Transcendence")]
 [assembly: System.Reflection.AssemblyTitleAttribute("FT_Transcendence")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
