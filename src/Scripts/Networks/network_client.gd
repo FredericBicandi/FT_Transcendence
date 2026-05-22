@@ -18,10 +18,14 @@ signal match_left(message: Dictionary)
 signal kill_feed_received(message: Dictionary)
 signal match_ended(message: Dictionary)
 
+const MAX_LOG_PACKET_CHARS := 240
+
 # Keep the server endpoint editable from the inspector
 @export var server_url: String = "wss://pixelfight.live/ws"
 @export var bypass_tls_validation: bool = false
 @export var connection_timeout_seconds: float = 30.0
+@export var max_packets_per_frame: int = 128
+@export var max_packet_bytes: int = 65536
 @export var player_id: String = ""
 @export var player_name: String = "Player"
 @export var player_level: int = 1
@@ -106,6 +110,8 @@ func _create_tls_options() -> TLSOptions:
 func send_move(x: float, y: float, angle: float) -> void:
 	if socket.get_ready_state() != WebSocketPeer.STATE_OPEN:
 		return
+	if not are_finite_numbers([x, y, angle]):
+		return
 
 	_send_json(
 		{
@@ -119,6 +125,8 @@ func send_move(x: float, y: float, angle: float) -> void:
 func send_idle(x: float, y: float, angle: float) -> void:
 	if socket.get_ready_state() != WebSocketPeer.STATE_OPEN:
 		return
+	if not are_finite_numbers([x, y, angle]):
+		return
 
 	_send_json(
 		{
@@ -131,6 +139,8 @@ func send_idle(x: float, y: float, angle: float) -> void:
 
 func send_angle(angle: float) -> void:
 	if socket.get_ready_state() != WebSocketPeer.STATE_OPEN:
+		return
+	if not is_finite_number(angle):
 		return
 
 	_send_json(
@@ -158,6 +168,8 @@ func send_on_connect() -> void:
 func send_on_join(x: float, y: float, angle: float, weapon_type: String) -> void:
 	if socket.get_ready_state() != WebSocketPeer.STATE_OPEN:
 		return
+	if not are_finite_numbers([x, y, angle]):
+		return
 
 	_send_json(
 		{
@@ -172,6 +184,8 @@ func send_on_join(x: float, y: float, angle: float, weapon_type: String) -> void
 func send_respawn(x: float, y: float, angle: float, weapon_type: String) -> void:
 	if socket.get_ready_state() != WebSocketPeer.STATE_OPEN:
 		return
+	if not are_finite_numbers([x, y, angle]):
+		return
 
 	_send_json(
 		{
@@ -185,6 +199,10 @@ func send_respawn(x: float, y: float, angle: float, weapon_type: String) -> void
 
 func send_hit(target_player_id: String, weapon_type: String, damage: int, shot_id: String, x: float, y: float, angle: float, timestamp: int) -> void:
 	if socket.get_ready_state() != WebSocketPeer.STATE_OPEN:
+		return
+	if target_player_id.strip_edges() == "" or damage <= 0:
+		return
+	if not are_finite_numbers([x, y, angle]):
 		return
 
 	_send_json(
@@ -214,6 +232,8 @@ func send_weapon_switch(weapon_type: String) -> void:
 
 func send_shoot(angle: float, weapon_type: String, shooter_position: Vector2, start_position: Vector2, target_position: Vector2) -> void:
 	if socket.get_ready_state() != WebSocketPeer.STATE_OPEN:
+		return
+	if not are_finite_numbers([angle, shooter_position.x, shooter_position.y, start_position.x, start_position.y, target_position.x, target_position.y]):
 		return
 
 	var payload := {
@@ -275,20 +295,30 @@ func _handle_state_changes(state: int) -> void:
 				_handle_connection_loss("Connection closed.")
 
 func _read_packets() -> void:
-	while socket.get_available_packet_count() > 0:
+	var packets_processed := 0
+	var packet_limit := maxi(max_packets_per_frame, 1)
+
+	while socket.get_available_packet_count() > 0 and packets_processed < packet_limit:
+		packets_processed += 1
 		var packet := socket.get_packet()
+		if max_packet_bytes > 0 and packet.size() > max_packet_bytes:
+			seconds_since_last_server_activity = 0.0
+			push_warning("NetworkClient: ignored oversized packet (%d bytes)." % packet.size())
+			continue
+
 		var text := packet.get_string_from_utf8()
 		var parsed: Variant = JSON.parse_string(text)
 		seconds_since_last_server_activity = 0.0
 
 		# Ignore bad packets so one server message cannot break the client
 		if typeof(parsed) != TYPE_DICTIONARY:
-			push_warning("NetworkClient: ignored invalid JSON packet: %s" % text)
+			push_warning("NetworkClient: ignored invalid JSON packet: %s" % _truncate_packet_for_log(text))
 			continue
 
 		_handle_message(parsed)
 
 func _handle_message(message: Dictionary) -> void:
+	_sanitize_incoming_message(message)
 	var message_type := str(message.get("type", ""))
 
 	match message_type:
@@ -334,8 +364,12 @@ func _handle_message(message: Dictionary) -> void:
 			_apply_room_assignment(message)
 			room_joined.emit(message)
 		"time_sync":
-			remaining_seconds = float(message.get("remainingSeconds", remaining_seconds))
+			var had_remaining_seconds := message.has("remainingSeconds")
+			remaining_seconds = get_finite_float(message.get("remainingSeconds", remaining_seconds), remaining_seconds)
 			time_synced.emit(message)
+			if had_remaining_seconds and remaining_seconds <= 0.0:
+				match_finished = true
+				match_ended.emit(message)
 		"match_ended":
 			match_finished = true
 			remaining_seconds = 0.0
@@ -348,6 +382,138 @@ func _send_json(payload: Dictionary) -> void:
 	var error := socket.send_text(data)
 	if error != OK:
 		push_warning("NetworkClient: failed to send packet (error %d)" % error)
+
+static func get_finite_float(value: Variant, fallback: float = NAN) -> float:
+	var result := fallback
+
+	match typeof(value):
+		TYPE_FLOAT, TYPE_INT:
+			result = float(value)
+		TYPE_STRING:
+			var text := str(value).strip_edges()
+			if not text.is_valid_float():
+				return fallback
+			result = text.to_float()
+		_:
+			return fallback
+
+	if is_nan(result) or is_inf(result):
+		return fallback
+
+	return result
+
+static func get_finite_int(value: Variant, fallback: int = 0) -> int:
+	var result := get_finite_float(value, NAN)
+	if is_nan(result):
+		return fallback
+
+	return int(result)
+
+static func is_finite_number(value: Variant) -> bool:
+	return not is_nan(get_finite_float(value, NAN))
+
+static func are_finite_numbers(values: Array) -> bool:
+	for value in values:
+		if not is_finite_number(value):
+			return false
+
+	return true
+
+static func has_finite_vector2(message: Dictionary, x_key: String, y_key: String) -> bool:
+	return message.has(x_key) and message.has(y_key) and is_finite_number(message[x_key]) and is_finite_number(message[y_key])
+
+static func get_finite_vector2(message: Dictionary, x_key: String, y_key: String, fallback: Vector2 = Vector2.ZERO) -> Vector2:
+	if not has_finite_vector2(message, x_key, y_key):
+		return fallback
+
+	return Vector2(get_finite_float(message[x_key], fallback.x), get_finite_float(message[y_key], fallback.y))
+
+static func get_first_finite_float(message: Dictionary, keys: Array[String], fallback: float = NAN) -> float:
+	for key in keys:
+		if not message.has(key):
+			continue
+
+		var value := get_finite_float(message[key], NAN)
+		if not is_nan(value):
+			return value
+
+	return fallback
+
+static func get_authoritative_remote_weapon_type(message: Dictionary) -> String:
+	var message_type := str(message.get("type", ""))
+	var weapon_keys: Array[String] = []
+
+	match message_type:
+		"player_health":
+			# Health packets often describe the attacker weapon. Only accept
+			# fields that explicitly name the damaged player's equipped weapon.
+			weapon_keys = ["targetWeapon", "targetWeaponType", "target_weapon", "target_weapon_type", "targetCurrentWeapon"]
+		"player_weapon_switch", "player_connected", "player_move", "player_heartbeat", "":
+			weapon_keys = ["weaponType", "weapon", "weapon_type", "weaponId", "weapon_id", "weaponHolding", "currentWeapon", "equippedWeapon", "activeWeapon"]
+		_:
+			weapon_keys = ["targetWeapon", "targetWeaponType", "target_weapon", "target_weapon_type", "targetCurrentWeapon"]
+
+	for key in weapon_keys:
+		if not message.has(key):
+			continue
+
+		var weapon_type := str(message[key]).strip_edges()
+		if weapon_type != "":
+			return weapon_type
+
+	return ""
+
+func _sanitize_incoming_message(message: Dictionary) -> void:
+	for pair_variant in [
+		["x", "y"],
+		["startX", "startY"],
+		["muzzleX", "muzzleY"],
+		["bulletX", "bulletY"],
+		["targetX", "targetY"],
+		["target_x", "target_y"]
+	]:
+		_sanitize_numeric_pair(message, str(pair_variant[0]), str(pair_variant[1]))
+
+	for field in ["angle", "rotation", "aimAngle", "health", "damage", "remainingSeconds", "durationSeconds", "timestamp", "level"]:
+		_sanitize_numeric_field(message, field)
+
+	for vector_key in ["start", "muzzle", "target"]:
+		_sanitize_vector_dictionary(message, vector_key)
+
+func _sanitize_numeric_pair(message: Dictionary, x_key: String, y_key: String) -> void:
+	var has_x := message.has(x_key)
+	var has_y := message.has(y_key)
+	if not has_x and not has_y:
+		return
+
+	if has_x and has_y and is_finite_number(message[x_key]) and is_finite_number(message[y_key]):
+		return
+
+	message.erase(x_key)
+	message.erase(y_key)
+
+func _sanitize_numeric_field(message: Dictionary, key: String) -> void:
+	if message.has(key) and not is_finite_number(message[key]):
+		message.erase(key)
+
+func _sanitize_vector_dictionary(message: Dictionary, key: String) -> void:
+	if not message.has(key):
+		return
+
+	var vector_variant: Variant = message[key]
+	if typeof(vector_variant) != TYPE_DICTIONARY:
+		message.erase(key)
+		return
+
+	var vector := vector_variant as Dictionary
+	if not has_finite_vector2(vector, "x", "y"):
+		message.erase(key)
+
+func _truncate_packet_for_log(text: String) -> String:
+	if text.length() <= MAX_LOG_PACKET_CHARS:
+		return text
+
+	return "%s..." % text.substr(0, MAX_LOG_PACKET_CHARS)
 
 func _prepare_player_profile() -> void:
 	_apply_web_player_profile_overrides()
@@ -499,8 +665,8 @@ func _apply_room_assignment(message: Dictionary) -> void:
 	var assigned_player_id := _extract_player_id(message)
 	local_player_id = assigned_player_id if assigned_player_id != "" else player_id
 	local_room_id = str(message.get("roomId", message.get("room_id", local_room_id)))
-	match_duration_seconds = int(message.get("durationSeconds", match_duration_seconds))
-	remaining_seconds = float(message.get("remainingSeconds", remaining_seconds if remaining_seconds > 0.0 else match_duration_seconds))
+	match_duration_seconds = get_finite_int(message.get("durationSeconds", match_duration_seconds), match_duration_seconds)
+	remaining_seconds = get_finite_float(message.get("remainingSeconds", remaining_seconds if remaining_seconds > 0.0 else match_duration_seconds), remaining_seconds)
 	match_finished = false
 	last_room_joined_message = message.duplicate(true)
 
@@ -538,9 +704,18 @@ func _store_remote_player_snapshot(message: Dictionary) -> void:
 
 	var merged_snapshot: Dictionary = existing_snapshot.duplicate(true)
 	for key_variant in message.keys():
+		var key := str(key_variant)
+		if key == "type":
+			continue
+		if str(message.get("type", "")) == "player_health" and _is_ambiguous_health_weapon_field(key):
+			continue
+
 		merged_snapshot[key_variant] = message[key_variant]
 
 	remote_player_snapshots[player_id] = merged_snapshot
+
+func _is_ambiguous_health_weapon_field(key: String) -> bool:
+	return ["weaponType", "weapon", "weapon_type", "weaponId", "weapon_id", "weaponHolding", "currentWeapon", "equippedWeapon", "activeWeapon"].has(key)
 
 func _handle_connection_loss(reason: String) -> void:
 	if has_reported_connection_loss:

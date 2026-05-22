@@ -52,7 +52,7 @@ func _load_next_shell() -> void:
 		reload_audio_player.stream = reload_sound
 		reload_audio_player.play()
 	get_tree().create_timer(get_reload_time()).timeout.connect(func():
-		if not shell_reloading:
+		if not is_inside_tree() or not shell_reloading:
 			return
 		current_ammo += 1
 		emit_ammo_changed()
@@ -61,3 +61,7 @@ func _load_next_shell() -> void:
 		else:
 			shell_reloading = false
 	)
+
+func reset_state() -> void:
+	shell_reloading = false
+	super.reset_state()

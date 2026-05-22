@@ -52,6 +52,7 @@ func _begin_connection_attempt(status_text: String) -> void:
 	_set_background_visible(true)
 	_set_status_text(status_text)
 	$CanvasLayer.visible = true
+	_show_lobby_cursor()
 	_set_room_ready_ui_visible(false)
 	var error := network_client.connect_to_server()
 	if error != OK:
@@ -98,6 +99,7 @@ func _on_connection_failed() -> void:
 	is_room_ready = false
 	_set_status_text("Connection failed. Check the server URL and try again.")
 	$CanvasLayer.visible = true
+	_show_lobby_cursor()
 	_set_room_ready_ui_visible(false)
 
 func _on_connection_lost(reason: String) -> void:
@@ -146,11 +148,17 @@ func _start_game() -> void:
 	$CanvasLayer.visible = false
 
 func _set_room_ready_ui_visible(is_visible: bool) -> void:
+	if is_visible:
+		_show_lobby_cursor()
+
 	connection_panel.visible = not is_visible
 	ready_bar.visible = is_visible
 	join_button.disabled = not is_visible
 	dashboard_button.disabled = not is_visible
 	leaderboard_ui.call("set_leaderboard_visible", is_visible)
+
+func _show_lobby_cursor() -> void:
+	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
 
 func _set_status_text(status_text: String) -> void:
 	status_label.text = status_text
@@ -252,7 +260,7 @@ func _apply_preview_remote_player_state(message: Dictionary) -> void:
 
 	# Do not create preview players until the server gives us a position
 	var remote_body := _get_preview_remote_player(player_id)
-	var has_position := message.has("x") and message.has("y")
+	var has_position := NetworkClient.has_finite_vector2(message, "x", "y")
 	if remote_body == null and not has_position:
 		return
 
@@ -266,31 +274,31 @@ func _apply_preview_remote_player_state(message: Dictionary) -> void:
 		remote_body.set_network_player_display_name(remote_display_name)
 
 	var was_dead := remote_body.is_dead
-	var weapon_type := str(message.get("weaponType", message.get("weaponHolding", message.get("weapon", ""))))
+	var weapon_type := NetworkClient.get_authoritative_remote_weapon_type(message)
 	if weapon_type != "":
 		remote_body.set_remote_weapon(weapon_type)
 
 	var authoritative_is_dead := bool(message.get("isDead", remote_body.is_dead))
 	if message.has("health") and not message.has("isDead"):
-		authoritative_is_dead = int(message["health"]) <= 0
+		authoritative_is_dead = NetworkClient.get_finite_int(message["health"], remote_body.health) <= 0
 	if message.has("health"):
 		remote_body.apply_authoritative_health_state(
-			int(message["health"]),
+			NetworkClient.get_finite_int(message["health"], remote_body.health),
 			authoritative_is_dead,
-			int(message.get("damage", 0))
+			NetworkClient.get_finite_int(message.get("damage", 0), 0)
 		)
 
 	var aim_angle_degrees := NAN
 	if message.has("angle"):
-		aim_angle_degrees = float(message["angle"])
+		aim_angle_degrees = NetworkClient.get_finite_float(message["angle"], NAN)
 	elif message.has("rotation"):
-		aim_angle_degrees = rad_to_deg(float(message["rotation"]))
+		aim_angle_degrees = rad_to_deg(NetworkClient.get_finite_float(message["rotation"], 0.0))
 	elif message.has("aimAngle"):
-		aim_angle_degrees = float(message["aimAngle"])
+		aim_angle_degrees = NetworkClient.get_finite_float(message["aimAngle"], NAN)
 
 	if has_position:
-		var remote_position := Vector2(float(message["x"]), float(message["y"]))
-		var is_respawn_snap := was_dead and not authoritative_is_dead and message.has("health") and int(message["health"]) > 0
+		var remote_position := NetworkClient.get_finite_vector2(message, "x", "y")
+		var is_respawn_snap := was_dead and not authoritative_is_dead and message.has("health") and NetworkClient.get_finite_int(message["health"], 0) > 0
 		if is_respawn_snap:
 			# Respawns should snap so players do not slide from the death spot
 			remote_body.snap_remote_snapshot(remote_position, aim_angle_degrees)
@@ -374,6 +382,7 @@ func _return_to_lobby(should_notify_server: bool = true) -> void:
 	game_instance = null
 	has_started_game = false
 	$CanvasLayer.visible = false
+	_show_lobby_cursor()
 
 	OS.shell_open(LOBBY_URL)
 
@@ -390,3 +399,4 @@ func _reset_after_match_exit() -> void:
 	_set_room_ready_ui_visible(false)
 	_set_status_text("Connected.")
 	$CanvasLayer.visible = true
+	_show_lobby_cursor()

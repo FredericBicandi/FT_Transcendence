@@ -8,6 +8,7 @@ const DEFAULT_MUZZLE_COLLISION_MASK := 1
 const DEFAULT_MUZZLE_WALL_PADDING := 1.5
 const DEFAULT_MUZZLE_WALL_VISUAL_PULLBACK := 4.0
 const DEFAULT_MUZZLE_WALL_MIN_VISUAL_SCALE := 0.6
+const MAX_ACTIVE_BULLETS_PER_WEAPON := 128
 
 signal ammo_changed(current_ammo: int, max_ammo: int)
 signal shot_fired(angle_radians: float, weapon_type: String, start_position: Vector2, target_position: Vector2)
@@ -69,6 +70,9 @@ func _ready() -> void:
 
 	reload_audio_player = AudioStreamPlayer2D.new()
 	add_child(reload_audio_player)
+
+func _exit_tree() -> void:
+	_clear_active_bullets()
 
 func _process(delta: float) -> void:
 	fire_cooldown = maxf(fire_cooldown - delta, 0.0)
@@ -260,6 +264,13 @@ func _play_fire_sound() -> void:
 		var owner_body := find_owner_body()
 		if owner_body != null and owner_body.has_method("play_shoot_sound"):
 			owner_body.call("play_shoot_sound", fire_sound)
+
+func _clear_active_bullets() -> void:
+	for bullet_data_variant in active_bullets:
+		var bullet_data: Dictionary = bullet_data_variant
+		_free_bullet_node(int(bullet_data.get("instance_id", 0)))
+
+	active_bullets.clear()
 
 func _play_impact_sound(position: Vector2) -> void:
 	var impact_sound: AudioStream = get_weapon_config().get("impact_sound")
@@ -458,20 +469,7 @@ func _collect_explosion_targets(center: Vector2, radius: float, direct_target: N
 			continue
 		targets.append(target)
 
-	var current_scene := get_tree().current_scene
-	if current_scene != null:
-		_collect_scene_explosion_targets(current_scene, center, radius, targets)
-
 	return targets
-
-func _collect_scene_explosion_targets(node: Node, center: Vector2, radius: float, targets: Array[Node]) -> void:
-	var target := _resolve_damage_target(node)
-	if target != null and target == node and not targets.has(target):
-		var target_body := target as Node2D
-		if target_body != null and target_body.global_position.distance_to(center) <= radius:
-			targets.append(target)
-	for child in node.get_children():
-		_collect_scene_explosion_targets(child, center, radius, targets)
 
 func _resolve_damage_target(candidate: Variant) -> Node:
 	if not (candidate is Node):
@@ -554,11 +552,7 @@ func reset_state() -> void:
 	recoil_offset = Vector2.ZERO
 	position = base_position
 
-	for bullet_data_variant in active_bullets:
-		var bullet_data: Dictionary = bullet_data_variant
-		_free_bullet_node(int(bullet_data.get("instance_id", 0)))
-
-	active_bullets.clear()
+	_clear_active_bullets()
 	emit_ammo_changed()
 
 func get_weapon_icon() -> Texture2D:
@@ -691,7 +685,17 @@ func _spawn_bullet(direction: Vector2, start_position: Vector2, should_collide: 
 	var bullet := _create_bullet_node()
 	_configure_spawned_bullet(bullet, direction, start_position)
 
-	get_tree().current_scene.add_child(bullet)
+	var current_scene := get_tree().current_scene
+	if current_scene == null:
+		bullet.queue_free()
+		return
+
+	while active_bullets.size() >= MAX_ACTIVE_BULLETS_PER_WEAPON:
+		var oldest_bullet_data := active_bullets[0]
+		active_bullets.remove_at(0)
+		_free_bullet_node(int(oldest_bullet_data.get("instance_id", 0)))
+
+	current_scene.add_child(bullet)
 	var bullet_instance_id := bullet.get_instance_id()
 	get_tree().create_timer(bullet_lifetime).timeout.connect(_on_bullet_lifetime_timeout.bind(bullet_instance_id))
 	active_bullets.append(_build_bullet_runtime_data(bullet, direction, bullet_lifetime, should_collide, damage_override, pass_over_layers, target_position))

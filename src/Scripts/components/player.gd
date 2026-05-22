@@ -2,6 +2,8 @@ class_name Player
 extends CharacterBody2D
 
 const POSITION_HEARTBEAT_INTERVAL: float = 5.0
+const MOVE_SYNC_INTERVAL: float = 0.05
+const MOVE_SYNC_FORCE_DISTANCE: float = 10.0
 const DAMAGE_NUMBER_LIFETIME: float = 0.45
 const REMOTE_SNAPSHOT_REACHED_DISTANCE: float = 0.5
 const REMOTE_AIM_DISTANCE: float = 32.0
@@ -46,6 +48,8 @@ var respawn_position_provider: Callable = Callable()
 var attack_target: Node = null
 var network_client: NetworkClient = null
 var idle_position_heartbeat_time: float = 0.0
+var move_sync_elapsed: float = 0.0
+var last_sent_position: Vector2 = Vector2.INF
 var shoot_sound_cooldown_remaining: float = 0.0
 var listener_sound_time: float = 0.0
 var active_shot_voices: Array[Dictionary] = []
@@ -119,9 +123,26 @@ func _ready() -> void:
 	_update_player_name_label()
 	_update_overhead_ui()
 	_configure_damage_numbers()
+	last_sent_position = global_position
 	last_sent_angle = _get_current_aim_angle()
 	last_sent_aim_frame = weapon.get_aim_frame()
 	_schedule_join_state_sync()
+
+func _exit_tree() -> void:
+	_clear_active_shot_voices()
+
+	if weapon != null:
+		weapon.clear_all_projectiles()
+
+	var viewport := get_viewport()
+	if viewport != null and viewport.size_changed.is_connected(_on_viewport_size_changed):
+		viewport.size_changed.disconnect(_on_viewport_size_changed)
+
+	if observed_shot_weapon != null and observed_shot_weapon.shot_fired.is_connected(_on_weapon_shot_fired):
+		observed_shot_weapon.shot_fired.disconnect(_on_weapon_shot_fired)
+
+	if network_client != null and network_client.connection_established.is_connected(_on_network_connection_established):
+		network_client.connection_established.disconnect(_on_network_connection_established)
 
 func _physics_process(delta: float) -> void:
 	# Dead players cannot move until respawn
@@ -563,9 +584,13 @@ func _report_position_sync(previous_position: Vector2, delta: float) -> void:
 	if not accepts_input or not match_controls_enabled or network_client == null:
 		return
 
+	move_sync_elapsed += delta
+
 	if not global_position.is_equal_approx(previous_position):
 		idle_position_heartbeat_time = 0.0
-		_send_move_position()
+		var moved_far_since_last_sync := last_sent_position == Vector2.INF or global_position.distance_to(last_sent_position) >= MOVE_SYNC_FORCE_DISTANCE
+		if move_sync_elapsed >= MOVE_SYNC_INTERVAL or moved_far_since_last_sync:
+			_send_move_position()
 		return
 
 	idle_position_heartbeat_time += delta
@@ -579,10 +604,14 @@ func _report_position_sync(previous_position: Vector2, delta: float) -> void:
 func _send_move_position() -> void:
 	last_sent_angle = _get_current_aim_angle()
 	network_client.send_move(global_position.x, global_position.y, last_sent_angle)
+	move_sync_elapsed = 0.0
+	last_sent_position = global_position
 
 func _send_ping_position() -> void:
 	last_sent_angle = _get_current_aim_angle()
 	network_client.send_idle(global_position.x, global_position.y, last_sent_angle)
+	move_sync_elapsed = 0.0
+	last_sent_position = global_position
 
 func send_join_state() -> void:
 	if has_sent_join_state or is_remote_proxy or not accepts_input or network_client == null:
@@ -659,6 +688,8 @@ func _send_respawn_state() -> void:
 		active_weapon.get_weapon_name()
 	)
 	idle_position_heartbeat_time = 0.0
+	move_sync_elapsed = 0.0
+	last_sent_position = global_position
 
 func _request_server_respawn() -> void:
 	if has_requested_server_respawn or not accepts_input or network_client == null:
@@ -697,12 +728,16 @@ func _send_full_player_state() -> bool:
 	)
 	last_reported_weapon_type = active_weapon.get_weapon_name()
 	last_sent_aim_frame = weapon.get_aim_frame()
+	last_sent_position = global_position
+	move_sync_elapsed = 0.0
 	return true
 
 func set_match_controls_enabled(is_enabled: bool) -> void:
 	match_controls_enabled = is_enabled
 	velocity = Vector2.ZERO
 	idle_position_heartbeat_time = 0.0
+	move_sync_elapsed = 0.0
+	last_sent_position = global_position
 	if not is_enabled:
 		remote_snapshot_queue.clear()
 		remote_walk_animation_hold_remaining = 0.0
@@ -1001,6 +1036,12 @@ func set_remote_weapon(weapon_type: String) -> void:
 
 	# Normalize server weapon names before trying to equip them
 	var normalized_weapon_type := _normalize_weapon_type(weapon_type)
+	var current_active_weapon := weapon.get_active_weapon()
+	if current_active_weapon != null and current_active_weapon.get_weapon_name() == normalized_weapon_type:
+		current_active_weapon.set_input_enabled(false)
+		current_active_weapon.set_aim_target(global_position + remote_facing_direction * REMOTE_AIM_DISTANCE)
+		return
+
 	if not weapon.equip_weapon_by_id(normalized_weapon_type):
 		weapon.equip_weapon(StringName(normalized_weapon_type))
 	if weapon.get_active_weapon() == null or weapon.get_active_weapon().get_weapon_name() != normalized_weapon_type:

@@ -13,7 +13,7 @@ const KILL_FEED_ENTRY_LIFETIME: float = 4.0
 const KILL_FEED_MAX_ENTRIES: int = 5
 const KILL_FEED_KILLER_COLOR := Color(0.32, 0.66, 1.0, 1.0)
 const KILL_FEED_KILLED_COLOR := Color(1.0, 0.28, 0.28, 1.0)
-const MATCH_END_LEADERBOARD_SECONDS: float = 5.0
+const MATCH_END_LEADERBOARD_SECONDS: float = 8.0
 
 # Cache scene nodes once so gameplay updates stay cheap
 @onready var map: Node2D = $Map
@@ -453,7 +453,7 @@ func _on_room_joined(message: Dictionary) -> void:
 	player_body.set_network_player_id(local_player_id)
 	player_body.set_network_player_display_name(network_client.get_local_player_display_name(message))
 	leaderboard_ui.call("set_local_player_id", local_player_id)
-	remaining_match_seconds = maxf(float(message.get("remainingSeconds", 0.0)), 0.0)
+	remaining_match_seconds = maxf(NetworkClient.get_finite_float(message.get("remainingSeconds", 0.0), 0.0), 0.0)
 	match_has_ended = false
 	player_body.set_match_controls_enabled(true)
 	_apply_leaderboard_snapshot(message)
@@ -471,7 +471,7 @@ func _on_time_synced(message: Dictionary) -> void:
 		final_match_summary = _build_match_summary()
 		return
 
-	remaining_match_seconds = maxf(float(message.get("remainingSeconds", remaining_match_seconds)), 0.0)
+	remaining_match_seconds = maxf(NetworkClient.get_finite_float(message.get("remainingSeconds", remaining_match_seconds), remaining_match_seconds), 0.0)
 	_apply_leaderboard_snapshot(message)
 
 func _on_leaderboard_updated(message: Dictionary) -> void:
@@ -483,7 +483,7 @@ func _on_player_move_received(message: Dictionary) -> void:
 	if match_has_ended:
 		return
 
-	var player_id := str(message.get("playerId", ""))
+	var player_id := str(message.get("playerId", message.get("id", "")))
 	if player_id == "" or player_id == local_player_id:
 		return
 
@@ -496,8 +496,13 @@ func _on_player_angle_received(message: Dictionary) -> void:
 	if match_has_ended:
 		return
 
-	var player_id := str(message.get("playerId", ""))
-	if player_id == "" or player_id == local_player_id or not message.has("angle"):
+	var player_id := str(message.get("playerId", message.get("id", "")))
+	var has_angle := (
+		NetworkClient.is_finite_number(message.get("angle", NAN))
+		or NetworkClient.is_finite_number(message.get("rotation", NAN))
+		or NetworkClient.is_finite_number(message.get("aimAngle", NAN))
+	)
+	if player_id == "" or player_id == local_player_id or not has_angle:
 		return
 
 	_apply_remote_player_state(message)
@@ -506,7 +511,7 @@ func _on_player_weapon_switch_received(message: Dictionary) -> void:
 	if match_has_ended:
 		return
 
-	var player_id := str(message.get("playerId", ""))
+	var player_id := str(message.get("playerId", message.get("id", "")))
 	if player_id == "" or player_id == local_player_id:
 		return
 
@@ -582,8 +587,8 @@ func _auto_return_to_dashboard_after_match_end() -> void:
 	if network_client != null:
 		network_client.send_leave_match()
 
-	_post_exit_game("match_ended", final_match_summary)
 	_reset_parent_after_exit()
+	_post_exit_game("match_ended", final_match_summary)
 
 func _reset_parent_after_exit() -> void:
 	var parent_node := get_parent()
@@ -637,7 +642,7 @@ func _on_bullet_spawn_received(message: Dictionary) -> void:
 	if match_has_ended:
 		return
 
-	var player_id := str(message.get("playerId", ""))
+	var player_id := str(message.get("playerId", message.get("id", "")))
 	if player_id == "" or player_id == local_player_id:
 		return
 
@@ -651,8 +656,8 @@ func _on_bullet_spawn_received(message: Dictionary) -> void:
 
 	# Replay the server bullet using the shooter's weapon
 	remote_body.spawn_remote_bullet_from_server(
-		Vector2(float(message.get("x", remote_body.global_position.x)), float(message.get("y", remote_body.global_position.y))),
-		float(message.get("angle", 0.0)),
+		NetworkClient.get_finite_vector2(message, "x", "y", remote_body.global_position),
+		NetworkClient.get_finite_float(message.get("angle", 0.0), 0.0),
 		weapon_type,
 		_get_bullet_target_position(message),
 		_get_bullet_start_position(message)
@@ -663,7 +668,7 @@ func _get_bullet_weapon_type(message: Dictionary, remote_body: Player) -> String
 		if not message.has(key):
 			continue
 
-		var weapon_type := str(message[key])
+		var weapon_type := str(message[key]).strip_edges()
 		if weapon_type != "":
 			return weapon_type
 
@@ -671,35 +676,35 @@ func _get_bullet_weapon_type(message: Dictionary, remote_body: Player) -> String
 
 func _get_bullet_start_position(message: Dictionary) -> Variant:
 	# Support old and new server field names
-	if message.has("startX") and message.has("startY"):
-		return Vector2(float(message["startX"]), float(message["startY"]))
+	if NetworkClient.has_finite_vector2(message, "startX", "startY"):
+		return NetworkClient.get_finite_vector2(message, "startX", "startY")
 
-	if message.has("muzzleX") and message.has("muzzleY"):
-		return Vector2(float(message["muzzleX"]), float(message["muzzleY"]))
+	if NetworkClient.has_finite_vector2(message, "muzzleX", "muzzleY"):
+		return NetworkClient.get_finite_vector2(message, "muzzleX", "muzzleY")
 
-	if message.has("bulletX") and message.has("bulletY"):
-		return Vector2(float(message["bulletX"]), float(message["bulletY"]))
+	if NetworkClient.has_finite_vector2(message, "bulletX", "bulletY"):
+		return NetworkClient.get_finite_vector2(message, "bulletX", "bulletY")
 
 	var start_variant: Variant = message.get("start", message.get("muzzle", null))
 	if typeof(start_variant) == TYPE_DICTIONARY:
 		var start := start_variant as Dictionary
-		if start.has("x") and start.has("y"):
-			return Vector2(float(start["x"]), float(start["y"]))
+		if NetworkClient.has_finite_vector2(start, "x", "y"):
+			return NetworkClient.get_finite_vector2(start, "x", "y")
 
 	return null
 
 func _get_bullet_target_position(message: Dictionary) -> Variant:
-	if message.has("targetX") and message.has("targetY"):
-		return Vector2(float(message["targetX"]), float(message["targetY"]))
+	if NetworkClient.has_finite_vector2(message, "targetX", "targetY"):
+		return NetworkClient.get_finite_vector2(message, "targetX", "targetY")
 
-	if message.has("target_x") and message.has("target_y"):
-		return Vector2(float(message["target_x"]), float(message["target_y"]))
+	if NetworkClient.has_finite_vector2(message, "target_x", "target_y"):
+		return NetworkClient.get_finite_vector2(message, "target_x", "target_y")
 
 	var target_variant: Variant = message.get("target", null)
 	if typeof(target_variant) == TYPE_DICTIONARY:
 		var target := target_variant as Dictionary
-		if target.has("x") and target.has("y"):
-			return Vector2(float(target["x"]), float(target["y"]))
+		if NetworkClient.has_finite_vector2(target, "x", "y"):
+			return NetworkClient.get_finite_vector2(target, "x", "y")
 
 	return null
 
@@ -730,17 +735,17 @@ func _apply_local_player_state(message: Dictionary, should_apply_position: bool 
 	if message.is_empty():
 		return
 
-	if should_apply_position and message.has("x") and message.has("y"):
+	if should_apply_position and NetworkClient.has_finite_vector2(message, "x", "y"):
 		# Trust server position when it sends one for the local player
-		var authoritative_position := Vector2(float(message["x"]), float(message["y"]))
+		var authoritative_position := NetworkClient.get_finite_vector2(message, "x", "y")
 		player_body.global_position = authoritative_position
 		player_body.set_spawn_position(authoritative_position)
 
 	if message.has("health") or message.has("isDead"):
 		player_body.apply_authoritative_health_state(
-			int(message.get("health", player_body.health)),
+			NetworkClient.get_finite_int(message.get("health", player_body.health), player_body.health),
 			bool(message.get("isDead", player_body.is_dead)),
-			int(message.get("damage", 0))
+			NetworkClient.get_finite_int(message.get("damage", 0), 0)
 		)
 
 func _get_remote_player(player_id: String) -> Player:
@@ -781,7 +786,7 @@ func _apply_remote_player_state(message: Dictionary) -> void:
 		return
 
 	var remote_body := _get_remote_player(player_id)
-	var has_position := message.has("x") and message.has("y")
+	var has_position := NetworkClient.has_finite_vector2(message, "x", "y")
 	if remote_body == null and not has_position:
 		return
 
@@ -795,31 +800,31 @@ func _apply_remote_player_state(message: Dictionary) -> void:
 		remote_body.set_network_player_display_name(remote_display_name)
 
 	var was_dead := remote_body.is_dead
-	var weapon_type := str(message.get("weaponType", message.get("weaponHolding", message.get("weapon", ""))))
+	var weapon_type := NetworkClient.get_authoritative_remote_weapon_type(message)
 	if weapon_type != "":
 		remote_body.set_remote_weapon(weapon_type)
 
 	var authoritative_is_dead := bool(message.get("isDead", remote_body.is_dead))
 	if message.has("health") and not message.has("isDead"):
-		authoritative_is_dead = int(message["health"]) <= 0
+		authoritative_is_dead = NetworkClient.get_finite_int(message["health"], remote_body.health) <= 0
 	if message.has("health"):
 		remote_body.apply_authoritative_health_state(
-			int(message["health"]),
+			NetworkClient.get_finite_int(message["health"], remote_body.health),
 			authoritative_is_dead,
-			int(message.get("damage", 0))
+			NetworkClient.get_finite_int(message.get("damage", 0), 0)
 		)
 
 	var aim_angle_degrees := NAN
 	if message.has("angle"):
-		aim_angle_degrees = float(message["angle"])
+		aim_angle_degrees = NetworkClient.get_finite_float(message["angle"], NAN)
 	elif message.has("rotation"):
-		aim_angle_degrees = rad_to_deg(float(message["rotation"]))
+		aim_angle_degrees = rad_to_deg(NetworkClient.get_finite_float(message["rotation"], 0.0))
 	elif message.has("aimAngle"):
-		aim_angle_degrees = float(message["aimAngle"])
+		aim_angle_degrees = NetworkClient.get_finite_float(message["aimAngle"], NAN)
 
 	if has_position:
-		var remote_position := Vector2(float(message["x"]), float(message["y"]))
-		var is_respawn_snap := was_dead and not authoritative_is_dead and message.has("health") and int(message["health"]) > 0
+		var remote_position := NetworkClient.get_finite_vector2(message, "x", "y")
+		var is_respawn_snap := was_dead and not authoritative_is_dead and message.has("health") and NetworkClient.get_finite_int(message["health"], 0) > 0
 		if is_respawn_snap:
 			# Respawns should appear immediately at the new spawn point
 			remote_body.snap_remote_snapshot(remote_position, aim_angle_degrees)
