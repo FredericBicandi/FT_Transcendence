@@ -12,6 +12,9 @@ public sealed class Ws
     private static readonly TimeSpan IdleTimeout = TimeSpan.FromSeconds(60);
     private static readonly TimeSpan TimeSyncInterval = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan EndedRoomRetention = TimeSpan.FromSeconds(15);
+    private static readonly TimeSpan SendLockTimeout = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan SendTimeout = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan CloseTimeout = TimeSpan.FromSeconds(2);
     private const double MinAimAngleDegrees = 0.0;
     private const double MaxAimAngleDegrees = 360.0;
     private const int MaxMessageBytes = 16 * 1024;
@@ -38,6 +41,10 @@ public sealed class Ws
 
     // Active match rooms keyed by room id. Ended rooms are retained briefly for final client packets.
     private readonly ConcurrentDictionary<string, GameRoom> rooms = new();
+
+    // Serializes matchmaking and room removal so concurrent connects can't fragment players
+    // across half-empty rooms, and can't reserve a slot in a room being removed.
+    private readonly object roomsLock = new();
 
     public Ws(ConcurrentDictionary<string, ClientConnection> clients)
     {
@@ -99,21 +106,7 @@ public sealed class Ws
             {
             }
 
-            try
-            {
-                if (socket.State is WebSocketState.Open or WebSocketState.CloseReceived)
-                {
-                    await socket.CloseAsync(
-                        WebSocketCloseStatus.NormalClosure,
-                        "Closing",
-                        CancellationToken.None
-                    );
-                }
-            }
-            catch (Exception ex) when (IsExpectedWebSocketDisconnect(ex))
-            {
-                Console.WriteLine($"Close skipped for {client.LogId}: {ex.Message}");
-            }
+            await CloseSocketAsync(client, WebSocketCloseStatus.NormalClosure, "Closing");
 
             socket.Dispose();
             Interlocked.Decrement(ref onlinePlayerCount);
@@ -126,42 +119,44 @@ public sealed class Ws
 
     private GameRoom AssignRoom(string playerId)
     {
-        // First reserve a slot in any non-ended room that still has capacity.
-        foreach (var room in rooms.Values)
+        lock (roomsLock)
         {
-            if (room.TryReservePlayer(playerId))
-                return room;
-        }
+            // First reserve a slot in any non-ended room that still has capacity.
+            foreach (var room in rooms.Values)
+            {
+                if (room.TryReservePlayer(playerId))
+                    return room;
+            }
 
-        // No available room exists, so create a fresh room. Its timer starts on first join.
-        while (true)
-        {
-            var room = GameRoom.Create();
-
-            if (!room.TryReservePlayer(playerId))
-                continue;
-
-            if (rooms.TryAdd(room.RoomId, room))
-                return room;
+            // No room had space. Create one and reserve atomically so two simultaneous
+            // connects don't each spawn a fresh half-empty room.
+            var newRoom = GameRoom.Create();
+            newRoom.TryReservePlayer(playerId);
+            rooms[newRoom.RoomId] = newRoom;
+            return newRoom;
         }
     }
 
-    private GameRoom? RemovePlayerFromRoom(ClientConnection client)
+    private GameRoom? RemovePlayerFromRoom(ClientConnection client, bool removeLeaderboardEntry = false)
     {
-        if (!rooms.TryGetValue(client.RoomId, out var room))
-            return null;
-
-        var hadJoined = client.HasJoinedGame;
-        room.RemovePlayer(client.PlayerId);
-
-        // Empty active rooms are no longer useful. Ended rooms stay briefly for final state/leave packets.
-        if (room.IsEmpty && room.State != GameRoomState.Ended)
+        lock (roomsLock)
         {
-            rooms.TryRemove(room.RoomId, out _);
-            return null;
-        }
+            if (!rooms.TryGetValue(client.RoomId, out var room))
+                return null;
 
-        return hadJoined ? room : null;
+            var hadJoined = client.HasJoinedGame;
+            room.RemovePlayer(client.PlayerId, removeLeaderboardEntry);
+
+            // Waiting rooms have no match state. Running rooms stay alive until the timer ends
+            // so a page reload or short network drop does not reset the match.
+            if (room.IsEmpty && room.State == GameRoomState.Waiting)
+            {
+                rooms.TryRemove(room.RoomId, out _);
+                return null;
+            }
+
+            return hadJoined ? room : null;
+        }
     }
 
     private async Task LeaveRoomAsync(ClientConnection client, string reason)
@@ -174,7 +169,7 @@ public sealed class Ws
 
         var roomId = client.RoomId;
         var playerId = client.PlayerId;
-        var leftRoom = RemovePlayerFromRoom(client);
+        var leftRoom = RemovePlayerFromRoom(client, removeLeaderboardEntry: true);
         client.LeaveRoom();
 
         Console.WriteLine($"Player left match: playerId={playerId}, roomId={roomId}, reason={reason}");
@@ -273,8 +268,11 @@ public sealed class Ws
         if (endedAtUtc is null || DateTime.UtcNow - endedAtUtc.Value < EndedRoomRetention)
             return;
 
-        if (rooms.TryRemove(room.RoomId, out _))
-            Console.WriteLine($"Cleaned up ended room after retention: {room.RoomId}");
+        lock (roomsLock)
+        {
+            if (rooms.TryRemove(room.RoomId, out _))
+                Console.WriteLine($"Cleaned up ended room after retention: {room.RoomId}");
+        }
     }
 
     private async Task<bool> EndRoomIfExpiredAsync(GameRoom room)
@@ -329,11 +327,7 @@ public sealed class Ws
 
                 Console.WriteLine($"Idle timeout for {client.PlayerId}: idle for {idleDuration.TotalSeconds:F0}s");
 
-                await client.Socket.CloseAsync(
-                    WebSocketCloseStatus.PolicyViolation,
-                    "Idle timeout",
-                    CancellationToken.None
-                );
+                await CloseSocketAsync(client, WebSocketCloseStatus.PolicyViolation, "Idle timeout");
 
                 return;
             }
@@ -346,47 +340,90 @@ public sealed class Ws
 
             Console.WriteLine($"Heartbeat timeout for {client.PlayerId}: idle for {inactiveDuration.TotalSeconds:F0}s");
 
-            await client.Socket.CloseAsync(
-                WebSocketCloseStatus.PolicyViolation,
-                "Heartbeat timeout",
-                CancellationToken.None
-            );
+            await CloseSocketAsync(client, WebSocketCloseStatus.PolicyViolation, "Heartbeat timeout");
 
             return;
         }
     }
 
     // Sends one JSON message while serializing writes per socket.
-    public async Task SendJsonAsync(ClientConnection client, object payload)
+    public Task SendJsonAsync(ClientConnection client, object payload)
+    {
+        if (client.Socket.State != WebSocketState.Open)
+            return Task.CompletedTask;
+
+        return SendBytesAsync(client, JsonSerializer.SerializeToUtf8Bytes(payload));
+    }
+
+    // Sends an already-encoded UTF-8 JSON payload. Broadcasts share one buffer across recipients
+    // so the same room update isn't re-serialized per player.
+    private async Task SendBytesAsync(ClientConnection client, byte[] bytes)
     {
         if (client.Socket.State != WebSocketState.Open)
             return;
 
-        var json = JsonSerializer.Serialize(payload);
-        var bytes = Encoding.UTF8.GetBytes(json);
-
-        await client.SendLock.WaitAsync();
+        var hasSendLock = false;
 
         try
         {
+            if (!await client.SendLock.WaitAsync(SendLockTimeout))
+            {
+                AbortClientSocket(client, $"send queue blocked for {SendLockTimeout.TotalSeconds:F0}s");
+                return;
+            }
+
+            hasSendLock = true;
+
             if (client.Socket.State == WebSocketState.Open)
             {
+                using var sendTimeout = new CancellationTokenSource(SendTimeout);
                 await client.Socket.SendAsync(
                     new ArraySegment<byte>(bytes),
                     WebSocketMessageType.Text,
                     true,
-                    CancellationToken.None
+                    sendTimeout.Token
                 );
             }
         }
         catch (Exception ex) when (IsExpectedWebSocketDisconnect(ex))
         {
             Console.WriteLine($"Send failed for {client.PlayerId}: {ex.Message}");
+            if (ex is OperationCanceledException)
+                AbortClientSocket(client, $"send timed out after {SendTimeout.TotalSeconds:F0}s");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Unexpected send failure for {client.PlayerId}: {ex}");
+            AbortClientSocket(client, "unexpected send failure");
         }
         finally
         {
-            client.SendLock.Release();
+            if (hasSendLock)
+                client.SendLock.Release();
         }
+    }
+
+    private async Task CloseSocketAsync(ClientConnection client, WebSocketCloseStatus status, string reason)
+    {
+        if (client.Socket.State is not (WebSocketState.Open or WebSocketState.CloseReceived))
+            return;
+
+        try
+        {
+            using var closeTimeout = new CancellationTokenSource(CloseTimeout);
+            await client.Socket.CloseAsync(status, reason, closeTimeout.Token);
+        }
+        catch (Exception ex) when (IsExpectedWebSocketDisconnect(ex))
+        {
+            Console.WriteLine($"Close skipped for {client.LogId}: {ex.Message}");
+            AbortClientSocket(client, $"close failed during {reason}");
+        }
+    }
+
+    private static void AbortClientSocket(ClientConnection client, string reason)
+    {
+        Console.WriteLine($"Aborting websocket for {client.LogId}: {reason}");
+        client.Socket.Abort();
     }
 
     // Reassembles fragmented WebSocket text messages.
@@ -529,6 +566,15 @@ public sealed class Ws
                 if (!client.HasPlayerId || !client.HasRoom)
                 {
                     Console.WriteLine($"Join before on_connect from {client.LogId}: {message}");
+                    return;
+                }
+
+                // Block repeat on_join on the same socket — it would otherwise reset health to full,
+                // letting a wounded or dead player heal by re-sending the join packet. Respawn is the
+                // intended path for coming back from death.
+                if (client.HasJoinedGame)
+                {
+                    Console.WriteLine($"Rejected duplicate on_join from {client.PlayerId} in room {client.RoomId}");
                     return;
                 }
 
@@ -710,6 +756,14 @@ public sealed class Ws
                 if (!TryReadOptionalRespawnPosition(root, message, client.PlayerId, out var spawnX, out var spawnY))
                     return;
 
+                // Respawn must only fire after death. Without this, a living player at low HP could
+                // send respawn to instantly refill health and clear shot-dedup state.
+                if (!client.GetAuthoritativeHealthSnapshot().IsDead)
+                {
+                    Console.WriteLine($"Rejected respawn from live player {client.PlayerId}");
+                    return;
+                }
+
                 var result = client.Respawn(spawnX, spawnY);
 
                 await BroadcastToRoomAsync(client.RoomId, new
@@ -727,29 +781,7 @@ public sealed class Ws
                 return;
             }
 
-            if (type == "idle")
-            {
-                if (!await RequireActiveJoinedAsync(client, type, message))
-                    return;
-
-                if (!TryReadIdle(root, message, client.PlayerId, out var x, out var y, out var angle))
-                    return;
-
-                client.MarkIdle(x, y, angle);
-
-                await BroadcastToRoomAsync(client.RoomId, new
-                {
-                    type = "player_idle",
-                    playerId = client.PlayerId,
-                    x,
-                    y,
-                    angle
-                });
-
-                return;
-            }
-
-            if (type == "idle_heartbeat")
+            if (type == "idle" || type == "idle_heartbeat")
             {
                 if (!await RequireActiveJoinedAsync(client, type, message))
                     return;
@@ -1437,7 +1469,8 @@ public sealed class Ws
 
     public async Task BroadcastToRoomAsync(GameRoom room, object payload)
     {
-        var sendTasks = new List<Task>();
+        List<Task>? sendTasks = null;
+        byte[]? bytes = null;
 
         // Snapshot room members, then send only to clients still assigned to this room.
         foreach (var playerId in room.PlayerIdsSnapshot())
@@ -1446,11 +1479,15 @@ public sealed class Ws
                 client.RoomId == room.RoomId &&
                 client.HasJoinedGame)
             {
-                sendTasks.Add(SendJsonAsync(client, payload));
+                // Encode lazily so an empty room costs no JSON work.
+                bytes ??= JsonSerializer.SerializeToUtf8Bytes(payload);
+                sendTasks ??= new List<Task>();
+                sendTasks.Add(SendBytesAsync(client, bytes));
             }
         }
 
-        await Task.WhenAll(sendTasks);
+        if (sendTasks is not null)
+            await Task.WhenAll(sendTasks);
     }
 }
 
@@ -1501,6 +1538,14 @@ public sealed class GameRoom
             if (State == GameRoomState.Ended || HasExpired || playerIds.Count >= MaxPlayers)
                 return false;
 
+            // Empty running rooms are retained only for players reconnecting to that match.
+            if (State == GameRoomState.Running &&
+                playerIds.IsEmpty &&
+                !leaderboard.ContainsKey(playerId))
+            {
+                return false;
+            }
+
             playerIds[playerId] = 0;
             return true;
         }
@@ -1533,14 +1578,16 @@ public sealed class GameRoom
         }
     }
 
-    public void RemovePlayer(string playerId)
+    public void RemovePlayer(string playerId, bool removeLeaderboardEntry = false)
     {
         lock (syncRoot)
         {
             playerIds.TryRemove(playerId, out _);
             joinedPlayerIds.TryRemove(playerId, out _);
 
-            if (State != GameRoomState.Ended)
+            // Running match scores survive refreshes and websocket drops, but an explicit
+            // leave_match removes the player from the visible leaderboard.
+            if (State == GameRoomState.Waiting || removeLeaderboardEntry)
                 leaderboard.TryRemove(playerId, out _);
         }
     }
