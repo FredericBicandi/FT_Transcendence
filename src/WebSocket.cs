@@ -644,6 +644,32 @@ public sealed class Ws
                 return;
             }
 
+            if (type == "leaderboard_request")
+            {
+                if (!TryReadLeaderboardRequest(root, message, client, out var roomId))
+                    return;
+
+                client.MarkHeartbeat();
+
+                if (!rooms.TryGetValue(roomId, out var room))
+                {
+                    Console.WriteLine($"leaderboard_request for missing room from {client.PlayerId}: {message}");
+                    return;
+                }
+
+                await EndRoomIfExpiredAsync(room);
+
+                await SendJsonAsync(client, new
+                {
+                    type = "leaderboard_update",
+                    roomId = room.RoomId,
+                    room_id = room.RoomId,
+                    leaderboard = room.LeaderboardSnapshot()
+                });
+
+                return;
+            }
+
             if (type == "ping")
             {
                 client.MarkHeartbeat();
@@ -1223,7 +1249,7 @@ public sealed class Ws
             return false;
         }
 
-        if (!Helper.TryGetString(root, "roomId", out roomId) ||
+        if (!TryReadRoomId(root, out roomId) ||
             roomId != client.RoomId)
         {
             Console.WriteLine($"Invalid leave_match room id from {client.LogId}: {message}");
@@ -1232,6 +1258,42 @@ public sealed class Ws
 
         return true;
     }
+
+    private static bool TryReadLeaderboardRequest(
+        JsonElement root,
+        string message,
+        ClientConnection client,
+        out string roomId)
+    {
+        roomId = string.Empty;
+
+        if (!client.HasPlayerId || !client.HasRoom)
+        {
+            Console.WriteLine($"leaderboard_request before on_connect from {client.LogId}: {message}");
+            return false;
+        }
+
+        if (!Helper.TryGetString(root, "playerId", out var playerId) ||
+            playerId.Length > MaxPlayerIdLength ||
+            playerId != client.PlayerId)
+        {
+            Console.WriteLine($"Invalid leaderboard_request player id from {client.LogId}: {message}");
+            return false;
+        }
+
+        if (!TryReadRoomId(root, out roomId) ||
+            roomId != client.RoomId)
+        {
+            Console.WriteLine($"Invalid leaderboard_request room id from {client.LogId}: {message}");
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool TryReadRoomId(JsonElement root, out string roomId) =>
+        Helper.TryGetString(root, "roomId", out roomId) ||
+        Helper.TryGetString(root, "room_id", out roomId);
 
     private static bool TryReadInt(JsonElement root, string propertyName, out int value)
     {
