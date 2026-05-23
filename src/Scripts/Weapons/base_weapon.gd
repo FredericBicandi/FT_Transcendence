@@ -572,6 +572,21 @@ func get_weapon_icon() -> Texture2D:
 		return null
 	return gun.sprite_frames.get_frame_texture(&"default", 0)
 
+func get_weapon_crosshair() -> Texture2D:
+	var weapon_image: Variant = get_weapon_config().get("image")
+	if not (weapon_image is Texture2D):
+		return null
+
+	var image_path := (weapon_image as Texture2D).resource_path
+	if image_path == "":
+		return null
+
+	var crosshair_path := image_path.get_base_dir().path_join("crosshair.png")
+	if not ResourceLoader.exists(crosshair_path, "Texture2D"):
+		return null
+
+	return load(crosshair_path) as Texture2D
+
 func is_reloading() -> bool:
 	return reload_cooldown > 0.0
 

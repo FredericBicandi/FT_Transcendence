@@ -7,116 +7,13 @@
 [ext_resource type="PackedScene" uid="uid://daaxgnf8jlf6p" path="res://src/Scenes/respawn.tscn" id="5_b2r7h"]
 [ext_resource type="PackedScene" uid="uid://dimb5ix4olid2" path="res://src/Scenes/timer.tscn" id="6_v1g0a"]
 [ext_resource type="PackedScene" uid="uid://e3lcnmeh7xhk" path="res://src/Scenes/leaderboard.tscn" id="7_0plu0"]
-[ext_resource type="Texture2D" uid="uid://cqbxmfci35cfb" path="res://Assets/Textures/cursor_sprite.png" id="8_v1g0a"]
 
 [sub_resource type="GDScript" id="GDScript_jma1v"]
 script/source = "extends Node2D
 
-func _ready() -> void:
-	$AnimatedSprite2D.play(\"default\")
-
 func _process(_delta: float) -> void:
 	global_position = get_global_mouse_position()
 "
-
-[sub_resource type="AtlasTexture" id="AtlasTexture_v1g0a"]
-atlas = ExtResource("8_v1g0a")
-region = Rect2(0, 0, 13, 13)
-
-[sub_resource type="AtlasTexture" id="AtlasTexture_0plu0"]
-atlas = ExtResource("8_v1g0a")
-region = Rect2(13, 0, 13, 13)
-
-[sub_resource type="AtlasTexture" id="AtlasTexture_mhgmy"]
-atlas = ExtResource("8_v1g0a")
-region = Rect2(26, 0, 13, 13)
-
-[sub_resource type="AtlasTexture" id="AtlasTexture_ybkap"]
-atlas = ExtResource("8_v1g0a")
-region = Rect2(39, 0, 13, 13)
-
-[sub_resource type="AtlasTexture" id="AtlasTexture_kivc0"]
-atlas = ExtResource("8_v1g0a")
-region = Rect2(52, 0, 13, 13)
-
-[sub_resource type="AtlasTexture" id="AtlasTexture_c532u"]
-atlas = ExtResource("8_v1g0a")
-region = Rect2(65, 0, 13, 13)
-
-[sub_resource type="AtlasTexture" id="AtlasTexture_j65p4"]
-atlas = ExtResource("8_v1g0a")
-region = Rect2(78, 0, 13, 13)
-
-[sub_resource type="AtlasTexture" id="AtlasTexture_1t8na"]
-atlas = ExtResource("8_v1g0a")
-region = Rect2(91, 0, 13, 13)
-
-[sub_resource type="AtlasTexture" id="AtlasTexture_6e5hx"]
-atlas = ExtResource("8_v1g0a")
-region = Rect2(104, 0, 13, 13)
-
-[sub_resource type="AtlasTexture" id="AtlasTexture_n4gpb"]
-atlas = ExtResource("8_v1g0a")
-region = Rect2(117, 0, 13, 13)
-
-[sub_resource type="AtlasTexture" id="AtlasTexture_ypmm7"]
-atlas = ExtResource("8_v1g0a")
-region = Rect2(130, 0, 13, 13)
-
-[sub_resource type="AtlasTexture" id="AtlasTexture_h74bp"]
-atlas = ExtResource("8_v1g0a")
-region = Rect2(143, 0, 13, 13)
-
-[sub_resource type="AtlasTexture" id="AtlasTexture_cy00q"]
-atlas = ExtResource("8_v1g0a")
-region = Rect2(156, 0, 13, 13)
-
-[sub_resource type="SpriteFrames" id="SpriteFrames_4gt1b"]
-animations = [{
-"frames": [{
-"duration": 1.0,
-"texture": SubResource("AtlasTexture_v1g0a")
-}, {
-"duration": 1.0,
-"texture": SubResource("AtlasTexture_0plu0")
-}, {
-"duration": 1.0,
-"texture": SubResource("AtlasTexture_mhgmy")
-}, {
-"duration": 1.0,
-"texture": SubResource("AtlasTexture_ybkap")
-}, {
-"duration": 1.0,
-"texture": SubResource("AtlasTexture_kivc0")
-}, {
-"duration": 1.0,
-"texture": SubResource("AtlasTexture_c532u")
-}, {
-"duration": 1.0,
-"texture": SubResource("AtlasTexture_j65p4")
-}, {
-"duration": 1.0,
-"texture": SubResource("AtlasTexture_1t8na")
-}, {
-"duration": 1.0,
-"texture": SubResource("AtlasTexture_6e5hx")
-}, {
-"duration": 1.0,
-"texture": SubResource("AtlasTexture_n4gpb")
-}, {
-"duration": 1.0,
-"texture": SubResource("AtlasTexture_ypmm7")
-}, {
-"duration": 1.0,
-"texture": SubResource("AtlasTexture_h74bp")
-}, {
-"duration": 1.0,
-"texture": SubResource("AtlasTexture_cy00q")
-}],
-"loop": true,
-"name": &"default",
-"speed": 10.0
-}]
 
 [node name="Game" type="Node2D" unique_id=1266203192]
 script = ExtResource("1_dc36d")
@@ -137,7 +34,3 @@ position = Vector2(173, -307)
 
 [node name="Cursor" type="Node2D" parent="." unique_id=1106131925]
 script = SubResource("GDScript_jma1v")
-
-[node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="Cursor" unique_id=54278594]
-z_index = 10
-sprite_frames = SubResource("SpriteFrames_4gt1b")

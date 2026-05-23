@@ -1,15 +1,14 @@
 extends Node2D
 
 const PLAYER_SCENE: PackedScene = preload("res://src/Objects/player.tscn")
-const DEFAULT_CURSOR_TEXTURE: Texture2D = preload("res://Assets/Textures/cursor.png")
+const DEFAULT_CURSOR_TEXTURE: Texture2D = null
 const KILL_FEED_RIFLE_TEXTURE: Texture2D = preload("res://Assets/Textures/Guns/AFRifle/image.png")
 const RESPAWN_LAYER_20_MASK: int = 1 << 19
 const RESPAWN_TILE_SOURCE_ID: int = 10
 const RESPAWN_TILE_ATLAS_COORDS := Vector2i(25, 2)
 const LOBBY_URL: String = "https://pixelfight.live/"
 const EXIT_DIALOG_MIN_SIZE := Vector2(360.0, 150.0)
-const ROCKET_LAUNCHER_WEAPON_NAME := "Rocket Launcher"
-const DEFAULT_CURSOR_TARGET_SIZE: float = 18.0
+const DEFAULT_CURSOR_TARGET_SIZE: float = 12.0
 const CURSOR_RELOAD_RING_SCRIPT: Script = preload("res://src/Scripts/components/cursor_reload_ring.gd")
 const KILL_FEED_ENTRY_LIFETIME: float = 4.0
 const KILL_FEED_MAX_ENTRIES: int = 5
@@ -27,7 +26,6 @@ const MATCH_END_LEADERBOARD_SECONDS: float = 8.0
 @onready var timer_ui: Node = $Timer
 @onready var leaderboard_ui: Node = $Leaderboard
 @onready var cursor: Node2D = $Cursor
-@onready var rocket_cursor: AnimatedSprite2D = $Cursor/AnimatedSprite2D
 @onready var network_client: NetworkClient = get_tree().get_first_node_in_group("network_client") as NetworkClient
 
 var observed_weapon: BaseWeapon
@@ -64,6 +62,7 @@ func _ready() -> void:
 	player_body.global_position = initial_respawn_position
 
 	# Keep the HUD attached to the currently equipped weapon
+	_hide_legacy_cursor_children()
 	_create_default_cursor()
 	_create_cursor_reload_ring()
 	weapons.active_weapon_changed.connect(_on_active_weapon_changed)
@@ -273,8 +272,18 @@ func _create_default_cursor() -> void:
 	default_cursor.name = "DefaultCursor"
 	default_cursor.texture = DEFAULT_CURSOR_TEXTURE
 	default_cursor.z_index = 10
-	default_cursor.scale = _get_cursor_scale_for_texture(DEFAULT_CURSOR_TEXTURE)
+	if DEFAULT_CURSOR_TEXTURE != null:
+		default_cursor.scale = _get_cursor_scale_for_texture(DEFAULT_CURSOR_TEXTURE)
 	cursor.add_child(default_cursor)
+
+func _hide_legacy_cursor_children() -> void:
+	if cursor == null:
+		return
+
+	for child in cursor.get_children():
+		var cursor_item := child as CanvasItem
+		if cursor_item != null:
+			cursor_item.visible = false
 
 func _get_cursor_scale_for_texture(texture: Texture2D) -> Vector2:
 	if texture == null:
@@ -302,14 +311,21 @@ func _set_mouse_visible(is_visible: bool) -> void:
 		cursor.visible = not is_visible
 
 func _set_cursor_for_weapon(weapon: BaseWeapon) -> void:
-	var use_rocket_cursor := weapon != null and weapon.get_weapon_name() == ROCKET_LAUNCHER_WEAPON_NAME
+	if default_cursor == null:
+		return
 
-	if default_cursor != null:
-		default_cursor.visible = not use_rocket_cursor
-	if rocket_cursor != null:
-		rocket_cursor.visible = use_rocket_cursor
-		if use_rocket_cursor and not rocket_cursor.is_playing():
-			rocket_cursor.play("default")
+	var crosshair_texture := DEFAULT_CURSOR_TEXTURE
+	if weapon != null:
+		var weapon_crosshair := weapon.get_weapon_crosshair()
+		if weapon_crosshair != null:
+			crosshair_texture = weapon_crosshair
+
+	default_cursor.texture = crosshair_texture
+	if crosshair_texture != null:
+		default_cursor.scale = _get_cursor_scale_for_texture(crosshair_texture)
+	else:
+		default_cursor.scale = Vector2.ONE
+	default_cursor.visible = true
 
 func _update_cursor_reload_ring() -> void:
 	if cursor_reload_ring == null:
