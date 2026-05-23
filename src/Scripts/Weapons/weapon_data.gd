@@ -89,7 +89,7 @@ const WEAPON_DATA := {
 		"damage": 80,
 		"fire_rate": 1.1,
 		"ammo_mag_size": 1,
-		"reload_time": 2.6,
+		"reload_time": 1.6,
 		"bullet_speed": 210.0,
 		"bullet_lifetime": 0.95,
 		"bullet_collision_mask": 3,

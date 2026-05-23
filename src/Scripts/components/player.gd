@@ -9,9 +9,12 @@ const REMOTE_SNAPSHOT_REACHED_DISTANCE: float = 0.5
 const REMOTE_AIM_DISTANCE: float = 32.0
 const MAX_REMOTE_SNAPSHOTS: int = 60
 const REMOTE_WALK_ANIMATION_HOLD_TIME: float = 0.12
+const REMOTE_SNAPSHOT_COMPACT_THRESHOLD: int = 32
 const DEFAULT_PLAYER_DISPLAY_NAME := "Player"
 const DAMAGEABLE_PLAYER_GROUP := "damageable_player"
 const HITBOX_POINT_EPSILON := 0.5
+const SERVER_RESPAWN_RETRY_SECONDS: float = 1.5
+const BULLET_SPAWN_SNAP_DISTANCE: float = 24.0
 
 # Values designers can tune from the inspector
 @export var move_speed: float = 120.0
@@ -36,6 +39,10 @@ const HITBOX_POINT_EPSILON := 0.5
 @export var damage_number_rise_distance: float = 22.0
 @export var damage_number_spread: float = 10.0
 @export var local_self_aim_radius: float = 24.0
+@export var camera_zoom: Vector2 = Vector2(6.5, 6.5)
+@export var camera_cursor_follow_distance: float = 18.0
+@export var camera_cursor_follow_deadzone: float = 22.0
+@export var camera_cursor_follow_smoothing: float = 3.5
 
 # Runtime state for health, network sync, sounds, and remote smoothing
 var health: int
@@ -59,6 +66,7 @@ var match_controls_enabled: bool = true
 var is_remote_proxy: bool = false
 var has_received_remote_snapshot: bool = false
 var remote_snapshot_queue: Array[Dictionary] = []
+var remote_snapshot_head_index: int = 0
 var remote_facing_direction: Vector2 = Vector2.RIGHT
 var last_sent_angle: float = 0.0
 var last_sent_aim_frame: int = -1
@@ -71,8 +79,10 @@ var network_player_id: String = ""
 var network_player_display_name: String = ""
 var next_shot_sequence: int = 0
 var has_requested_server_respawn: bool = false
+var server_respawn_retry_timer: float = 0.0
 var observed_shot_weapon: BaseWeapon = null
 var camera_base_offset: Vector2 = Vector2.ZERO
+var camera_cursor_offset: Vector2 = Vector2.ZERO
 var camera_shake_remaining: float = 0.0
 var camera_shake_duration: float = 0.0
 var camera_shake_strength: float = 0.0
@@ -103,6 +113,8 @@ func _ready() -> void:
 
 	# Match camera and weapon input to this player's control mode
 	player_camera.enabled = enable_player_camera
+	if enable_player_camera:
+		player_camera.zoom = camera_zoom
 	camera_base_offset = player_camera.offset
 	camera_shake_rng.randomize()
 	weapon.set_input_enabled(_are_local_weapon_controls_enabled())
@@ -174,7 +186,7 @@ func _physics_process(delta: float) -> void:
 func _process(delta: float) -> void:
 	shoot_sound_cooldown_remaining = maxf(shoot_sound_cooldown_remaining - delta, 0.0)
 	listener_sound_time += delta
-	_update_camera_shake(delta)
+	_update_camera(delta)
 	_report_angle_on_frame_change()
 	if accepts_input:
 		_update_active_shot_mix()
@@ -185,6 +197,12 @@ func _process(delta: float) -> void:
 			respawn_timer = maxf(respawn_timer - delta, 0.0)
 			if respawn_timer == 0.0:
 				if _uses_server_authoritative_health():
+					# Re-send the request periodically in case the server
+					# never acknowledges (dropped packet, server-side hiccup).
+					if has_requested_server_respawn:
+						server_respawn_retry_timer = maxf(server_respawn_retry_timer - delta, 0.0)
+						if server_respawn_retry_timer == 0.0:
+							has_requested_server_respawn = false
 					_request_server_respawn()
 				else:
 					respawn()
@@ -464,9 +482,10 @@ func _get_listener_player() -> Player:
 	if accepts_input:
 		return self
 
+	# Dead local players still hear remote shots; only the listener flag matters here.
 	for candidate in get_tree().get_nodes_in_group("player"):
 		var player_candidate := candidate as Player
-		if player_candidate != null and player_candidate.accepts_input and not player_candidate.is_dead:
+		if player_candidate != null and player_candidate.accepts_input:
 			return player_candidate
 
 	return null
@@ -475,9 +494,14 @@ func _get_camera_hearing_radius() -> float:
 	if player_camera == null:
 		return 0.0
 
+	# Godot 4 Camera2D.zoom is multiplicative-in: world view = viewport / zoom.
 	var viewport_size := get_viewport_rect().size
-	var world_size := viewport_size * player_camera.zoom
-	return minf(world_size.x, world_size.y) * 0.5
+	var zoom := player_camera.zoom
+	var zoom_x := maxf(absf(zoom.x), 0.0001)
+	var zoom_y := maxf(absf(zoom.y), 0.0001)
+	var world_size := Vector2(viewport_size.x / zoom_x, viewport_size.y / zoom_y)
+	# Use the larger half-extent so shots near the screen edge still fade smoothly.
+	return maxf(world_size.x, world_size.y) * 0.5 + shoot_sound_fade_margin
 
 func _on_viewport_size_changed() -> void:
 	_configure_shoot_sound()
@@ -490,6 +514,7 @@ func die() -> void:
 	is_dead = true
 	respawn_timer = respawn_delay
 	has_requested_server_respawn = false
+	server_respawn_retry_timer = 0.0
 	idle_position_heartbeat_time = 0.0
 	velocity = Vector2.ZERO
 	hit_flash_time = 0.0
@@ -695,8 +720,10 @@ func _request_server_respawn() -> void:
 	if has_requested_server_respawn or not accepts_input or network_client == null:
 		return
 
-	# Ask the server to accept this respawn once
+	# Ask the server to accept this respawn; if the server never acknowledges
+	# we will retry from _process so the local player never softlocks dead.
 	has_requested_server_respawn = true
+	server_respawn_retry_timer = SERVER_RESPAWN_RETRY_SECONDS
 	global_position = _resolve_respawn_position()
 	_send_respawn_state()
 
@@ -739,7 +766,7 @@ func set_match_controls_enabled(is_enabled: bool) -> void:
 	move_sync_elapsed = 0.0
 	last_sent_position = global_position
 	if not is_enabled:
-		remote_snapshot_queue.clear()
+		_clear_remote_snapshots()
 		remote_walk_animation_hold_remaining = 0.0
 		remote_last_move_direction = Vector2.ZERO
 		update_legs(Vector2.ZERO, 0.0)
@@ -760,7 +787,7 @@ func configure_as_remote_proxy() -> void:
 	collision_layer = 2
 	collision_mask = 0
 	velocity = Vector2.ZERO
-	remote_snapshot_queue.clear()
+	_clear_remote_snapshots()
 	has_received_remote_snapshot = false
 	remote_facing_direction = Vector2.RIGHT
 	remote_latest_angle_degrees = NAN
@@ -916,7 +943,14 @@ func _restore_after_respawn() -> void:
 	is_dead = false
 	respawn_timer = 0.0
 	has_requested_server_respawn = false
+	server_respawn_retry_timer = 0.0
 	idle_position_heartbeat_time = 0.0
+	# Snapshots enqueued while we were dead never played (physics process
+	# bails for dead bodies); drop them so respawn does not warp through them.
+	if is_remote_proxy:
+		_clear_remote_snapshots()
+		remote_walk_animation_hold_remaining = 0.0
+		remote_last_move_direction = Vector2.ZERO
 	legs.frame = 0
 	leg_animation_time = 0.0
 	legs.visible = true
@@ -937,25 +971,44 @@ func _are_local_weapon_controls_enabled() -> bool:
 func _uses_server_authoritative_health() -> bool:
 	return network_client != null and (accepts_input or is_remote_proxy)
 
-func _update_camera_shake(delta: float) -> void:
+func _update_camera(delta: float) -> void:
 	if player_camera == null or not player_camera.enabled:
 		return
 
-	if camera_shake_remaining <= 0.0:
-		if player_camera.offset != camera_base_offset:
-			player_camera.offset = camera_base_offset
-		return
-
-	camera_shake_remaining = maxf(camera_shake_remaining - delta, 0.0)
-	var fade := camera_shake_remaining / maxf(camera_shake_duration, 0.001)
-	var current_strength := camera_shake_strength * fade * fade
-	player_camera.offset = camera_base_offset + Vector2(
-		camera_shake_rng.randf_range(-current_strength, current_strength),
-		camera_shake_rng.randf_range(-current_strength, current_strength)
+	camera_cursor_offset = camera_cursor_offset.lerp(
+		_get_cursor_camera_offset(),
+		clampf(delta * camera_cursor_follow_smoothing, 0.0, 1.0)
 	)
 
-	if camera_shake_remaining == 0.0:
-		player_camera.offset = camera_base_offset
+	var shake_offset := Vector2.ZERO
+
+	if camera_shake_remaining > 0.0:
+		camera_shake_remaining = maxf(camera_shake_remaining - delta, 0.0)
+		var fade := camera_shake_remaining / maxf(camera_shake_duration, 0.001)
+		var current_strength := camera_shake_strength * fade * fade
+		shake_offset = Vector2(
+			camera_shake_rng.randf_range(-current_strength, current_strength),
+			camera_shake_rng.randf_range(-current_strength, current_strength)
+		)
+
+	player_camera.offset = camera_base_offset + camera_cursor_offset + shake_offset
+
+func _get_cursor_camera_offset() -> Vector2:
+	if not accepts_input or is_remote_proxy:
+		return Vector2.ZERO
+
+	var aim_offset := get_global_mouse_position() - global_position
+	var aim_distance := aim_offset.length()
+	if aim_distance <= camera_cursor_follow_deadzone:
+		return Vector2.ZERO
+
+	var follow_distance := maxf(camera_cursor_follow_distance, 0.0)
+	if follow_distance <= 0.0:
+		return Vector2.ZERO
+
+	var deadzone_adjusted_distance := aim_distance - camera_cursor_follow_deadzone
+	var follow_strength := clampf(deadzone_adjusted_distance / maxf(follow_distance, 0.001), 0.0, 1.0)
+	return aim_offset.normalized() * follow_distance * follow_strength
 
 func _validate_collision_shapes() -> void:
 	if collision_shape == null:
@@ -1003,9 +1056,9 @@ func enqueue_remote_snapshot(position: Vector2, aim_angle_degrees: float = NAN) 
 		snap_remote_snapshot(position, remote_latest_angle_degrees)
 		return
 
-	if remote_snapshot_queue.size() >= MAX_REMOTE_SNAPSHOTS:
-		# Drop old snapshots if the client falls behind
-		remote_snapshot_queue.remove_at(0)
+	if _get_remote_snapshot_count() >= MAX_REMOTE_SNAPSHOTS:
+		# Drop old snapshots if the client falls behind.
+		_pop_next_remote_snapshot()
 
 	remote_snapshot_queue.append({
 		"position": position,
@@ -1017,7 +1070,7 @@ func snap_remote_snapshot(position: Vector2, aim_angle_degrees: float = NAN) -> 
 		remote_latest_angle_degrees = aim_angle_degrees
 
 	has_received_remote_snapshot = true
-	remote_snapshot_queue.clear()
+	_clear_remote_snapshots()
 	global_position = position
 	velocity = Vector2.ZERO
 	remote_last_move_direction = Vector2.ZERO
@@ -1067,9 +1120,16 @@ func _normalize_weapon_type(weapon_type: String) -> String:
 			return weapon_type
 
 func spawn_remote_bullet_from_server(position: Vector2, angle_radians: float, weapon_type: String, target_position: Variant = null, start_position: Variant = null) -> void:
-	# Snap the shooter to the server position before replaying the shot
-	global_position = position
-	remote_snapshot_queue.clear()
+	# Server bullet messages include the shooter position, but blindly snapping
+	# warps the player whenever a move/bullet packet pair arrives out of order.
+	# Only snap when we have not yet placed the player or when the reported
+	# position is far from where the interpolation has us — otherwise let the
+	# normal snapshot queue keep the motion smooth.
+	if not has_received_remote_snapshot:
+		snap_remote_snapshot(position, NAN)
+	elif global_position.distance_to(position) > BULLET_SPAWN_SNAP_DISTANCE:
+		snap_remote_snapshot(position, NAN)
+
 	set_remote_weapon(weapon_type)
 	var has_target_position := target_position is Vector2
 	var aim_target := global_position + Vector2.RIGHT.rotated(angle_radians)
@@ -1089,8 +1149,10 @@ func spawn_remote_bullet_from_server(position: Vector2, angle_radians: float, we
 		active_weapon.spawn_remote_bullet(angle_radians, target_position, start_position)
 
 func _process_remote_movement(delta: float) -> void:
-	while not remote_snapshot_queue.is_empty():
-		var queued_snapshot := remote_snapshot_queue[0]
+	while _get_remote_snapshot_count() > 0:
+		var queued_snapshot := _get_next_remote_snapshot()
+		if queued_snapshot.is_empty():
+			break
 		var queued_position: Vector2 = queued_snapshot["position"]
 		var queued_offset := queued_position - global_position
 		var queued_distance := queued_offset.length()
@@ -1103,9 +1165,9 @@ func _process_remote_movement(delta: float) -> void:
 
 		global_position = queued_position
 		_apply_remote_aim(queued_position, float(queued_snapshot.get("aim_angle_degrees", NAN)))
-		remote_snapshot_queue.remove_at(0)
+		_pop_next_remote_snapshot()
 
-	if remote_snapshot_queue.is_empty():
+	if _get_remote_snapshot_count() == 0:
 		velocity = Vector2.ZERO
 		if remote_walk_animation_hold_remaining > 0.0 and remote_last_move_direction != Vector2.ZERO:
 			# Hold the walk frame briefly so remote movement does not flicker
@@ -1118,14 +1180,14 @@ func _process_remote_movement(delta: float) -> void:
 		_apply_remote_aim(global_position + remote_facing_direction, NAN)
 		return
 
-	var next_snapshot := remote_snapshot_queue[0]
+	var next_snapshot := _get_next_remote_snapshot()
 	var target_position: Vector2 = next_snapshot["position"]
 	var offset := target_position - global_position
 	var direction := offset.normalized()
 	var step_distance := move_speed * delta
 	if offset.length() <= step_distance:
 		global_position = target_position
-		remote_snapshot_queue.remove_at(0)
+		_pop_next_remote_snapshot()
 	else:
 		# Remote players follow server snapshots without local collision solving
 		global_position = global_position.move_toward(target_position, step_distance)
@@ -1155,6 +1217,52 @@ func _apply_remote_aim(target_position: Vector2, aim_angle_degrees: float) -> vo
 	var active_weapon := weapon.get_active_weapon()
 	if active_weapon != null:
 		active_weapon.set_aim_target(global_position + remote_facing_direction * REMOTE_AIM_DISTANCE)
+
+func _get_remote_snapshot_count() -> int:
+	return remote_snapshot_queue.size() - remote_snapshot_head_index
+
+func _get_next_remote_snapshot() -> Dictionary:
+	if _get_remote_snapshot_count() <= 0:
+		return {}
+
+	var snapshot_variant: Variant = remote_snapshot_queue[remote_snapshot_head_index]
+	if typeof(snapshot_variant) == TYPE_DICTIONARY:
+		return snapshot_variant as Dictionary
+
+	return {}
+
+func _pop_next_remote_snapshot() -> void:
+	if _get_remote_snapshot_count() <= 0:
+		_clear_remote_snapshots()
+		return
+
+	remote_snapshot_head_index += 1
+	_compact_remote_snapshot_queue()
+
+func _clear_remote_snapshots() -> void:
+	remote_snapshot_queue.clear()
+	remote_snapshot_head_index = 0
+
+func _compact_remote_snapshot_queue() -> void:
+	if remote_snapshot_head_index <= 0:
+		return
+
+	var remaining_count := _get_remote_snapshot_count()
+	if remaining_count <= 0:
+		_clear_remote_snapshots()
+		return
+
+	if remote_snapshot_head_index < REMOTE_SNAPSHOT_COMPACT_THRESHOLD and remote_snapshot_head_index * 2 < remote_snapshot_queue.size():
+		return
+
+	var compacted: Array[Dictionary] = []
+	for index in range(remote_snapshot_head_index, remote_snapshot_queue.size()):
+		var snapshot_variant: Variant = remote_snapshot_queue[index]
+		if typeof(snapshot_variant) == TYPE_DICTIONARY:
+			compacted.append(snapshot_variant as Dictionary)
+
+	remote_snapshot_queue = compacted
+	remote_snapshot_head_index = 0
 
 func _get_current_aim_angle() -> float:
 	var aim_direction := get_global_mouse_position() - global_position

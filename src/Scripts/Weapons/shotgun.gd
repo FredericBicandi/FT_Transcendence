@@ -3,6 +3,7 @@ extends WeaponSprite
 
 const PELLET_COUNT := 6
 const PELLET_SPREAD := 0.25
+const TOTAL_DAMAGE := 72
 var shell_reloading: bool = false
 
 func _ready() -> void:
@@ -30,10 +31,15 @@ func shoot() -> void:
 	apply_recoil(base_direction, config)
 	for i in range(PELLET_COUNT):
 		var spread := randf_range(-PELLET_SPREAD, PELLET_SPREAD)
-		_spawn_bullet(base_direction.rotated(spread), shot_start_position, true, -1, null)
+		_spawn_bullet(base_direction.rotated(spread), shot_start_position, true, _get_pellet_damage(i), null)
 	shot_fired.emit(base_direction.angle(), get_weapon_name(), shot_start_position, desired_shot_target)
 	if current_ammo <= 0:
 		reload()
+
+func _get_pellet_damage(pellet_index: int) -> int:
+	var base_damage := TOTAL_DAMAGE / PELLET_COUNT
+	var remainder := TOTAL_DAMAGE % PELLET_COUNT
+	return base_damage + (1 if pellet_index < remainder else 0)
 
 func reload() -> void:
 	if reload_cooldown > 0.0 or current_ammo == get_magazine_size():
@@ -65,3 +71,14 @@ func _load_next_shell() -> void:
 func reset_state() -> void:
 	shell_reloading = false
 	super.reset_state()
+
+func set_active(is_active: bool) -> void:
+	# Cancel the queued shell-load chain when the shotgun is holstered;
+	# pending timers re-check shell_reloading and bail out.
+	if not is_active and shell_reloading:
+		shell_reloading = false
+		reload_cooldown = 0.0
+		reload_duration = 0.0
+		if reload_audio_player != null and reload_audio_player.playing:
+			reload_audio_player.stop()
+	super.set_active(is_active)

@@ -73,7 +73,11 @@ func _process(delta: float) -> void:
 func connect_to_server() -> Error:
 	_prepare_player_profile()
 
-	# Reset connection state before opening a new socket
+	# Reset connection state before opening a new socket. Close the previous
+	# peer first so a half-open socket from a prior attempt does not linger
+	# in the engine's internal poll list.
+	if socket != null and socket.get_ready_state() != WebSocketPeer.STATE_CLOSED:
+		socket.close()
 	socket = WebSocketPeer.new()
 	was_open_last_frame = false
 	has_reported_closed_state = false
@@ -164,6 +168,13 @@ func send_on_connect() -> void:
 		}
 	)
 	has_sent_room_reservation_request = true
+
+func request_room_reservation() -> void:
+	if socket.get_ready_state() != WebSocketPeer.STATE_OPEN:
+		return
+
+	has_sent_room_reservation_request = false
+	send_on_connect()
 
 func send_on_join(x: float, y: float, angle: float, weapon_type: String) -> void:
 	if socket.get_ready_state() != WebSocketPeer.STATE_OPEN:
@@ -266,6 +277,25 @@ func send_leave_match() -> void:
 	if local_room_id != "":
 		payload["roomId"] = local_room_id
 		payload["room_id"] = local_room_id
+
+	_send_json(payload)
+
+func request_leaderboard_update() -> void:
+	if socket.get_ready_state() != WebSocketPeer.STATE_OPEN:
+		return
+	if local_room_id.strip_edges() == "":
+		return
+
+	var payload := {
+		"type": "leaderboard_request",
+		"roomId": local_room_id,
+		"room_id": local_room_id
+	}
+
+	if local_player_id != "":
+		payload["playerId"] = local_player_id
+	elif player_id != "":
+		payload["playerId"] = player_id
 
 	_send_json(payload)
 
@@ -684,6 +714,12 @@ func _apply_match_left(message: Dictionary) -> void:
 	if left_room_id != "" and local_room_id != "" and left_room_id != local_room_id:
 		return
 
+	clear_match_state()
+
+func is_in_room() -> bool:
+	return local_room_id.strip_edges() != ""
+
+func clear_match_state() -> void:
 	local_room_id = ""
 	match_duration_seconds = 0
 	remaining_seconds = 0.0
@@ -735,3 +771,11 @@ func close_connection() -> void:
 	has_connected_once = false
 	if socket.get_ready_state() != WebSocketPeer.STATE_CLOSED:
 		socket.close()
+
+func disconnect_multiplayer() -> void:
+	close_connection()
+	clear_match_state()
+	seconds_since_last_server_activity = 0.0
+	has_sent_room_reservation_request = false
+	# Replace the peer so no stale close state leaks into the next connect cycle.
+	socket = WebSocketPeer.new()

@@ -18,7 +18,10 @@ func _load_bullet_template() -> void:
 	bullet_scale_stored = bullet_template.scale
 	bullet_template.queue_free()
 	if impact_template != null:
-		impact_frames = impact_template.sprite_frames
+		# Duplicate once so we can force one-shot playback without reallocating every hit.
+		impact_frames = impact_template.sprite_frames.duplicate(true) as SpriteFrames
+		if impact_frames != null and impact_frames.has_animation(&"default"):
+			impact_frames.set_animation_loop(&"default", false)
 		impact_scale_stored = impact_template.scale
 		impact_speed_scale_stored = impact_template.speed_scale
 		impact_template.queue_free()
@@ -43,12 +46,8 @@ func _play_impact_effect(position: Vector2) -> void:
 	if current_scene == null:
 		return
 
-	var runtime_frames := impact_frames.duplicate(true) as SpriteFrames
-	if runtime_frames != null and runtime_frames.has_animation(&"default"):
-		runtime_frames.set_animation_loop(&"default", false)
-
 	var impact := AnimatedSprite2D.new()
-	impact.sprite_frames = runtime_frames
+	impact.sprite_frames = impact_frames
 	impact.animation = &"default"
 	impact.frame = 0
 	impact.scale = impact_scale_stored

@@ -9,6 +9,8 @@ const RESPAWN_TILE_ATLAS_COORDS := Vector2i(25, 2)
 const LOBBY_URL: String = "https://pixelfight.live/"
 const EXIT_DIALOG_MIN_SIZE := Vector2(360.0, 150.0)
 const ROCKET_LAUNCHER_WEAPON_NAME := "Rocket Launcher"
+const DEFAULT_CURSOR_TARGET_SIZE: float = 18.0
+const CURSOR_RELOAD_RING_SCRIPT: Script = preload("res://src/Scripts/components/cursor_reload_ring.gd")
 const KILL_FEED_ENTRY_LIFETIME: float = 4.0
 const KILL_FEED_MAX_ENTRIES: int = 5
 const KILL_FEED_KILLER_COLOR := Color(0.32, 0.66, 1.0, 1.0)
@@ -43,11 +45,13 @@ var exit_dialog_open: bool = false
 var player_controls_enabled_before_exit_dialog: bool = true
 var mouse_mode_before_exit_dialog = Input.MOUSE_MODE_HIDDEN
 var default_cursor: Sprite2D
+var cursor_reload_ring: Node2D
 var kill_feed_layer: CanvasLayer
 var kill_feed_container: VBoxContainer
 var match_started_msec: int = 0
 var final_match_summary: Dictionary = {}
 var match_end_exit_scheduled: bool = false
+var pending_remote_player_states: Dictionary = {}
 
 func _ready() -> void:
 	match_started_msec = Time.get_ticks_msec()
@@ -61,13 +65,14 @@ func _ready() -> void:
 
 	# Keep the HUD attached to the currently equipped weapon
 	_create_default_cursor()
+	_create_cursor_reload_ring()
 	weapons.active_weapon_changed.connect(_on_active_weapon_changed)
 	_on_active_weapon_changed(weapons.get_active_weapon())
 	_connect_network_signals()
 	apply_network_snapshot()
 	respawn_ui.call("update_for_player", player_body)
 	timer_ui.call("set_remaining_seconds", remaining_match_seconds)
-	Input.set_mouse_mode(Input.MOUSE_MODE_HIDDEN)
+	_set_mouse_visible(false)
 	_create_kill_feed()
 	_create_exit_dialog()
 	if match_has_ended:
@@ -82,8 +87,10 @@ func _process(delta: float) -> void:
 	if not match_has_ended and remaining_match_seconds > 0.0:
 		remaining_match_seconds = maxf(remaining_match_seconds - delta, 0.0)
 
+	_flush_pending_remote_player_states()
 	respawn_ui.call("update_for_player", player_body)
 	timer_ui.call("set_remaining_seconds", remaining_match_seconds)
+	_update_cursor_reload_ring()
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_ESCAPE:
@@ -172,7 +179,7 @@ func _show_exit_dialog() -> void:
 		player_body.set_match_controls_enabled(false)
 
 	exit_dialog_layer.visible = true
-	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
+	_set_mouse_visible(true)
 	if exit_cancel_button != null:
 		exit_cancel_button.grab_focus()
 
@@ -186,15 +193,53 @@ func _cancel_exit_dialog() -> void:
 
 	if player_body != null:
 		player_body.set_match_controls_enabled(player_controls_enabled_before_exit_dialog and not match_has_ended)
-	Input.set_mouse_mode(mouse_mode_before_exit_dialog)
+	_set_mouse_visible(mouse_mode_before_exit_dialog != Input.MOUSE_MODE_HIDDEN)
 
 func _confirm_exit_dialog() -> void:
 	if player_body != null:
 		player_body.set_match_controls_enabled(false)
-	if network_client != null:
+	_exit_to_dashboard("manual")
+
+func _exit_to_dashboard(reason: String, summary: Dictionary = {}) -> void:
+	if _is_in_room() and network_client != null:
 		network_client.send_leave_match()
 
-	_post_exit_game("manual")
+	_cleanup_match_state()
+	_reset_parent_after_exit()
+	_post_exit_game(reason, summary)
+
+func _is_in_room() -> bool:
+	if room_id.strip_edges() != "":
+		return true
+
+	return network_client != null and network_client.is_in_room()
+
+func _cleanup_match_state() -> void:
+	if exit_dialog_open:
+		exit_dialog_open = false
+		if exit_dialog_layer != null:
+			exit_dialog_layer.visible = false
+
+	match_has_ended = false
+	match_end_exit_scheduled = false
+	remaining_match_seconds = 0.0
+	room_id = ""
+	local_player_id = ""
+	final_match_summary = {}
+	pending_remote_player_states.clear()
+
+	if player_body != null:
+		player_body.set_match_controls_enabled(false)
+	if weapons != null:
+		weapons.set_input_enabled(false)
+		weapons.clear_all_projectiles()
+
+	for remote_wrapper_variant in remote_players.values():
+		var remote_wrapper := remote_wrapper_variant as Node
+		if remote_wrapper != null and is_instance_valid(remote_wrapper):
+			remote_wrapper.queue_free()
+
+	remote_players.clear()
 
 func _post_exit_game(reason: String = "manual", summary: Dictionary = {}) -> void:
 	if not OS.has_feature("web"):
@@ -219,7 +264,7 @@ func _post_exit_game(reason: String = "manual", summary: Dictionary = {}) -> voi
 		payload["playTimeSeconds"] = float(summary.get("playTimeSeconds", 0.0))
 
 	JavaScriptBridge.eval(
-		"window.parent.postMessage(%s, '*'); if (window.parent === window) { window.location.href = '%s'; }" % [JSON.stringify(payload), LOBBY_URL],
+		"window.parent.postMessage(%s, window.location.origin); if (window.parent === window) { window.location.href = '%s'; }" % [JSON.stringify(payload), LOBBY_URL],
 		false
 	)
 
@@ -228,7 +273,33 @@ func _create_default_cursor() -> void:
 	default_cursor.name = "DefaultCursor"
 	default_cursor.texture = DEFAULT_CURSOR_TEXTURE
 	default_cursor.z_index = 10
+	default_cursor.scale = _get_cursor_scale_for_texture(DEFAULT_CURSOR_TEXTURE)
 	cursor.add_child(default_cursor)
+
+func _get_cursor_scale_for_texture(texture: Texture2D) -> Vector2:
+	if texture == null:
+		return Vector2.ONE
+
+	var texture_size := texture.get_size()
+	var largest_side := maxf(texture_size.x, texture_size.y)
+	if largest_side <= 0.0:
+		return Vector2.ONE
+
+	var scale_factor := DEFAULT_CURSOR_TARGET_SIZE / largest_side
+	return Vector2(scale_factor, scale_factor)
+
+func _create_cursor_reload_ring() -> void:
+	cursor_reload_ring = Node2D.new()
+	cursor_reload_ring.name = "ReloadRing"
+	cursor_reload_ring.set_script(CURSOR_RELOAD_RING_SCRIPT)
+	cursor.add_child(cursor_reload_ring)
+
+func _set_mouse_visible(is_visible: bool) -> void:
+	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE if is_visible else Input.MOUSE_MODE_HIDDEN)
+	if cursor != null and is_instance_valid(cursor):
+		# Hide the in-world cursor whenever the OS cursor is showing so we
+		# never paint two cursors at once (exit dialog, match end, etc.).
+		cursor.visible = not is_visible
 
 func _set_cursor_for_weapon(weapon: BaseWeapon) -> void:
 	var use_rocket_cursor := weapon != null and weapon.get_weapon_name() == ROCKET_LAUNCHER_WEAPON_NAME
@@ -239,6 +310,21 @@ func _set_cursor_for_weapon(weapon: BaseWeapon) -> void:
 		rocket_cursor.visible = use_rocket_cursor
 		if use_rocket_cursor and not rocket_cursor.is_playing():
 			rocket_cursor.play("default")
+
+func _update_cursor_reload_ring() -> void:
+	if cursor_reload_ring == null:
+		return
+
+	# Hide while the cursor itself is hidden (exit dialog, match end).
+	var ring_active := (
+		cursor != null
+		and cursor.visible
+		and observed_weapon != null
+		and observed_weapon.is_reloading()
+	)
+	cursor_reload_ring.call("set_ring_visible", ring_active)
+	if ring_active:
+		cursor_reload_ring.call("set_progress", observed_weapon.get_reload_progress())
 
 func _create_kill_feed() -> void:
 	kill_feed_layer = CanvasLayer.new()
@@ -456,6 +542,7 @@ func _on_room_joined(message: Dictionary) -> void:
 	remaining_match_seconds = maxf(NetworkClient.get_finite_float(message.get("remainingSeconds", 0.0), 0.0), 0.0)
 	match_has_ended = false
 	player_body.set_match_controls_enabled(true)
+	pending_remote_player_states.clear()
 	_apply_leaderboard_snapshot(message)
 	_apply_local_player_state(message, false)
 	_apply_initial_remote_players(message)
@@ -487,9 +574,10 @@ func _on_player_move_received(message: Dictionary) -> void:
 	if player_id == "" or player_id == local_player_id:
 		return
 
-	_apply_remote_player_state(message)
+	_queue_remote_player_state_message(player_id, message)
 
 func _on_player_left_received(player_id: String) -> void:
+	pending_remote_player_states.erase(player_id)
 	_remove_remote_player(player_id)
 
 func _on_player_angle_received(message: Dictionary) -> void:
@@ -505,7 +593,7 @@ func _on_player_angle_received(message: Dictionary) -> void:
 	if player_id == "" or player_id == local_player_id or not has_angle:
 		return
 
-	_apply_remote_player_state(message)
+	_queue_remote_player_state_message(player_id, message)
 
 func _on_player_weapon_switch_received(message: Dictionary) -> void:
 	if match_has_ended:
@@ -515,7 +603,7 @@ func _on_player_weapon_switch_received(message: Dictionary) -> void:
 	if player_id == "" or player_id == local_player_id:
 		return
 
-	_apply_remote_player_state(message)
+	_queue_remote_player_state_message(player_id, message)
 
 func _on_player_health_received(message: Dictionary) -> void:
 	if match_has_ended:
@@ -529,7 +617,33 @@ func _on_player_health_received(message: Dictionary) -> void:
 		_apply_local_player_state(message, false)
 		return
 
-	_apply_remote_player_state(message)
+	_queue_remote_player_state_message(player_id, message)
+
+func _queue_remote_player_state_message(player_id: String, message: Dictionary) -> void:
+	if player_id == "":
+		return
+
+	var pending_variant: Variant = pending_remote_player_states.get(player_id, {})
+	var merged_message: Dictionary = {}
+	if typeof(pending_variant) == TYPE_DICTIONARY:
+		merged_message = (pending_variant as Dictionary).duplicate(true)
+
+	for key_variant in message.keys():
+		merged_message[key_variant] = message[key_variant]
+
+	pending_remote_player_states[player_id] = merged_message
+
+func _flush_pending_remote_player_states() -> void:
+	if pending_remote_player_states.is_empty() or match_has_ended:
+		return
+
+	for message_variant in pending_remote_player_states.values():
+		if typeof(message_variant) != TYPE_DICTIONARY:
+			continue
+
+		_apply_remote_player_state(message_variant as Dictionary)
+
+	pending_remote_player_states.clear()
 
 func _on_match_ended(message: Dictionary) -> void:
 	var ended_room_id := str(message.get("roomId", message.get("room_id", "")))
@@ -538,6 +652,7 @@ func _on_match_ended(message: Dictionary) -> void:
 
 	match_has_ended = true
 	remaining_match_seconds = 0.0
+	pending_remote_player_states.clear()
 	_apply_leaderboard_snapshot(message)
 	_freeze_match_play()
 	leaderboard_ui.set("tab_visibility_enabled", false)
@@ -568,7 +683,7 @@ func _freeze_match_play() -> void:
 			if remote_body.weapon != null:
 				remote_body.weapon.clear_all_projectiles()
 
-	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
+	_set_mouse_visible(true)
 
 func _schedule_match_end_dashboard_return() -> void:
 	if match_end_exit_scheduled:
@@ -584,11 +699,7 @@ func _auto_return_to_dashboard_after_match_end() -> void:
 	if final_match_summary.is_empty():
 		final_match_summary = _build_match_summary()
 
-	if network_client != null:
-		network_client.send_leave_match()
-
-	_reset_parent_after_exit()
-	_post_exit_game("match_ended", final_match_summary)
+	_exit_to_dashboard("match_ended", final_match_summary)
 
 func _reset_parent_after_exit() -> void:
 	var parent_node := get_parent()

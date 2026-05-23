@@ -25,6 +25,8 @@ const LEADERBOARD_COLUMNS := [
 
 var leaderboard_entries: Array[Dictionary] = []
 var local_player_id: String = ""
+var leaderboard_entries_signature: int = 0
+var leaderboard_rows_refresh_scheduled: bool = false
 
 
 func _ready() -> void:
@@ -45,7 +47,7 @@ func _input(event: InputEvent) -> void:
 
 func set_local_player_id(player_id: String) -> void:
 	local_player_id = player_id
-	_refresh_leaderboard_rows()
+	_schedule_leaderboard_rows_refresh()
 
 
 func set_leaderboard_visible(is_visible: bool) -> void:
@@ -53,17 +55,23 @@ func set_leaderboard_visible(is_visible: bool) -> void:
 
 
 func set_leaderboard_entries(entries: Array) -> void:
-	leaderboard_entries.clear()
+	var normalized_entries: Array[Dictionary] = []
 
 	for entry_variant in entries:
 		# Skip broken server entries instead of crashing the HUD
 		if typeof(entry_variant) != TYPE_DICTIONARY:
 			continue
 
-		leaderboard_entries.append(_normalize_leaderboard_entry(entry_variant as Dictionary))
+		normalized_entries.append(_normalize_leaderboard_entry(entry_variant as Dictionary))
 
-	leaderboard_entries.sort_custom(_sort_leaderboard_entries)
-	_refresh_leaderboard_rows()
+	normalized_entries.sort_custom(_sort_leaderboard_entries)
+	var next_signature := _compute_entries_signature(normalized_entries)
+	var did_change := next_signature != leaderboard_entries_signature
+	leaderboard_entries = normalized_entries
+	leaderboard_entries_signature = next_signature
+
+	if did_change:
+		_schedule_leaderboard_rows_refresh()
 
 
 func apply_server_leaderboard_snapshot(entries: Array) -> void:
@@ -89,17 +97,20 @@ func update_leaderboard_entry(entry: Dictionary) -> void:
 		if str(leaderboard_entries[index].get("player_id", "")) == player_id:
 			leaderboard_entries[index] = normalized_entry
 			leaderboard_entries.sort_custom(_sort_leaderboard_entries)
-			_refresh_leaderboard_rows()
+			leaderboard_entries_signature = _compute_entries_signature(leaderboard_entries)
+			_schedule_leaderboard_rows_refresh()
 			return
 
 	leaderboard_entries.append(normalized_entry)
 	leaderboard_entries.sort_custom(_sort_leaderboard_entries)
-	_refresh_leaderboard_rows()
+	leaderboard_entries_signature = _compute_entries_signature(leaderboard_entries)
+	_schedule_leaderboard_rows_refresh()
 
 
 func clear_leaderboard_entries() -> void:
 	leaderboard_entries.clear()
-	_refresh_leaderboard_rows()
+	leaderboard_entries_signature = 0
+	_schedule_leaderboard_rows_refresh()
 
 
 func _configure_leaderboard_header() -> void:
@@ -128,6 +139,17 @@ func _refresh_leaderboard_rows() -> void:
 	for entry in leaderboard_entries:
 		var row := _create_leaderboard_row(entry)
 		leaderboard_rows_container.add_child(row)
+
+func _schedule_leaderboard_rows_refresh() -> void:
+	if leaderboard_rows_refresh_scheduled:
+		return
+
+	leaderboard_rows_refresh_scheduled = true
+	call_deferred("_flush_leaderboard_rows_refresh")
+
+func _flush_leaderboard_rows_refresh() -> void:
+	leaderboard_rows_refresh_scheduled = false
+	_refresh_leaderboard_rows()
 
 
 func _create_leaderboard_row(entry: Dictionary) -> Control:
@@ -221,3 +243,14 @@ func _sort_leaderboard_entries(left: Dictionary, right: Dictionary) -> bool:
 		return left_deaths < right_deaths
 
 	return str(left.get("player_name", "")) < str(right.get("player_name", ""))
+
+func _compute_entries_signature(entries: Array[Dictionary]) -> int:
+	var signature := 17
+
+	for entry in entries:
+		signature = signature * 31 + hash(str(entry.get("player_id", "")))
+		signature = signature * 31 + int(entry.get("kills", 0))
+		signature = signature * 31 + int(entry.get("deaths", 0))
+		signature = signature * 31 + int(entry.get("score", 0))
+
+	return signature

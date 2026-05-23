@@ -40,6 +40,14 @@ var has_safe_muzzle_position: bool = false
 var safe_muzzle_position: Vector2 = Vector2.ZERO
 var base_gun_scale: Vector2 = Vector2.ONE
 var fire_locked_until_click_released: bool = false
+var muzzle_raycast_cache_valid: bool = false
+var muzzle_raycast_cache_origin: Vector2 = Vector2.INF
+var muzzle_raycast_cache_frame: int = -1
+var muzzle_raycast_cache_gun_position: Vector2 = Vector2.ZERO
+var muzzle_raycast_cache_gun_scale: Vector2 = Vector2.ONE
+var muzzle_raycast_cache_safe_position: Vector2 = Vector2.ZERO
+var muzzle_raycast_cache_has_safe_position: bool = false
+const MUZZLE_RAYCAST_CACHE_EPSILON: float = 0.5
 
 @onready var gun: AnimatedSprite2D = $Gun
 @onready var muzzle_marker: Marker2D = $Gun/Marker2D
@@ -547,6 +555,7 @@ func reset_state() -> void:
 	reload_duration = 0.0
 	reload_pending = false
 	has_safe_muzzle_position = false
+	muzzle_raycast_cache_valid = false
 	current_ammo = get_magazine_size()
 	movement_offset = Vector2.ZERO
 	recoil_offset = Vector2.ZERO
@@ -595,14 +604,42 @@ func angle_to_frame(angle: float) -> int:
 
 func apply_frame_data(frame_index: int) -> void:
 	current_frame_index = frame_index
-	gun.frame = frame_index
+	if gun.frame != frame_index:
+		gun.frame = frame_index
 	gun.scale = base_gun_scale
 	has_safe_muzzle_position = false
 	var config := get_weapon_config()
 	var frame_data: Dictionary = config["frames"][frame_index]
 	gun.position = frame_data["gun_position"]
 	muzzle_marker.position = frame_data["muzzle_offset"]
+	_keep_muzzle_out_of_walls_cached(config, frame_index)
+
+func _keep_muzzle_out_of_walls_cached(config: Dictionary, frame_index: int) -> void:
+	# The raycast result depends on the weapon owner's global position and
+	# the current 8-direction frame. Skip the physics query while neither
+	# changes meaningfully — this is the hot path for every active weapon
+	# in the scene, every frame.
+	var owner_origin := global_position
+	if (
+		muzzle_raycast_cache_valid
+		and muzzle_raycast_cache_frame == frame_index
+		and muzzle_raycast_cache_origin.distance_squared_to(owner_origin) <= MUZZLE_RAYCAST_CACHE_EPSILON * MUZZLE_RAYCAST_CACHE_EPSILON
+	):
+		if muzzle_raycast_cache_has_safe_position:
+			gun.position = muzzle_raycast_cache_gun_position
+			gun.scale = muzzle_raycast_cache_gun_scale
+			has_safe_muzzle_position = true
+			safe_muzzle_position = muzzle_raycast_cache_safe_position
+		return
+
 	keep_muzzle_out_of_walls(config)
+	muzzle_raycast_cache_valid = true
+	muzzle_raycast_cache_frame = frame_index
+	muzzle_raycast_cache_origin = owner_origin
+	muzzle_raycast_cache_has_safe_position = has_safe_muzzle_position
+	muzzle_raycast_cache_gun_position = gun.position
+	muzzle_raycast_cache_gun_scale = gun.scale
+	muzzle_raycast_cache_safe_position = safe_muzzle_position
 
 func get_shot_start_position(config: Dictionary) -> Vector2:
 	if has_safe_muzzle_position:
