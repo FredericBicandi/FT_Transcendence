@@ -13,6 +13,7 @@
 [ext_resource type="Texture2D" uid="uid://dxl8uwerta3sl" path="res://Assets/Textures/Guns/RocketLuncher/positions.png" id="6_ssn77"]
 [ext_resource type="Texture2D" uid="uid://y86casayldp4" path="res://Assets/Textures/Guns/RocketLuncher/fire.png" id="10_0u3w3"]
 [ext_resource type="Script" uid="uid://b1obo84xmbm23" path="res://src/Scripts/Weapons/shotgun.gd" id="10_n6rxv"]
+[ext_resource type="Texture2D" uid="uid://chkavaxo7t14u" path="res://Assets/Textures/Guns/RocketLuncher/smoke.png" id="11_dr4xp"]
 
 [sub_resource type="GDScript" id="GDScript_ssn77"]
 resource_name = "Assult_Riifle"
@@ -500,6 +501,77 @@ animations = [{
 "speed": 30.0
 }]
 
+[sub_resource type="AtlasTexture" id="AtlasTexture_j4qta"]
+atlas = ExtResource("11_dr4xp")
+region = Rect2(0, 0, 1024, 1024)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_obup7"]
+atlas = ExtResource("11_dr4xp")
+region = Rect2(1024, 0, 1024, 1024)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_1uiw2"]
+atlas = ExtResource("11_dr4xp")
+region = Rect2(2048, 0, 1024, 1024)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_4ioa6"]
+atlas = ExtResource("11_dr4xp")
+region = Rect2(0, 1024, 1024, 1024)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_tw68f"]
+atlas = ExtResource("11_dr4xp")
+region = Rect2(1024, 1024, 1024, 1024)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_ivbdm"]
+atlas = ExtResource("11_dr4xp")
+region = Rect2(2048, 1024, 1024, 1024)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_jasqc"]
+atlas = ExtResource("11_dr4xp")
+region = Rect2(0, 2048, 1024, 1024)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_imaq0"]
+atlas = ExtResource("11_dr4xp")
+region = Rect2(1024, 2048, 1024, 1024)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_y6x6y"]
+atlas = ExtResource("11_dr4xp")
+region = Rect2(2048, 2048, 1024, 1024)
+
+[sub_resource type="SpriteFrames" id="SpriteFrames_ou5fp"]
+animations = [{
+"frames": [{
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_j4qta")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_obup7")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_1uiw2")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_4ioa6")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_tw68f")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_ivbdm")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_jasqc")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_imaq0")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_y6x6y")
+}],
+"loop": true,
+"name": &"default",
+"speed": 5.0
+}]
+
 [sub_resource type="AtlasTexture" id="AtlasTexture_g01q4"]
 atlas = ExtResource("4_dr4xp")
 region = Rect2(0, 0, 32, 32)
@@ -639,6 +711,13 @@ visible = false
 position = Vector2(20.720001, -6.5185213)
 scale = Vector2(0.8703125, 0.72048664)
 sprite_frames = SubResource("SpriteFrames_dr4xp")
+
+[node name="smoke" type="AnimatedSprite2D" parent="Rocket_Launcher/Gun/Marker2D" unique_id=1935083612]
+visible = false
+position = Vector2(18.8, 1.6296318)
+scale = Vector2(0.022309562, 0.023566362)
+sprite_frames = SubResource("SpriteFrames_ou5fp")
+frame_progress = 0.30006763
 
 [node name="Shotgun" type="Node2D" parent="." unique_id=2091502575]
 script = ExtResource("10_n6rxv")

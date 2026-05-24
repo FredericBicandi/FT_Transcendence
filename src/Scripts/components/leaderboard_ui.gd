@@ -1,12 +1,13 @@
 extends Node
 
+const Localization = preload("res://src/Scripts/components/localization.gd")
 const LEADERBOARD_GOLD := Color(1, 0.862745, 0.486275, 1)
 const LEADERBOARD_WHITE := Color(1, 1, 1, 1)
 const LEADERBOARD_COLUMNS := [
-	{"key": "player_name", "title": "Player Name", "alignment": HORIZONTAL_ALIGNMENT_LEFT, "width": 340.0},
-	{"key": "kills", "title": "Kills", "alignment": HORIZONTAL_ALIGNMENT_CENTER, "width": 120.0},
-	{"key": "deaths", "title": "Deaths", "alignment": HORIZONTAL_ALIGNMENT_CENTER, "width": 120.0},
-	{"key": "score", "title": "Score", "alignment": HORIZONTAL_ALIGNMENT_CENTER, "width": 120.0}
+	{"key": "player_name", "title_key": "player_name", "alignment": HORIZONTAL_ALIGNMENT_LEFT, "width": 340.0},
+	{"key": "kills", "title_key": "kills", "alignment": HORIZONTAL_ALIGNMENT_CENTER, "width": 120.0},
+	{"key": "deaths", "title_key": "deaths", "alignment": HORIZONTAL_ALIGNMENT_CENTER, "width": 120.0},
+	{"key": "score", "title_key": "score", "alignment": HORIZONTAL_ALIGNMENT_CENTER, "width": 120.0}
 ]
 
 @export var tab_visibility_enabled: bool = true
@@ -16,6 +17,7 @@ const LEADERBOARD_COLUMNS := [
 @onready var leaderboard_overlay: ColorRect = $CanvasLayer/LeaderboardOverlay
 @onready var leaderboard_panel: PanelContainer = $CanvasLayer/LeaderboardOverlay/CenterContainer/LeaderboardPanel
 @onready var leaderboard_rows_container: VBoxContainer = $CanvasLayer/LeaderboardOverlay/CenterContainer/LeaderboardPanel/MarginContainer/VBoxContainer/RowsPanel/RowsMargin/RowsContainer
+@onready var leaderboard_title: Label = $CanvasLayer/LeaderboardOverlay/CenterContainer/LeaderboardPanel/MarginContainer/VBoxContainer/TitleLabel
 @onready var leaderboard_header_labels: Array[Label] = [
 	$CanvasLayer/LeaderboardOverlay/CenterContainer/LeaderboardPanel/MarginContainer/VBoxContainer/HeaderPanel/HeaderMargin/HeaderColumns/PlayerNameHeader,
 	$CanvasLayer/LeaderboardOverlay/CenterContainer/LeaderboardPanel/MarginContainer/VBoxContainer/HeaderPanel/HeaderMargin/HeaderColumns/KillsHeader,
@@ -114,12 +116,14 @@ func clear_leaderboard_entries() -> void:
 
 
 func _configure_leaderboard_header() -> void:
+	if leaderboard_title != null:
+		leaderboard_title.text = Localization.translate("leaderboard")
 	for index in mini(leaderboard_header_labels.size(), LEADERBOARD_COLUMNS.size()):
 		var label := leaderboard_header_labels[index]
 		var column: Dictionary = LEADERBOARD_COLUMNS[index]
 		label.custom_minimum_size = Vector2(float(column["width"]), 0.0)
 		label.size_flags_horizontal = 0
-		label.text = str(column["title"])
+		label.text = Localization.translate(str(column["title_key"]))
 		label.horizontal_alignment = int(column["alignment"])
 
 
@@ -129,7 +133,7 @@ func _refresh_leaderboard_rows() -> void:
 
 	if leaderboard_entries.is_empty():
 		var empty_state := Label.new()
-		empty_state.text = "No players in the leaderboard yet."
+		empty_state.text = Localization.translate("leaderboard_empty")
 		empty_state.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		empty_state.add_theme_color_override("font_color", Color(1, 1, 1, 0.85))
 		empty_state.add_theme_font_size_override("font_size", 18)

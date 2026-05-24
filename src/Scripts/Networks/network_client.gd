@@ -1,6 +1,8 @@
 class_name NetworkClient
 extends Node
 
+const Localization = preload("res://src/Scripts/components/localization.gd")
+
 signal connection_established
 signal connection_failed
 signal connection_lost(reason: String)
@@ -16,6 +18,7 @@ signal player_left_received(player_id: String)
 signal leaderboard_updated(message: Dictionary)
 signal match_left(message: Dictionary)
 signal kill_feed_received(message: Dictionary)
+signal chat_message_received(message: Dictionary)
 signal match_ended(message: Dictionary)
 
 const MAX_LOG_PACKET_CHARS := 240
@@ -29,6 +32,8 @@ const MAX_LOG_PACKET_CHARS := 240
 @export var player_id: String = ""
 @export var player_name: String = "Player"
 @export var player_level: int = 1
+@export var current_xp: int = 0
+@export var language: String = "english"
 
 var socket: WebSocketPeer = WebSocketPeer.new()
 var was_open_last_frame: bool = false
@@ -164,7 +169,9 @@ func send_on_connect() -> void:
 			"type": "on_connect",
 			"playerId": player_id,
 			"playerName": player_name,
-			"level": player_level
+			"level": player_level,
+			"currentXp": current_xp,
+			"language": language
 		}
 	)
 	has_sent_room_reservation_request = true
@@ -299,6 +306,28 @@ func request_leaderboard_update() -> void:
 
 	_send_json(payload)
 
+func send_chat_message(content: String) -> void:
+	if socket.get_ready_state() != WebSocketPeer.STATE_OPEN:
+		return
+
+	var clean_content: String = content.strip_edges()
+	if clean_content == "":
+		return
+
+	var payload := {
+		"request": "message",
+		"playerId": local_player_id if local_player_id != "" else player_id,
+		"playerName": player_name,
+		"content": clean_content,
+		"timestamp": Time.get_ticks_msec()
+	}
+
+	if local_room_id != "":
+		payload["roomId"] = local_room_id
+		payload["room_id"] = local_room_id
+
+	_send_json(payload)
+
 func _handle_state_changes(state: int) -> void:
 	if state == WebSocketPeer.STATE_OPEN and not was_open_last_frame:
 		was_open_last_frame = true
@@ -350,6 +379,11 @@ func _read_packets() -> void:
 func _handle_message(message: Dictionary) -> void:
 	_sanitize_incoming_message(message)
 	var message_type := str(message.get("type", ""))
+	var request_type := str(message.get("request", ""))
+
+	if request_type == "message" or message_type == "message" or message_type == "chat_message":
+		chat_message_received.emit(message)
+		return
 
 	match message_type:
 		"pong":
@@ -551,6 +585,9 @@ func _prepare_player_profile() -> void:
 	player_id = player_id.strip_edges()
 	player_name = player_name.strip_edges()
 	player_level = maxi(player_level, 1)
+	current_xp = maxi(current_xp, 0)
+	language = Localization.normalize_language(language)
+	Localization.set_language(language)
 
 	if player_id == "":
 		player_id = _generate_fallback_player_id()
@@ -632,59 +669,26 @@ func _apply_web_player_profile_overrides() -> void:
 	if not OS.has_feature("web"):
 		return
 
-	var search_variant: Variant = JavaScriptBridge.eval("window.location.search || ''", true)
-	if typeof(search_variant) != TYPE_STRING:
-		return
+	player_id = get_url_param("playerId", player_id)
+	player_name = get_url_param("playerName", player_name)
+	player_level = int(get_url_param("level", str(player_level)))
+	current_xp = int(get_url_param("currentXp", str(current_xp)))
+	language = get_url_param("language", language)
+	Localization.set_language(language)
 
-	var query_params := _parse_query_params(str(search_variant))
-	player_id = _pick_string_query_param(query_params, ["playerId", "player_id", "userId", "user_id", "id"], player_id)
-	player_name = _pick_string_query_param(query_params, ["playerName", "player_name", "username", "name"], player_name)
-	player_level = _pick_int_query_param(query_params, ["level", "playerLevel", "player_level"], player_level)
+func get_url_param(param_name: String, fallback: String = "") -> String:
+	if not OS.has_feature("web"):
+		return fallback
 
-func _parse_query_params(query_string: String) -> Dictionary:
-	var query := query_string.strip_edges()
-	if query.begins_with("?"):
-		query = query.substr(1)
+	var js_code: String = """
+		new URLSearchParams(window.location.search).get("%s") || "%s"
+	""" % [_escape_js_string(param_name), _escape_js_string(fallback)]
 
-	var params: Dictionary = {}
-	for pair_text in query.split("&", false):
-		var pair := pair_text.split("=", true, 1)
-		if pair.size() == 0:
-			continue
+	var value: Variant = JavaScriptBridge.eval(js_code, true)
+	return str(value) if value != null else fallback
 
-		var key := _decode_query_component(pair[0])
-		if key == "":
-			continue
-
-		var value := _decode_query_component(pair[1] if pair.size() > 1 else "")
-		params[key] = value
-
-	return params
-
-func _decode_query_component(value: String) -> String:
-	return value.replace("+", " ").uri_decode()
-
-func _pick_string_query_param(params: Dictionary, keys: Array[String], fallback: String) -> String:
-	for key in keys:
-		if not params.has(key):
-			continue
-
-		var value := str(params[key]).strip_edges()
-		if value != "":
-			return value
-
-	return fallback
-
-func _pick_int_query_param(params: Dictionary, keys: Array[String], fallback: int) -> int:
-	for key in keys:
-		if not params.has(key):
-			continue
-
-		var value := str(params[key]).strip_edges()
-		if value.is_valid_int():
-			return int(value)
-
-	return fallback
+func _escape_js_string(value: String) -> String:
+	return value.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r")
 
 func _generate_fallback_player_id() -> String:
 	var rng := RandomNumberGenerator.new()

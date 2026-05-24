@@ -1,8 +1,15 @@
 extends Node2D
 
+const Localization = preload("res://src/Scripts/components/localization.gd")
 const PLAYER_SCENE: PackedScene = preload("res://src/Objects/player.tscn")
 const DEFAULT_CURSOR_TEXTURE: Texture2D = null
 const KILL_FEED_RIFLE_TEXTURE: Texture2D = preload("res://Assets/Textures/Guns/AFRifle/image.png")
+const KILL_FEED_SNIPER_TEXTURE: Texture2D = preload("res://Assets/Textures/Guns/Sniper/image.png")
+const KILL_FEED_ROCKET_TEXTURE: Texture2D = preload("res://Assets/Textures/Guns/RocketLuncher/image.png")
+const KILL_FEED_SHOTGUN_TEXTURE: Texture2D = preload("res://Assets/Textures/Guns/Shotgun/image.png")
+const CHAT_MESSAGE_SOUND: AudioStream = preload("res://Assets/Audio/new message.mp3")
+const CHAT_MESSAGE_FONT: FontFile = preload("res://Assets/Fonts/dogica.ttf")
+const CHAT_NAME_FONT: FontFile = preload("res://Assets/Fonts/upheavtt.ttf")
 const RESPAWN_LAYER_20_MASK: int = 1 << 19
 const RESPAWN_TILE_SOURCE_ID: int = 10
 const RESPAWN_TILE_ATLAS_COORDS := Vector2i(25, 2)
@@ -15,6 +22,9 @@ const KILL_FEED_MAX_ENTRIES: int = 5
 const KILL_FEED_KILLER_COLOR := Color(0.32, 0.66, 1.0, 1.0)
 const KILL_FEED_KILLED_COLOR := Color(1.0, 0.28, 0.28, 1.0)
 const MATCH_END_LEADERBOARD_SECONDS: float = 8.0
+const CHAT_MAX_MESSAGE_WORDS: int = 50
+const CHAT_REPEATED_CHAR_LIMIT: int = 8
+const CHAT_MESSAGE_LIFETIME: float = 5.0
 
 # Cache scene nodes once so gameplay updates stay cheap
 @onready var map: Node2D = $Map
@@ -46,6 +56,14 @@ var default_cursor: Sprite2D
 var cursor_reload_ring: Node2D
 var kill_feed_layer: CanvasLayer
 var kill_feed_container: VBoxContainer
+var chat_layer: CanvasLayer
+var chat_container: VBoxContainer
+var chat_messages_container: VBoxContainer
+var chat_prompt_label: Label
+var chat_input: LineEdit
+var chat_message_audio_player: AudioStreamPlayer
+var chat_is_open: bool = false
+var chat_controls_enabled_before_open: bool = true
 var match_started_msec: int = 0
 var final_match_summary: Dictionary = {}
 var match_end_exit_scheduled: bool = false
@@ -66,6 +84,7 @@ func _ready() -> void:
 	_create_default_cursor()
 	_create_cursor_reload_ring()
 	weapons.active_weapon_changed.connect(_on_active_weapon_changed)
+	weapon_switcher_ui.call("set_weapons", weapons.get_weapons_in_order())
 	_on_active_weapon_changed(weapons.get_active_weapon())
 	_connect_network_signals()
 	apply_network_snapshot()
@@ -73,6 +92,8 @@ func _ready() -> void:
 	timer_ui.call("set_remaining_seconds", remaining_match_seconds)
 	_set_mouse_visible(false)
 	_create_kill_feed()
+	_create_chat()
+	_create_chat_audio_player()
 	_create_exit_dialog()
 	if match_has_ended:
 		_freeze_match_play()
@@ -92,7 +113,20 @@ func _process(delta: float) -> void:
 	_update_cursor_reload_ring()
 
 func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo and _is_enter_key(event):
+		if chat_is_open:
+			_submit_or_close_chat()
+		else:
+			_open_chat()
+		get_viewport().set_input_as_handled()
+		return
+
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_ESCAPE:
+		if chat_is_open:
+			_close_chat()
+			get_viewport().set_input_as_handled()
+			return
+
 		if match_has_ended:
 			get_viewport().set_input_as_handled()
 			return
@@ -139,13 +173,13 @@ func _create_exit_dialog() -> void:
 	margin.add_child(content)
 
 	var title := Label.new()
-	title.text = "Leave game?"
+	title.text = Localization.translate("leave_game_title")
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.add_theme_font_size_override("font_size", 22)
 	content.add_child(title)
 
 	var body := Label.new()
-	body.text = "Are you sure you want to leave the game?"
+	body.text = Localization.translate("leave_game_body")
 	body.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	content.add_child(body)
@@ -156,13 +190,13 @@ func _create_exit_dialog() -> void:
 	content.add_child(buttons)
 
 	exit_cancel_button = Button.new()
-	exit_cancel_button.text = "Cancel"
+	exit_cancel_button.text = Localization.translate("cancel")
 	exit_cancel_button.custom_minimum_size = Vector2(110.0, 34.0)
 	exit_cancel_button.pressed.connect(_cancel_exit_dialog)
 	buttons.add_child(exit_cancel_button)
 
 	var yes_button := Button.new()
-	yes_button.text = "Yes"
+	yes_button.text = Localization.translate("yes")
 	yes_button.custom_minimum_size = Vector2(110.0, 34.0)
 	yes_button.pressed.connect(_confirm_exit_dialog)
 	buttons.add_child(yes_button)
@@ -348,7 +382,7 @@ func _create_kill_feed() -> void:
 	kill_feed_layer.layer = 30
 	add_child(kill_feed_layer)
 
-	var anchor := Control.new()
+	var anchor: Control = Control.new()
 	anchor.name = "KillFeedAnchor"
 	anchor.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	anchor.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -368,15 +402,292 @@ func _create_kill_feed() -> void:
 	kill_feed_container.add_theme_constant_override("separation", 6)
 	anchor.add_child(kill_feed_container)
 
+func _create_chat() -> void:
+	chat_layer = CanvasLayer.new()
+	chat_layer.name = "ChatLayer"
+	chat_layer.layer = 32
+	add_child(chat_layer)
+
+	var anchor := Control.new()
+	anchor.name = "ChatAnchor"
+	anchor.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	anchor.set_anchors_preset(Control.PRESET_FULL_RECT)
+	chat_layer.add_child(anchor)
+
+	chat_container = VBoxContainer.new()
+	chat_container.name = "ChatContainer"
+	chat_container.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	chat_container.anchor_left = 1.0
+	chat_container.anchor_top = 1.0
+	chat_container.anchor_right = 1.0
+	chat_container.anchor_bottom = 1.0
+	chat_container.offset_left = -414.0
+	chat_container.offset_top = -282.0
+	chat_container.offset_right = -18.0
+	chat_container.offset_bottom = -18.0
+	chat_container.add_theme_constant_override("separation", 5)
+	anchor.add_child(chat_container)
+
+	chat_messages_container = VBoxContainer.new()
+	chat_messages_container.name = "Messages"
+	chat_messages_container.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	chat_messages_container.alignment = BoxContainer.ALIGNMENT_END
+	chat_messages_container.add_theme_constant_override("separation", 4)
+	chat_container.add_child(chat_messages_container)
+
+	chat_prompt_label = Label.new()
+	chat_prompt_label.name = "ChatPrompt"
+	chat_prompt_label.text = "Press Enter to chat"
+	chat_prompt_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	chat_prompt_label.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0, 0.78))
+	chat_prompt_label.add_theme_color_override("font_shadow_color", Color(0.0, 0.0, 0.0, 0.75))
+	chat_prompt_label.add_theme_constant_override("shadow_offset_x", 1)
+	chat_prompt_label.add_theme_constant_override("shadow_offset_y", 1)
+	chat_prompt_label.add_theme_font_size_override("font_size", 13)
+	chat_container.add_child(chat_prompt_label)
+
+	chat_input = LineEdit.new()
+	chat_input.name = "ChatInput"
+	chat_input.visible = false
+	chat_input.placeholder_text = "type chat"
+	chat_input.max_length = 0
+	chat_input.custom_minimum_size = Vector2(0.0, 34.0)
+	chat_input.mouse_filter = Control.MOUSE_FILTER_STOP
+	chat_input.add_theme_font_override("font", CHAT_MESSAGE_FONT)
+	chat_input.add_theme_font_size_override("font_size", 10)
+	chat_input.text_submitted.connect(_on_chat_text_submitted)
+	chat_container.add_child(chat_input)
+
+func _create_chat_audio_player() -> void:
+	chat_message_audio_player = AudioStreamPlayer.new()
+	chat_message_audio_player.name = "ChatMessageAudioPlayer"
+	chat_message_audio_player.stream = CHAT_MESSAGE_SOUND
+	add_child(chat_message_audio_player)
+
+func _open_chat() -> void:
+	if chat_input == null or match_has_ended:
+		return
+
+	chat_is_open = true
+	chat_controls_enabled_before_open = bool(player_body.match_controls_enabled) if player_body != null else true
+	if player_body != null:
+		player_body.set_match_controls_enabled(false)
+	if weapons != null:
+		weapons.set_input_enabled(false)
+
+	chat_input.text = ""
+	chat_input.visible = true
+	if chat_prompt_label != null:
+		chat_prompt_label.visible = false
+	chat_input.grab_focus()
+	_set_mouse_visible(true)
+
+func _submit_or_close_chat() -> void:
+	if chat_input == null:
+		return
+
+	var clean_message: String = _sanitize_chat_message(chat_input.text)
+	if clean_message != "":
+		_send_chat_message(clean_message)
+
+	_close_chat()
+
+func _close_chat() -> void:
+	if chat_input == null:
+		return
+
+	chat_is_open = false
+	chat_input.text = ""
+	chat_input.visible = false
+	if chat_prompt_label != null:
+		chat_prompt_label.visible = not match_has_ended
+	chat_input.release_focus()
+	if player_body != null:
+		player_body.set_match_controls_enabled(chat_controls_enabled_before_open and not match_has_ended)
+	if weapons != null:
+		weapons.set_input_enabled(chat_controls_enabled_before_open and not match_has_ended)
+	_set_mouse_visible(false)
+
+func _on_chat_text_submitted(_submitted_text: String) -> void:
+	_submit_or_close_chat()
+
+func _send_chat_message(clean_message: String) -> void:
+	var sender_id: String = local_player_id
+	var sender_name: String = network_client.player_name if network_client != null else "Player"
+	if sender_name.strip_edges() == "":
+		sender_name = "Player"
+
+	if network_client != null:
+		network_client.send_chat_message(clean_message)
+
+	_show_chat_message(sender_id, sender_name, clean_message)
+	_play_chat_message_sound()
+
+func _on_chat_message_received(message: Dictionary) -> void:
+	var content: String = _sanitize_chat_message(str(message.get("content", message.get("message", message.get("text", "")))))
+	if content == "":
+		return
+
+	var sender_id: String = str(message.get("playerId", message.get("player_id", message.get("id", "")))).strip_edges()
+	if sender_id != "" and sender_id == local_player_id:
+		return
+
+	var sender_name: String = str(message.get("playerName", message.get("player_name", message.get("name", "Player")))).strip_edges()
+	if sender_name == "":
+		sender_name = "Player"
+
+	_show_chat_message(sender_id, sender_name, content)
+	_play_chat_message_sound()
+
+func _show_chat_message(sender_id: String, sender_name: String, content: String) -> void:
+	if chat_messages_container == null:
+		return
+
+	var row: PanelContainer = PanelContainer.new()
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.modulate.a = 0.0
+	row.add_theme_stylebox_override("panel", _create_chat_message_style())
+
+	var margin: MarginContainer = MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 8)
+	margin.add_theme_constant_override("margin_top", 4)
+	margin.add_theme_constant_override("margin_right", 8)
+	margin.add_theme_constant_override("margin_bottom", 4)
+	row.add_child(margin)
+
+	var layout: HBoxContainer = HBoxContainer.new()
+	layout.add_theme_constant_override("separation", 5)
+	margin.add_child(layout)
+
+	var name_color: Color = _get_chat_name_color(sender_id if sender_id != "" else sender_name)
+	var name_label: Label = Label.new()
+	name_label.text = "%s:" % sender_name
+	name_label.add_theme_color_override("font_color", name_color)
+	name_label.add_theme_font_override("font", CHAT_NAME_FONT)
+	name_label.add_theme_font_size_override("font_size", 14)
+	name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	layout.add_child(name_label)
+
+	var content_label: Label = Label.new()
+	content_label.text = content
+	content_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	content_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	content_label.add_theme_color_override("font_color", Color(0.96, 0.98, 1.0, 1.0))
+	content_label.add_theme_font_override("font", CHAT_MESSAGE_FONT)
+	content_label.add_theme_font_size_override("font_size", 10)
+	content_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	layout.add_child(content_label)
+
+	chat_messages_container.add_child(row)
+
+	var fade_in: Tween = create_tween()
+	fade_in.tween_property(row, "modulate:a", 1.0, 0.08)
+	get_tree().create_timer(CHAT_MESSAGE_LIFETIME).timeout.connect(_expire_chat_message.bind(row))
+
+func _expire_chat_message(row: Control) -> void:
+	if row == null or not is_instance_valid(row):
+		return
+
+	var fade_out: Tween = create_tween()
+	fade_out.tween_property(row, "modulate:a", 0.0, 0.18)
+	fade_out.finished.connect(row.queue_free)
+
+func _play_chat_message_sound() -> void:
+	if chat_message_audio_player == null:
+		return
+
+	chat_message_audio_player.stop()
+	chat_message_audio_player.play()
+
+func _create_chat_message_style() -> StyleBoxFlat:
+	var style: StyleBoxFlat = StyleBoxFlat.new()
+	style.bg_color = Color(0.12, 0.13, 0.14, 0.72)
+	style.border_color = Color(1.0, 1.0, 1.0, 0.08)
+	style.border_width_left = 1
+	style.border_width_top = 1
+	style.border_width_right = 1
+	style.border_width_bottom = 1
+	style.corner_radius_top_left = 4
+	style.corner_radius_top_right = 4
+	style.corner_radius_bottom_right = 4
+	style.corner_radius_bottom_left = 4
+	return style
+
+func _sanitize_chat_message(message: String) -> String:
+	var collapsed: String = " ".join(message.strip_edges().split(" ", false))
+	var result: String = ""
+	var previous_code: int = -1
+	var repeat_count: int = 0
+
+	for index in collapsed.length():
+		var code: int = collapsed.unicode_at(index)
+		if not _is_allowed_chat_codepoint(code):
+			continue
+
+		if code == previous_code:
+			repeat_count += 1
+			if repeat_count > CHAT_REPEATED_CHAR_LIMIT:
+				continue
+		else:
+			previous_code = code
+			repeat_count = 1
+
+		result += String.chr(code)
+
+	var words: PackedStringArray = result.strip_edges().split(" ", false)
+	var limited_words: PackedStringArray = PackedStringArray()
+	for word_variant in words:
+		limited_words.append(str(word_variant))
+		if limited_words.size() >= CHAT_MAX_MESSAGE_WORDS:
+			break
+
+	return " ".join(limited_words).strip_edges()
+
+func _is_allowed_chat_codepoint(code: int) -> bool:
+	if code == 32:
+		return true
+	if code < 32 or code == 127:
+		return false
+	if code >= 0x0600 and code <= 0x06FF:
+		return true
+	if code >= 0x0750 and code <= 0x077F:
+		return true
+	if code >= 0x08A0 and code <= 0x08FF:
+		return true
+	if code >= 0xFB50 and code <= 0xFDFF:
+		return true
+	if code >= 0xFE70 and code <= 0xFEFF:
+		return true
+	if code >= 33 and code <= 126:
+		return true
+
+	return false
+
+func _escape_chat_bbcode(text: String) -> String:
+	return text.replace("[", "(").replace("]", ")")
+
+func _get_chat_name_color(seed_text: String) -> Color:
+	var hash_value: int = 0
+	for index in seed_text.length():
+		hash_value = int(posmod(hash_value * 31 + seed_text.unicode_at(index), 360))
+
+	var hue := float(hash_value) / 360.0
+	return Color.from_hsv(hue, 0.65, 0.95)
+
+func _is_enter_key(event: InputEventKey) -> bool:
+	return event.keycode == KEY_ENTER or event.keycode == KEY_KP_ENTER
+
 func _on_kill_feed_received(message: Dictionary) -> void:
-	var killer_name := _pick_kill_feed_name(message, ["killer", "killerName", "killer_name", "attacker", "attackerName"], "Unknown")
-	var killed_name := _pick_kill_feed_name(message, ["killed", "killedName", "killed_name", "victim", "victimName"], "Unknown")
+	var killer_name: String = _pick_kill_feed_name(message, ["killer", "killerName", "killer_name", "attacker", "attackerName"], "Unknown")
+	var killed_name: String = _pick_kill_feed_name(message, ["killed", "killedName", "killed_name", "victim", "victimName"], "Unknown")
 	if killer_name == "" or killed_name == "":
 		return
 
-	_show_kill_feed_entry(killer_name, killed_name)
+	var weapon_type: String = _pick_kill_feed_weapon_type(message)
+	var is_self_kill: bool = _is_kill_feed_self_kill(message, killer_name, killed_name)
+	_show_kill_feed_entry(killer_name, killed_name, weapon_type, is_self_kill)
 
-func _show_kill_feed_entry(killer_name: String, killed_name: String) -> void:
+func _show_kill_feed_entry(killer_name: String, killed_name: String, weapon_type: String, is_self_kill: bool) -> void:
 	if kill_feed_container == null:
 		return
 
@@ -401,15 +712,22 @@ func _show_kill_feed_entry(killer_name: String, killed_name: String) -> void:
 	var killer_label := _create_kill_feed_label(killer_name, KILL_FEED_KILLER_COLOR, HORIZONTAL_ALIGNMENT_RIGHT)
 	columns.add_child(killer_label)
 
-	var icon := TextureRect.new()
-	icon.texture = KILL_FEED_RIFLE_TEXTURE
-	icon.custom_minimum_size = Vector2(28.0, 18.0)
-	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	columns.add_child(icon)
+	if is_self_kill:
+		var skull_label: Label = _create_kill_feed_label("☠", Color(0.92, 0.95, 1.0, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
+		skull_label.custom_minimum_size = Vector2(28.0, 0.0)
+		skull_label.add_theme_font_size_override("font_size", 18)
+		columns.add_child(skull_label)
+	else:
+		var icon := TextureRect.new()
+		icon.texture = _get_kill_feed_weapon_texture(weapon_type)
+		icon.custom_minimum_size = Vector2(38.0, 22.0)
+		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		columns.add_child(icon)
 
-	var killed_label := _create_kill_feed_label(killed_name, KILL_FEED_KILLED_COLOR, HORIZONTAL_ALIGNMENT_LEFT)
-	columns.add_child(killed_label)
+	if not is_self_kill:
+		var killed_label := _create_kill_feed_label(killed_name, KILL_FEED_KILLED_COLOR, HORIZONTAL_ALIGNMENT_LEFT)
+		columns.add_child(killed_label)
 
 	kill_feed_container.add_child(row)
 	kill_feed_container.move_child(row, 0)
@@ -470,6 +788,43 @@ func _pick_kill_feed_name(message: Dictionary, keys: Array[String], fallback: St
 
 	return fallback
 
+func _pick_kill_feed_weapon_type(message: Dictionary) -> String:
+	for key in ["weaponType", "weapon", "weapon_type", "weaponId", "weapon_id", "weaponHolding", "sourceWeapon", "sourceWeaponType", "killingWeapon", "cause"]:
+		if not message.has(key):
+			continue
+
+		var value: String = str(message[key]).strip_edges()
+		if value != "":
+			return value
+
+	return ""
+
+func _is_kill_feed_self_kill(message: Dictionary, killer_name: String, killed_name: String) -> bool:
+	if bool(message.get("selfKill", message.get("suicide", false))):
+		return true
+
+	var killer_id: String = _pick_kill_feed_name(message, ["killerId", "killer_id", "attackerId", "attacker_id", "sourcePlayerId"], "")
+	var killed_id: String = _pick_kill_feed_name(message, ["killedId", "killed_id", "victimId", "victim_id", "targetPlayerId"], "")
+	if killer_id != "" and killed_id != "":
+		return killer_id == killed_id
+
+	return killer_name.strip_edges() != "" and killer_name == killed_name
+
+func _get_kill_feed_weapon_texture(weapon_type: String) -> Texture2D:
+	var normalized: String = weapon_type.strip_edges().to_lower().replace("_", " ").replace("-", " ")
+	normalized = " ".join(normalized.split(" ", false))
+	match normalized:
+		"sniper", "sniper rifle":
+			return KILL_FEED_SNIPER_TEXTURE
+		"rocket launcher", "rocket", "rpg":
+			return KILL_FEED_ROCKET_TEXTURE
+		"shotgun":
+			return KILL_FEED_SHOTGUN_TEXTURE
+		"assult rifle", "assault rifle", "rifle", "ar":
+			return KILL_FEED_RIFLE_TEXTURE
+
+	return KILL_FEED_RIFLE_TEXTURE
+
 func _on_active_weapon_changed(weapon: BaseWeapon) -> void:
 	# Stop listening to the old weapon before tracking the new one
 	if observed_weapon != null and observed_weapon.ammo_changed.is_connected(_on_ammo_changed):
@@ -523,6 +878,9 @@ func _connect_network_signals() -> void:
 
 	if not network_client.kill_feed_received.is_connected(_on_kill_feed_received):
 		network_client.kill_feed_received.connect(_on_kill_feed_received)
+
+	if not network_client.chat_message_received.is_connected(_on_chat_message_received):
+		network_client.chat_message_received.connect(_on_chat_message_received)
 
 	if not network_client.match_ended.is_connected(_on_match_ended):
 		network_client.match_ended.connect(_on_match_ended)
@@ -917,7 +1275,7 @@ func _apply_remote_player_state(message: Dictionary) -> void:
 	if remote_body == null and not has_position:
 		return
 
-	var remote_display_name := network_client.get_player_display_name(message, player_id) if network_client != null else ""
+	var remote_display_name: String = network_client.get_player_display_name(message, player_id) if network_client != null else ""
 	if remote_body == null:
 		remote_body = _get_or_create_remote_player(player_id, remote_display_name)
 	if remote_body == null:

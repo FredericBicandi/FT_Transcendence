@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cdcdnblpoup5l"
-path="res://.godot/imported/crosshair.png-bf544ba2961265a434a977f34ef022e4.ctex"
+uid="uid://chkavaxo7t14u"
+path="res://.godot/imported/smoke.png-5dbeec763eced87f5ed03583f9b48596.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://Assets/Textures/Guns/Shotgun/crosshair.png"
-dest_files=["res://.godot/imported/crosshair.png-bf544ba2961265a434a977f34ef022e4.ctex"]
+source_file="res://Assets/Textures/Guns/RocketLuncher/smoke.png"
+dest_files=["res://.godot/imported/smoke.png-5dbeec763eced87f5ed03583f9b48596.ctex"]
 
 [params]
 

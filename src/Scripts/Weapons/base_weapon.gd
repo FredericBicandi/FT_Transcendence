@@ -434,10 +434,11 @@ func apply_explosion_damage(center: Vector2, radius: float, max_damage: int, dir
 	if radius <= 0.0 or max_damage <= 0:
 		return
 
-	var owner_body := find_owner_body()
-	var explosion_shot_id := _create_owner_shot_id(owner_body)
-	for target in _collect_explosion_targets(center, radius, direct_target):
-		if target == owner_body:
+	var owner_body: CollisionObject2D = find_owner_body()
+	var damages_owner: bool = bool(get_weapon_config().get("explosion_damages_owner", false))
+	var explosion_shot_id: String = _create_owner_shot_id(owner_body)
+	for target in _collect_explosion_targets(center, radius, direct_target, damages_owner):
+		if target == owner_body and not damages_owner:
 			continue
 
 		var damage := _get_explosion_damage_for_target(center, radius, max_damage, target, direct_target)
@@ -450,10 +451,23 @@ func apply_explosion_damage(center: Vector2, radius: float, max_damage: int, dir
 
 		target.call("apply_damage", damage, center, self)
 
-func _collect_explosion_targets(center: Vector2, radius: float, direct_target: Node = null) -> Array[Node]:
+func _collect_explosion_targets(center: Vector2, radius: float, direct_target: Node = null, include_owner: bool = false) -> Array[Node]:
 	var targets: Array[Node] = []
 	if direct_target != null and direct_target.has_method("apply_damage"):
 		targets.append(direct_target)
+
+	if include_owner:
+		var owner_body: CollisionObject2D = find_owner_body()
+		var owner_target: Node = _resolve_damage_target(owner_body)
+		var owner_node: Node2D = owner_target as Node2D
+		if (
+			owner_target != null
+			and not targets.has(owner_target)
+			and owner_node != null
+			and not bool(owner_target.get("is_dead"))
+			and owner_node.global_position.distance_to(center) <= radius
+		):
+			targets.append(owner_target)
 
 	for candidate in get_tree().get_nodes_in_group(DAMAGEABLE_PLAYER_GROUP):
 		var target := _resolve_damage_target(candidate)

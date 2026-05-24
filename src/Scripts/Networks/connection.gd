@@ -1,5 +1,6 @@
 extends Node
 
+const Localization = preload("res://src/Scripts/components/localization.gd")
 const GAME_SCENE: PackedScene = preload("res://src/Scenes/game.tscn")
 const PLAYER_SCENE: PackedScene = preload("res://src/Objects/player.tscn")
 const LOBBY_URL: String = "https://pixelfight.live/"
@@ -24,6 +25,9 @@ var preview_remote_players: Dictionary = {}
 var lobby_leaderboard_refresh_elapsed: float = 0.0
 
 func _ready() -> void:
+	Localization.apply_url_language()
+	network_client.language = Localization.get_language()
+	_apply_localized_static_text()
 	network_client.connection_established.connect(_on_connection_established)
 	network_client.connection_failed.connect(_on_connection_failed)
 	network_client.connection_lost.connect(_on_connection_lost)
@@ -41,7 +45,7 @@ func _ready() -> void:
 	join_button.pressed.connect(_on_join_button_pressed)
 	dashboard_button.pressed.connect(_on_dashboard_button_pressed)
 
-	_begin_connection_attempt("Connecting to multiplayer server...")
+	_begin_connection_attempt(Localization.translate("connecting_server"))
 
 func _process(delta: float) -> void:
 	if has_started_game or is_returning_to_lobby or not is_room_ready:
@@ -69,13 +73,13 @@ func _begin_connection_attempt(status_text: String) -> void:
 	_set_room_ready_ui_visible(false)
 	var error := network_client.connect_to_server()
 	if error != OK:
-		_set_status_text("Connection failed. Check the server URL and try again.")
+		_set_status_text(Localization.translate("connection_failed"))
 
 func _on_connection_established() -> void:
 	if has_started_game:
 		return
 
-	_set_status_text("Connected. Reserving a room...")
+	_set_status_text(Localization.translate("connected_reserving"))
 	_set_room_ready_ui_visible(false)
 
 func _on_room_ready(message: Dictionary) -> void:
@@ -90,7 +94,7 @@ func _on_room_ready(message: Dictionary) -> void:
 	else:
 		local_player_id = str(message.get("playerId", message.get("id", "")))
 
-	_set_status_text("Room reserved.")
+	_set_status_text(Localization.translate("room_reserved"))
 	_apply_leaderboard_snapshot(message)
 	network_client.request_leaderboard_update()
 	_apply_initial_preview_players(message)
@@ -112,7 +116,7 @@ func _on_leaderboard_updated(message: Dictionary) -> void:
 func _on_connection_failed() -> void:
 	has_started_game = false
 	is_room_ready = false
-	_set_status_text("Connection failed. Check the server URL and try again.")
+	_set_status_text(Localization.translate("connection_failed"))
 	$CanvasLayer.visible = true
 	_show_lobby_cursor()
 	_set_room_ready_ui_visible(false)
@@ -130,7 +134,7 @@ func _on_connection_lost(reason: String) -> void:
 	is_room_ready = false
 	local_player_id = ""
 	_clear_preview_remote_players()
-	_begin_connection_attempt("%s Reconnecting..." % reason)
+	_begin_connection_attempt(Localization.translate("reconnecting") % reason)
 
 func _on_match_ended(_message: Dictionary) -> void:
 	if has_started_game and game_instance != null and is_instance_valid(game_instance):
@@ -155,7 +159,7 @@ func _on_dashboard_button_pressed() -> void:
 
 func _start_game() -> void:
 	has_started_game = true
-	_set_status_text("Joining match...")
+	_set_status_text(Localization.translate("joining_match"))
 	_set_room_ready_ui_visible(false)
 	_set_background_visible(false)
 	_clear_preview_remote_players()
@@ -180,6 +184,14 @@ func _show_lobby_cursor() -> void:
 
 func _set_status_text(status_text: String) -> void:
 	status_label.text = status_text
+
+func _apply_localized_static_text() -> void:
+	var title_label := $CanvasLayer/Overlay/CenterContainer/PanelContainer/MarginContainer/VBoxContainer/TitleLabel as Label
+	if title_label != null:
+		title_label.text = Localization.translate("connection_title")
+	status_label.text = Localization.translate("connecting")
+	join_button.text = Localization.translate("join")
+	dashboard_button.text = Localization.translate("dashboard")
 
 func _set_background_visible(is_visible: bool) -> void:
 	background_map.visible = is_visible
@@ -418,7 +430,7 @@ func _disconnect_multiplayer() -> void:
 
 func _reset_to_menu_or_lobby_state() -> void:
 	_set_background_visible(true)
-	_set_status_text("Disconnected.")
+	_set_status_text(Localization.translate("disconnected"))
 	$CanvasLayer.visible = true
 	_show_lobby_cursor()
 
@@ -434,7 +446,7 @@ func _reset_after_match_exit() -> void:
 	_clear_preview_remote_players()
 	_set_background_visible(true)
 	_set_room_ready_ui_visible(false)
-	_set_status_text("Connected.")
+	_set_status_text(Localization.translate("connected"))
 	$CanvasLayer.visible = true
 	_show_lobby_cursor()
 
