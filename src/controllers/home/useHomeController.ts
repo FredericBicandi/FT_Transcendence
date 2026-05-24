@@ -83,6 +83,7 @@ function isExitGameMessage(value: unknown) {
 }
 
 export function useHomeController() {
+  const gameWindowRef = useRef<Window | null>(null);
   const isMountedRef = useRef(true);
   const profileRequestIdRef = useRef(0);
   const [onlineCount, setOnlineCount] = useState(0);
@@ -208,6 +209,7 @@ export function useHomeController() {
     function handleGameMessage(event: MessageEvent<unknown>) {
       if (
         event.origin === window.location.origin &&
+        event.source === gameWindowRef.current &&
         isExitGameMessage(event.data)
       ) {
         setShowGame(false);
@@ -219,6 +221,10 @@ export function useHomeController() {
     return () => {
       window.removeEventListener("message", handleGameMessage);
     };
+  }, []);
+
+  const registerGameWindow = useCallback((gameWindow: Window | null) => {
+    gameWindowRef.current = gameWindow;
   }, []);
 
   const gameUrl = playerProfile
@@ -237,6 +243,7 @@ export function useHomeController() {
     onlineCount,
     playerProfile,
     refreshPlayerProfile,
+    registerGameWindow,
     showGame,
     signOut: async () => {
       const supabase = createSupabaseClient();

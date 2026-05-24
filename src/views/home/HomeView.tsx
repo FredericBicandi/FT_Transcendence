@@ -32,6 +32,7 @@ export function HomeView() {
     onlineCount,
     playerProfile,
     refreshPlayerProfile,
+    registerGameWindow,
     signOut,
     showGame,
     playGame,
@@ -148,11 +149,14 @@ export function HomeView() {
         />
       )}
 
-      {showGame && gameUrl && (
+      {gameUrl && !needsUsernameSetup && (
         <iframe
           title="PixelFight game"
+          ref={(frame) => registerGameWindow(frame?.contentWindow ?? null)}
           src={gameUrl}
-          className="relative z-20 h-full w-full border-0"
+          className={`absolute inset-0 z-20 h-full w-full border-0 ${
+            showGame ? "visible" : "invisible pointer-events-none"
+          }`}
         />
       )}
     </main>
