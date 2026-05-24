@@ -22,6 +22,7 @@ public sealed class Ws
     private const int MaxShotIdLength = 128;
     private const int MaxPlayerIdLength = 128;
     private const int MaxPlayerNameLength = 64;
+    private const int MaxChatContentLength = 300;
     private const int MinPlayerLevel = 0;
     private const int MaxPlayerLevel = 1000;
     private const double DefaultPlayerHealth = 100.0;
@@ -31,7 +32,19 @@ public sealed class Ws
     private const double MaxHitDamage = DefaultPlayerHealth;
     private const double MinRocketLauncherDamage = 1.0;
     private const double MaxRocketLauncherDamage = 80.0;
+    private const string AssultRifleWeaponType = "Assult rifle";
+    private const string SniperWeaponType = "Sniper";
     private const string RocketLauncherWeaponType = "Rocket Launcher";
+    private const string ShotgunWeaponType = "Shotgun";
+
+    private static readonly IReadOnlyDictionary<string, string> AcceptedWeaponTypes =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            [AssultRifleWeaponType] = AssultRifleWeaponType,
+            [SniperWeaponType] = SniperWeaponType,
+            [RocketLauncherWeaponType] = RocketLauncherWeaponType,
+            [ShotgunWeaponType] = ShotgunWeaponType
+        };
 
     private static readonly IReadOnlyDictionary<string, double> ServerWeaponDamage =
         new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
@@ -488,14 +501,12 @@ public sealed class Ws
         {
             var root = document.RootElement;
 
-            if (!root.TryGetProperty("type", out var typeElement) ||
-                typeElement.ValueKind != JsonValueKind.String)
+            if (!TryReadMessageKind(root, out var type))
             {
                 Console.WriteLine($"Message missing type from {client.LogId}: {message}");
                 return;
             }
 
-            var type = typeElement.GetString();
             if (type == "on_connect")
             {
                 if (!TryReadConnect(root, message, client.LogId, out var playerId, out var playerName, out var level))
@@ -630,6 +641,21 @@ public sealed class Ws
                     roomId = client.RoomId,
                     leaderboard = room.LeaderboardSnapshot()
                 });
+
+                return;
+            }
+
+            if (type == "message" || type == "chat_message")
+            {
+                if (!await RequireActiveJoinedAsync(client, type, message))
+                    return;
+
+                if (!TryReadChatMessage(root, message, client, out var chat))
+                    return;
+
+                client.MarkHeartbeat();
+
+                await BroadcastToRoomAsync(client.RoomId, chat.ToPayload(client.RoomId));
 
                 return;
             }
@@ -998,7 +1024,10 @@ public sealed class Ws
             return;
         }
 
-        if (hit.TargetPlayerId == shooter.PlayerId)
+        var isSelfHit = hit.TargetPlayerId == shooter.PlayerId;
+        var isRocket = IsRocketLauncher(hit.WeaponType);
+
+        if (isSelfHit && !isRocket)
         {
             Console.WriteLine($"Rejected self-hit from {shooter.PlayerId}");
             return;
@@ -1019,10 +1048,13 @@ public sealed class Ws
 
         var damage = ResolveDamage(hit.WeaponType, hit.Damage);
         var result = target.ApplyDamage(damage);
-        var shouldUpdateLeaderboard = result.Damage > 0;
+        var isSelfKill = isSelfHit && result.IsDead;
+        var shouldUpdateLeaderboard = result.Damage > 0 && !isSelfHit;
 
         if (shouldUpdateLeaderboard)
             room.RecordHit(shooter.PlayerId, target.PlayerId, result.Damage, result.IsDead);
+        else if (isSelfKill)
+            room.RecordDeath(target.PlayerId);
 
         await BroadcastToRoomAsync(shooter.RoomId, new
         {
@@ -1040,12 +1072,18 @@ public sealed class Ws
             await BroadcastToRoomAsync(room, new
             {
                 type = "kill_feed",
+                killerId = shooter.PlayerId,
+                killerName = shooter.PlayerName,
+                victimId = target.PlayerId,
+                victimName = target.PlayerName,
+                weaponType = hit.WeaponType,
+                selfKill = isSelfKill,
                 killer = shooter.PlayerName,
                 killed = target.PlayerName
             });
         }
 
-        if (shouldUpdateLeaderboard)
+        if (shouldUpdateLeaderboard || isSelfKill)
         {
             await BroadcastToRoomAsync(room, new
             {
@@ -1295,6 +1333,74 @@ public sealed class Ws
         Helper.TryGetString(root, "roomId", out roomId) ||
         Helper.TryGetString(root, "room_id", out roomId);
 
+    private static bool TryReadMessageKind(JsonElement root, out string type) =>
+        Helper.TryGetString(root, "type", out type) ||
+        Helper.TryGetString(root, "request", out type);
+
+    private static bool TryReadChatMessage(
+        JsonElement root,
+        string message,
+        ClientConnection client,
+        out ChatMessage chat)
+    {
+        chat = default;
+
+        if (!Helper.TryGetString(root, "playerId", out var playerId) ||
+            playerId.Length > MaxPlayerIdLength ||
+            playerId != client.PlayerId)
+        {
+            Console.WriteLine($"Invalid chat player id from {client.LogId}: {message}");
+            return false;
+        }
+
+        if (TryReadRoomId(root, out var roomId) && roomId != client.RoomId)
+        {
+            Console.WriteLine($"Invalid chat room id from {client.LogId}: {message}");
+            return false;
+        }
+
+        if (!Helper.TryGetString(root, "content", out var content))
+        {
+            Console.WriteLine($"Invalid chat content from {client.LogId}: {message}");
+            return false;
+        }
+
+        if (content.Length > MaxChatContentLength)
+        {
+            Console.WriteLine($"Chat content too long from {client.LogId}: {message}");
+            return false;
+        }
+
+        object? timestamp = null;
+        if (root.TryGetProperty("timestamp", out var timestampElement))
+        {
+            if (timestampElement.ValueKind == JsonValueKind.Number)
+            {
+                if (timestampElement.TryGetInt64(out var longTimestamp))
+                    timestamp = longTimestamp;
+                else if (timestampElement.TryGetDouble(out var doubleTimestamp))
+                    timestamp = doubleTimestamp;
+                else
+                {
+                    Console.WriteLine($"Invalid chat timestamp from {client.LogId}: {message}");
+                    return false;
+                }
+            }
+            else if (timestampElement.ValueKind == JsonValueKind.String)
+            {
+                timestamp = timestampElement.GetString();
+            }
+            else
+            {
+                Console.WriteLine($"Invalid chat timestamp from {client.LogId}: {message}");
+                return false;
+            }
+        }
+
+        chat = new ChatMessage(client.PlayerId, client.PlayerName, content, timestamp);
+        return true;
+    }
+
     private static bool TryReadInt(JsonElement root, string propertyName, out int value)
     {
         value = default;
@@ -1411,6 +1517,13 @@ public sealed class Ws
             return false;
         }
 
+        if (!AcceptedWeaponTypes.TryGetValue(weapon, out var canonicalWeapon))
+        {
+            Console.WriteLine($"Unsupported {messageType} weapon from {playerId}: {message}");
+            return false;
+        }
+
+        weapon = canonicalWeapon;
         return true;
     }
 
@@ -1683,6 +1796,15 @@ public sealed class GameRoom
         );
     }
 
+    public void RecordDeath(string targetPlayerId)
+    {
+        leaderboard.AddOrUpdate(
+            targetPlayerId,
+            LeaderboardEntry.Empty(targetPlayerId).WithDeath(),
+            (_, entry) => entry.WithDeath()
+        );
+    }
+
     public bool MarkEnded()
     {
         lock (syncRoot)
@@ -1720,6 +1842,32 @@ public readonly record struct ShootRequest(
     double? StartY,
     double? TargetX,
     double? TargetY);
+
+public readonly record struct ChatMessage(
+    string PlayerId,
+    string PlayerName,
+    string Content,
+    object? Timestamp)
+{
+    public Dictionary<string, object> ToPayload(string roomId)
+    {
+        var payload = new Dictionary<string, object>
+        {
+            ["request"] = "message",
+            ["type"] = "chat_message",
+            ["playerId"] = PlayerId,
+            ["playerName"] = PlayerName,
+            ["content"] = Content,
+            ["roomId"] = roomId,
+            ["room_id"] = roomId
+        };
+
+        if (Timestamp is not null)
+            payload["timestamp"] = Timestamp;
+
+        return payload;
+    }
+}
 
 public readonly record struct ShotTargetKey(string ShotId, string TargetPlayerId);
 
