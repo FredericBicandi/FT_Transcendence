@@ -12,6 +12,10 @@ const ONLINE_PLAYERS_URL = "https://pixelfight.live/online";
 const ONLINE_PLAYERS_POLL_INTERVAL_MS = 3_000;
 const EXIT_GAME_MESSAGE_TYPE = "EXIT_GAME";
 
+type HomeControllerOptions = {
+  language: string;
+};
+
 function readOnlineCount(value: unknown): number | null {
   if (typeof value === "number") {
     return Number.isFinite(value) && value >= 0 ? Math.floor(value) : null;
@@ -82,7 +86,14 @@ function isExitGameMessage(value: unknown) {
   );
 }
 
-export function useHomeController() {
+function createGameUrl(playerProfile: PlayerProfile, language: string) {
+  const searchParams = createPlayerProfileSearchParams(playerProfile);
+  searchParams.set("language", language);
+
+  return `/Game/index.html?${searchParams.toString()}`;
+}
+
+export function useHomeController({ language }: HomeControllerOptions) {
   const gameWindowRef = useRef<Window | null>(null);
   const isMountedRef = useRef(true);
   const profileRequestIdRef = useRef(0);
@@ -227,11 +238,7 @@ export function useHomeController() {
     gameWindowRef.current = gameWindow;
   }, []);
 
-  const gameUrl = playerProfile
-    ? `/Game/index.html?${createPlayerProfileSearchParams(
-        playerProfile,
-      ).toString()}`
-    : null;
+  const gameUrl = playerProfile ? createGameUrl(playerProfile, language) : null;
   const canPlayGame =
     !isPlayerProfileLoading &&
     gameUrl !== null &&

@@ -36,7 +36,7 @@ export function HomeView() {
     signOut,
     showGame,
     playGame,
-  } = useHomeController();
+  } = useHomeController({ language });
   const needsUsernameSetup =
     !isPlayerProfileLoading &&
     playerProfile !== null &&
