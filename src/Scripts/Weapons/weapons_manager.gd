@@ -10,6 +10,7 @@ signal active_weapon_changed(weapon: BaseWeapon)
 @export var default_weapon_node: StringName = &"Sniper"
 @export var input_enabled: bool = true
 @export var switch_sound_volume_db: float = -4.0
+@export var switch_sound_enabled: bool = true
 
 # Keep lookup fast for scene names, weapon ids, and scroll order
 var active_weapon: BaseWeapon
@@ -119,6 +120,9 @@ func set_input_enabled(is_enabled: bool) -> void:
 		if is_enabled and Input.is_action_pressed("click"):
 			active_weapon.lock_fire_until_click_released()
 
+func set_switch_sound_enabled(is_enabled: bool) -> void:
+	switch_sound_enabled = is_enabled
+
 func clear_all_projectiles() -> void:
 	# Clear every weapon so hidden bullets do not survive respawn
 	for weapon_variant in weapons_by_node_name.values():
@@ -183,6 +187,9 @@ func get_weapon_slot_from_key(event: InputEventKey) -> int:
 	return -1
 
 func _play_switch_sound() -> void:
+	if not switch_sound_enabled:
+		return
+
 	if switch_audio_player == null or SWITCH_WEAPON_SOUND == null:
 		return
 

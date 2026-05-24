@@ -118,6 +118,7 @@ func _ready() -> void:
 	camera_base_offset = player_camera.offset
 	camera_shake_rng.randomize()
 	weapon.set_input_enabled(_are_local_weapon_controls_enabled())
+	weapon.set_switch_sound_enabled(not is_remote_proxy and accepts_input)
 	weapon.active_weapon_changed.connect(_on_active_weapon_changed)
 	legs.frame = 0
 	head.z_index = 1
@@ -803,6 +804,7 @@ func configure_as_remote_proxy() -> void:
 
 	if weapon != null:
 		weapon.set_input_enabled(false)
+		weapon.set_switch_sound_enabled(false)
 		var active_weapon := weapon.get_active_weapon()
 		if active_weapon != null:
 			active_weapon.set_aim_target(global_position + remote_facing_direction * REMOTE_AIM_DISTANCE)
