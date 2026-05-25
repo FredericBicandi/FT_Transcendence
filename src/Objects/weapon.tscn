@@ -501,22 +501,6 @@ animations = [{
 "speed": 30.0
 }]
 
-[sub_resource type="AtlasTexture" id="AtlasTexture_j4qta"]
-atlas = ExtResource("11_dr4xp")
-region = Rect2(0, 0, 1024, 1024)
-
-[sub_resource type="AtlasTexture" id="AtlasTexture_obup7"]
-atlas = ExtResource("11_dr4xp")
-region = Rect2(1024, 0, 1024, 1024)
-
-[sub_resource type="AtlasTexture" id="AtlasTexture_1uiw2"]
-atlas = ExtResource("11_dr4xp")
-region = Rect2(2048, 0, 1024, 1024)
-
-[sub_resource type="AtlasTexture" id="AtlasTexture_4ioa6"]
-atlas = ExtResource("11_dr4xp")
-region = Rect2(0, 1024, 1024, 1024)
-
 [sub_resource type="AtlasTexture" id="AtlasTexture_tw68f"]
 atlas = ExtResource("11_dr4xp")
 region = Rect2(1024, 1024, 1024, 1024)
@@ -541,18 +525,6 @@ region = Rect2(2048, 2048, 1024, 1024)
 animations = [{
 "frames": [{
 "duration": 1.0,
-"texture": SubResource("AtlasTexture_j4qta")
-}, {
-"duration": 1.0,
-"texture": SubResource("AtlasTexture_obup7")
-}, {
-"duration": 1.0,
-"texture": SubResource("AtlasTexture_1uiw2")
-}, {
-"duration": 1.0,
-"texture": SubResource("AtlasTexture_4ioa6")
-}, {
-"duration": 1.0,
 "texture": SubResource("AtlasTexture_tw68f")
 }, {
 "duration": 1.0,
@@ -569,7 +541,7 @@ animations = [{
 }],
 "loop": true,
 "name": &"default",
-"speed": 5.0
+"speed": 8.0
 }]
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_g01q4"]
@@ -707,15 +679,13 @@ scale = Vector2(0.8703125, 0.72048664)
 sprite_frames = SubResource("SpriteFrames_otg38")
 
 [node name="impact" type="AnimatedSprite2D" parent="Rocket_Launcher/Gun/Marker2D" unique_id=814607650]
-visible = false
-position = Vector2(20.720001, -6.5185213)
-scale = Vector2(0.8703125, 0.72048664)
+position = Vector2(27.984217, -12.45153)
+scale = Vector2(1.8335776, 1.258997)
 sprite_frames = SubResource("SpriteFrames_dr4xp")
 
 [node name="smoke" type="AnimatedSprite2D" parent="Rocket_Launcher/Gun/Marker2D" unique_id=1935083612]
-visible = false
-position = Vector2(18.8, 1.6296318)
-scale = Vector2(0.022309562, 0.023566362)
+position = Vector2(29.384377, 1.6686926)
+scale = Vector2(0.04682739, 0.044483896)
 sprite_frames = SubResource("SpriteFrames_ou5fp")
 frame_progress = 0.30006763
 

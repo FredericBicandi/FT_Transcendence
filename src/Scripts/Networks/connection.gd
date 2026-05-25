@@ -28,6 +28,7 @@ func _ready() -> void:
 	Localization.apply_url_language()
 	network_client.language = Localization.get_language()
 	_apply_localized_static_text()
+	Localization.apply_active_language_font(self)
 	network_client.connection_established.connect(_on_connection_established)
 	network_client.connection_failed.connect(_on_connection_failed)
 	network_client.connection_lost.connect(_on_connection_lost)
@@ -184,14 +185,19 @@ func _show_lobby_cursor() -> void:
 
 func _set_status_text(status_text: String) -> void:
 	status_label.text = status_text
+	Localization.apply_readable_text_font(status_label, status_text)
 
 func _apply_localized_static_text() -> void:
 	var title_label := $CanvasLayer/Overlay/CenterContainer/PanelContainer/MarginContainer/VBoxContainer/TitleLabel as Label
 	if title_label != null:
 		title_label.text = Localization.translate("connection_title")
+		Localization.apply_readable_text_font(title_label, title_label.text)
 	status_label.text = Localization.translate("connecting")
+	Localization.apply_readable_text_font(status_label, status_label.text)
 	join_button.text = Localization.translate("join")
+	Localization.apply_readable_text_font(join_button, join_button.text)
 	dashboard_button.text = Localization.translate("dashboard")
+	Localization.apply_readable_text_font(dashboard_button, dashboard_button.text)
 
 func _set_background_visible(is_visible: bool) -> void:
 	background_map.visible = is_visible

@@ -34,6 +34,7 @@ var leaderboard_rows_refresh_scheduled: bool = false
 func _ready() -> void:
 	leaderboard_panel.custom_minimum_size = panel_minimum_size
 	_configure_leaderboard_header()
+	Localization.apply_active_language_font(self)
 	clear_leaderboard_entries()
 	set_leaderboard_visible(initially_visible)
 
@@ -118,12 +119,14 @@ func clear_leaderboard_entries() -> void:
 func _configure_leaderboard_header() -> void:
 	if leaderboard_title != null:
 		leaderboard_title.text = Localization.translate("leaderboard")
+		Localization.apply_readable_text_font(leaderboard_title, leaderboard_title.text)
 	for index in mini(leaderboard_header_labels.size(), LEADERBOARD_COLUMNS.size()):
 		var label := leaderboard_header_labels[index]
 		var column: Dictionary = LEADERBOARD_COLUMNS[index]
 		label.custom_minimum_size = Vector2(float(column["width"]), 0.0)
 		label.size_flags_horizontal = 0
 		label.text = Localization.translate(str(column["title_key"]))
+		Localization.apply_readable_text_font(label, label.text)
 		label.horizontal_alignment = int(column["alignment"])
 
 
@@ -136,6 +139,7 @@ func _refresh_leaderboard_rows() -> void:
 		empty_state.text = Localization.translate("leaderboard_empty")
 		empty_state.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		empty_state.add_theme_color_override("font_color", Color(1, 1, 1, 0.85))
+		Localization.apply_readable_text_font(empty_state, empty_state.text)
 		empty_state.add_theme_font_size_override("font_size", 18)
 		leaderboard_rows_container.add_child(empty_state)
 		return
@@ -177,6 +181,7 @@ func _create_leaderboard_row(entry: Dictionary) -> Control:
 		label.add_theme_color_override("font_color", _get_leaderboard_label_color(entry, str(typed_column["key"])))
 		label.add_theme_font_size_override("font_size", 17)
 		label.text = str(entry.get(str(typed_column["key"]), ""))
+		Localization.apply_readable_text_font(label, label.text)
 		label.horizontal_alignment = int(typed_column["alignment"])
 		columns.add_child(label)
 

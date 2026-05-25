@@ -1,6 +1,7 @@
 class_name Player
 extends CharacterBody2D
 
+const Localization = preload("res://src/Scripts/components/localization.gd")
 const POSITION_HEARTBEAT_INTERVAL: float = 5.0
 const MOVE_SYNC_INTERVAL: float = 0.05
 const MOVE_SYNC_FORCE_DISTANCE: float = 10.0
@@ -43,6 +44,8 @@ const BULLET_SPAWN_SNAP_DISTANCE: float = 24.0
 @export var camera_cursor_follow_distance: float = 18.0
 @export var camera_cursor_follow_deadzone: float = 22.0
 @export var camera_cursor_follow_smoothing: float = 3.5
+@export var walk_dust_interval: float = 0.24
+@export var walk_dust_min_move_distance: float = 1.0
 
 # Runtime state for health, network sync, sounds, and remote smoothing
 var health: int
@@ -87,9 +90,16 @@ var camera_shake_remaining: float = 0.0
 var camera_shake_duration: float = 0.0
 var camera_shake_strength: float = 0.0
 var camera_shake_rng := RandomNumberGenerator.new()
+var walk_dust_cooldown: float = 0.0
+var walk_dust_frames: SpriteFrames
+var walk_dust_local_position: Vector2 = Vector2.ZERO
+var walk_dust_scale: Vector2 = Vector2.ONE
+var walk_dust_speed_scale: float = 1.0
+var walk_dust_z_index: int = 0
 
 @onready var head: AnimatedSprite2D = $Head
 @onready var legs: AnimatedSprite2D = $Leg
+@onready var walk_dust_template: AnimatedSprite2D = get_node_or_null("Dust") as AnimatedSprite2D
 @onready var weapon: WeaponsManager = $Weapons
 @onready var overhead_panel: PanelContainer = $"../OverheadUiCanvasLayer/OverheadPanel"
 @onready var health_bar: ProgressBar = $"../OverheadUiCanvasLayer/OverheadPanel/OverheadMargin/OverheadVBox/HealthBar"
@@ -122,6 +132,7 @@ func _ready() -> void:
 	weapon.active_weapon_changed.connect(_on_active_weapon_changed)
 	legs.frame = 0
 	head.z_index = 1
+	_configure_walk_dust()
 	_configure_shoot_sound()
 	_validate_collision_shapes()
 	get_viewport().size_changed.connect(_on_viewport_size_changed)
@@ -166,6 +177,7 @@ func _physics_process(delta: float) -> void:
 		velocity = Vector2.ZERO
 		update_legs(Vector2.ZERO, delta)
 		weapon.update_movement(Vector2.ZERO)
+		_update_walk_dust(Vector2.ZERO, delta, false)
 		return
 
 	if is_remote_proxy:
@@ -182,6 +194,7 @@ func _physics_process(delta: float) -> void:
 	# Keep legs and weapon sway using the same movement direction
 	update_legs(direction, delta)
 	weapon.update_movement(direction)
+	_update_walk_dust(direction, delta, global_position.distance_to(previous_position) >= walk_dust_min_move_distance)
 	_report_position_sync(previous_position, delta)
 
 func _process(delta: float) -> void:
@@ -234,6 +247,52 @@ func update_legs(direction: Vector2, delta: float) -> void:
 	leg_animation_time += delta * leg_animation_speed
 	var frame_count := frame_range.y - frame_range.x + 1
 	legs.frame = frame_range.x + int(leg_animation_time) % frame_count
+
+func _configure_walk_dust() -> void:
+	if walk_dust_template == null or walk_dust_template.sprite_frames == null:
+		return
+
+	walk_dust_frames = walk_dust_template.sprite_frames.duplicate(true) as SpriteFrames
+	if walk_dust_frames != null and walk_dust_frames.has_animation(&"default"):
+		walk_dust_frames.set_animation_loop(&"default", false)
+	walk_dust_local_position = walk_dust_template.position
+	walk_dust_scale = walk_dust_template.scale
+	walk_dust_speed_scale = walk_dust_template.speed_scale
+	walk_dust_z_index = walk_dust_template.z_index
+	walk_dust_template.visible = false
+
+func _update_walk_dust(direction: Vector2, delta: float, is_moving: bool) -> void:
+	walk_dust_cooldown = maxf(walk_dust_cooldown - delta, 0.0)
+	if not is_moving or direction == Vector2.ZERO:
+		return
+
+	if walk_dust_cooldown > 0.0:
+		return
+
+	_spawn_walk_dust()
+	walk_dust_cooldown = maxf(walk_dust_interval, 0.01)
+
+func _spawn_walk_dust() -> void:
+	if walk_dust_frames == null:
+		return
+
+	var dust_parent := get_parent()
+	if dust_parent == null:
+		dust_parent = get_tree().current_scene
+	if dust_parent == null:
+		return
+
+	var dust := AnimatedSprite2D.new()
+	dust.sprite_frames = walk_dust_frames
+	dust.animation = &"default"
+	dust.frame = 0
+	dust.scale = walk_dust_scale
+	dust.speed_scale = walk_dust_speed_scale
+	dust.z_index = walk_dust_z_index
+	dust_parent.add_child(dust)
+	dust.global_position = to_global(walk_dust_local_position)
+	dust.animation_finished.connect(dust.queue_free)
+	dust.play(&"default")
 
 func update_head_direction_from_weapon() -> void:
 	# Match the head direction to the weapon aim
@@ -839,6 +898,7 @@ func _update_player_name_label() -> void:
 
 	var display_name := network_player_display_name.strip_edges()
 	player_name_label.text = display_name if display_name != "" else DEFAULT_PLAYER_DISPLAY_NAME
+	Localization.apply_readable_text_font(player_name_label, player_name_label.text)
 
 func _update_overhead_ui() -> void:
 	if overhead_panel == null:

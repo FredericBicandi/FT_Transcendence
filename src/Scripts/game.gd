@@ -8,8 +8,7 @@ const KILL_FEED_SNIPER_TEXTURE: Texture2D = preload("res://Assets/Textures/Guns/
 const KILL_FEED_ROCKET_TEXTURE: Texture2D = preload("res://Assets/Textures/Guns/RocketLuncher/image.png")
 const KILL_FEED_SHOTGUN_TEXTURE: Texture2D = preload("res://Assets/Textures/Guns/Shotgun/image.png")
 const CHAT_MESSAGE_SOUND: AudioStream = preload("res://Assets/Audio/new message.mp3")
-const CHAT_MESSAGE_FONT: FontFile = preload("res://Assets/Fonts/dogica.ttf")
-const CHAT_NAME_FONT: FontFile = preload("res://Assets/Fonts/upheavtt.ttf")
+const CHAT_FONT: FontFile = preload("res://Assets/Fonts/pf_ronda_seven.woff2")
 const RESPAWN_LAYER_20_MASK: int = 1 << 19
 const RESPAWN_TILE_SOURCE_ID: int = 10
 const RESPAWN_TILE_ATLAS_COORDS := Vector2i(25, 2)
@@ -95,6 +94,7 @@ func _ready() -> void:
 	_create_chat()
 	_create_chat_audio_player()
 	_create_exit_dialog()
+	Localization.apply_active_language_font(self)
 	if match_has_ended:
 		_freeze_match_play()
 		leaderboard_ui.set("tab_visibility_enabled", false)
@@ -175,6 +175,7 @@ func _create_exit_dialog() -> void:
 	var title := Label.new()
 	title.text = Localization.translate("leave_game_title")
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	Localization.apply_readable_text_font(title, title.text)
 	title.add_theme_font_size_override("font_size", 22)
 	content.add_child(title)
 
@@ -182,6 +183,7 @@ func _create_exit_dialog() -> void:
 	body.text = Localization.translate("leave_game_body")
 	body.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	Localization.apply_readable_text_font(body, body.text)
 	content.add_child(body)
 
 	var buttons := HBoxContainer.new()
@@ -192,12 +194,14 @@ func _create_exit_dialog() -> void:
 	exit_cancel_button = Button.new()
 	exit_cancel_button.text = Localization.translate("cancel")
 	exit_cancel_button.custom_minimum_size = Vector2(110.0, 34.0)
+	Localization.apply_readable_text_font(exit_cancel_button, exit_cancel_button.text)
 	exit_cancel_button.pressed.connect(_cancel_exit_dialog)
 	buttons.add_child(exit_cancel_button)
 
 	var yes_button := Button.new()
 	yes_button.text = Localization.translate("yes")
 	yes_button.custom_minimum_size = Vector2(110.0, 34.0)
+	Localization.apply_readable_text_font(yes_button, yes_button.text)
 	yes_button.pressed.connect(_confirm_exit_dialog)
 	buttons.add_child(yes_button)
 
@@ -437,23 +441,24 @@ func _create_chat() -> void:
 
 	chat_prompt_label = Label.new()
 	chat_prompt_label.name = "ChatPrompt"
-	chat_prompt_label.text = "Press Enter to chat"
+	chat_prompt_label.text = Localization.translate("chat_prompt")
 	chat_prompt_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	chat_prompt_label.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0, 0.78))
 	chat_prompt_label.add_theme_color_override("font_shadow_color", Color(0.0, 0.0, 0.0, 0.75))
 	chat_prompt_label.add_theme_constant_override("shadow_offset_x", 1)
 	chat_prompt_label.add_theme_constant_override("shadow_offset_y", 1)
+	Localization.apply_readable_text_font(chat_prompt_label, chat_prompt_label.text, CHAT_FONT)
 	chat_prompt_label.add_theme_font_size_override("font_size", 13)
 	chat_container.add_child(chat_prompt_label)
 
 	chat_input = LineEdit.new()
 	chat_input.name = "ChatInput"
 	chat_input.visible = false
-	chat_input.placeholder_text = "type chat"
+	chat_input.placeholder_text = Localization.translate("chat_placeholder")
 	chat_input.max_length = 0
 	chat_input.custom_minimum_size = Vector2(0.0, 34.0)
 	chat_input.mouse_filter = Control.MOUSE_FILTER_STOP
-	chat_input.add_theme_font_override("font", CHAT_MESSAGE_FONT)
+	chat_input.add_theme_font_override("font", Localization.get_arabic_font())
 	chat_input.add_theme_font_size_override("font_size", 10)
 	chat_input.text_submitted.connect(_on_chat_text_submitted)
 	chat_container.add_child(chat_input)
@@ -563,7 +568,7 @@ func _show_chat_message(sender_id: String, sender_name: String, content: String)
 	var name_label: Label = Label.new()
 	name_label.text = "%s:" % sender_name
 	name_label.add_theme_color_override("font_color", name_color)
-	name_label.add_theme_font_override("font", CHAT_NAME_FONT)
+	Localization.apply_readable_text_font(name_label, name_label.text, CHAT_FONT)
 	name_label.add_theme_font_size_override("font_size", 14)
 	name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	layout.add_child(name_label)
@@ -573,7 +578,7 @@ func _show_chat_message(sender_id: String, sender_name: String, content: String)
 	content_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	content_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	content_label.add_theme_color_override("font_color", Color(0.96, 0.98, 1.0, 1.0))
-	content_label.add_theme_font_override("font", CHAT_MESSAGE_FONT)
+	Localization.apply_readable_text_font(content_label, content, CHAT_FONT)
 	content_label.add_theme_font_size_override("font_size", 10)
 	content_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	layout.add_child(content_label)

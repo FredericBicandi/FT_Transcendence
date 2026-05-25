@@ -22,4 +22,5 @@ func update_for_player(player_body: Node) -> void:
 	# Let the player own respawn timing; this scene only displays it
 	var respawn_timer: float = float(player_body.get("respawn_timer"))
 	respawn_message.text = Localization.translate("respawning")
+	Localization.apply_readable_text_font(respawn_message, respawn_message.text)
 	respawn_countdown.text = "%.1f" % maxf(respawn_timer, 0.0)

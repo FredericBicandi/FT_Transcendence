@@ -3,6 +3,7 @@ extends RefCounted
 
 const DEFAULT_LANGUAGE := "english"
 const SUPPORTED_LANGUAGES := ["english", "french", "arabic"]
+const ARABIC_FONT_NAMES := ["Segoe UI", "Tahoma", "Arial", "Adobe Arabic", "Arial Unicode MS"]
 
 const TRANSLATIONS := {
 	"english": {
@@ -27,6 +28,8 @@ const TRANSLATIONS := {
 		"respawning": "Respawning",
 		"leave_game_title": "Leave game?",
 		"leave_game_body": "Are you sure you want to leave the game?",
+		"chat_prompt": "Press Enter to chat",
+		"chat_placeholder": "type chat",
 		"cancel": "Cancel",
 		"yes": "Yes"
 	},
@@ -52,6 +55,8 @@ const TRANSLATIONS := {
 		"respawning": "Reapparition",
 		"leave_game_title": "Quitter la partie ?",
 		"leave_game_body": "Voulez-vous vraiment quitter la partie ?",
+		"chat_prompt": "Appuyez sur Entree pour discuter",
+		"chat_placeholder": "ecrire un message",
 		"cancel": "Annuler",
 		"yes": "Oui"
 	},
@@ -77,12 +82,15 @@ const TRANSLATIONS := {
 		"respawning": "جار الظهور",
 		"leave_game_title": "مغادرة اللعبة؟",
 		"leave_game_body": "هل تريد مغادرة اللعبة؟",
+		"chat_prompt": "اضغط Enter للدردشة",
+		"chat_placeholder": "اكتب رسالة",
 		"cancel": "إلغاء",
 		"yes": "نعم"
 	}
 }
 
 static var language: String = DEFAULT_LANGUAGE
+static var arabic_font: Font
 
 static func set_language(next_language: String) -> void:
 	language = normalize_language(next_language)
@@ -94,6 +102,54 @@ static func translate(key: String) -> String:
 	var normalized_language: String = normalize_language(language)
 	var language_table: Dictionary = TRANSLATIONS.get(normalized_language, TRANSLATIONS[DEFAULT_LANGUAGE])
 	return str(language_table.get(key, TRANSLATIONS[DEFAULT_LANGUAGE].get(key, key)))
+
+static func is_arabic_language() -> bool:
+	return normalize_language(language) == "arabic"
+
+static func contains_arabic(text: String) -> bool:
+	for index in range(text.length()):
+		var codepoint := text.unicode_at(index)
+		if (
+			(codepoint >= 0x0600 and codepoint <= 0x06FF)
+			or (codepoint >= 0x0750 and codepoint <= 0x077F)
+			or (codepoint >= 0x08A0 and codepoint <= 0x08FF)
+			or (codepoint >= 0xFB50 and codepoint <= 0xFDFF)
+			or (codepoint >= 0xFE70 and codepoint <= 0xFEFF)
+		):
+			return true
+
+	return false
+
+static func get_arabic_font() -> Font:
+	if arabic_font == null:
+		var system_font := SystemFont.new()
+		system_font.font_names = PackedStringArray(ARABIC_FONT_NAMES)
+		arabic_font = system_font
+
+	return arabic_font
+
+static func get_readable_font_for_text(text: String, preferred_font: Font = null) -> Font:
+	if is_arabic_language() or contains_arabic(text):
+		return get_arabic_font()
+
+	return preferred_font
+
+static func apply_readable_text_font(control: Control, text: String, preferred_font: Font = null) -> void:
+	if control == null:
+		return
+
+	var readable_font := get_readable_font_for_text(text, preferred_font)
+	if readable_font != null:
+		control.add_theme_font_override("font", readable_font)
+
+	if is_arabic_language() or contains_arabic(text):
+		control.layout_direction = Control.LAYOUT_DIRECTION_RTL
+
+static func apply_active_language_font(root: Node) -> void:
+	if root == null or not is_arabic_language():
+		return
+
+	_apply_arabic_font_recursive(root)
 
 static func normalize_language(value: String) -> String:
 	var normalized: String = value.strip_edges().to_lower()
@@ -120,3 +176,12 @@ static func apply_url_language() -> String:
 
 static func _escape_js_string(value: String) -> String:
 	return value.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r")
+
+static func _apply_arabic_font_recursive(node: Node) -> void:
+	var control := node as Control
+	if control != null:
+		control.add_theme_font_override("font", get_arabic_font())
+		control.layout_direction = Control.LAYOUT_DIRECTION_RTL
+
+	for child in node.get_children():
+		_apply_arabic_font_recursive(child)

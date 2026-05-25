@@ -6,9 +6,13 @@ var bullet_scale_stored: Vector2 = Vector2.ONE
 var impact_frames: SpriteFrames
 var impact_scale_stored: Vector2 = Vector2.ONE
 var impact_speed_scale_stored: float = 1.0
+var impact_smoke_frames: SpriteFrames
+var impact_smoke_scale_stored: Vector2 = Vector2.ONE
+var impact_smoke_speed_scale_stored: float = 1.0
 
 @onready var bullet_template: AnimatedSprite2D = $Gun/Marker2D/Bullets
 @onready var impact_template: AnimatedSprite2D = get_node_or_null("Gun/Marker2D/impact") as AnimatedSprite2D
+@onready var impact_smoke_template: AnimatedSprite2D = get_node_or_null("Gun/Marker2D/smoke") as AnimatedSprite2D
 
 func _load_bullet_template() -> void:
 	if bullet_template == null:
@@ -25,6 +29,13 @@ func _load_bullet_template() -> void:
 		impact_scale_stored = impact_template.scale
 		impact_speed_scale_stored = impact_template.speed_scale
 		impact_template.queue_free()
+	if impact_smoke_template != null:
+		impact_smoke_frames = impact_smoke_template.sprite_frames.duplicate(true) as SpriteFrames
+		if impact_smoke_frames != null and impact_smoke_frames.has_animation(&"default"):
+			impact_smoke_frames.set_animation_loop(&"default", false)
+		impact_smoke_scale_stored = impact_smoke_template.scale
+		impact_smoke_speed_scale_stored = impact_smoke_template.speed_scale
+		impact_smoke_template.queue_free()
 
 func _create_bullet_node() -> Node2D:
 	return AnimatedSprite2D.new()
@@ -39,21 +50,38 @@ func _update_bullet_visual(bullet: Node2D, result: Dictionary) -> void:
 
 func _play_impact_effect(position: Vector2) -> void:
 	super._play_impact_effect(position)
-	if impact_frames == null:
-		return
-
 	var current_scene := get_tree().current_scene
 	if current_scene == null:
 		return
 
+	if impact_frames != null:
+		_spawn_impact_animation(
+			current_scene,
+			impact_frames,
+			impact_scale_stored,
+			impact_speed_scale_stored,
+			int(get_weapon_config().get("impact_z_index", get_bullet_visual_z_index() + 1)),
+			position
+		)
+	if impact_smoke_frames != null:
+		_spawn_impact_animation(
+			current_scene,
+			impact_smoke_frames,
+			impact_smoke_scale_stored,
+			impact_smoke_speed_scale_stored,
+			int(get_weapon_config().get("impact_smoke_z_index", get_weapon_config().get("impact_z_index", get_bullet_visual_z_index() + 1))),
+			position
+		)
+
+func _spawn_impact_animation(parent: Node, frames: SpriteFrames, animation_scale: Vector2, speed_scale: float, visual_z_index: int, position: Vector2) -> void:
 	var impact := AnimatedSprite2D.new()
-	impact.sprite_frames = impact_frames
+	impact.sprite_frames = frames
 	impact.animation = &"default"
 	impact.frame = 0
-	impact.scale = impact_scale_stored
-	impact.speed_scale = impact_speed_scale_stored
-	impact.z_index = int(get_weapon_config().get("impact_z_index", get_bullet_visual_z_index() + 1))
-	current_scene.add_child(impact)
+	impact.scale = animation_scale
+	impact.speed_scale = speed_scale
+	impact.z_index = visual_z_index
+	parent.add_child(impact)
 	impact.global_position = position
 	impact.animation_finished.connect(impact.queue_free)
 	impact.play(&"default")

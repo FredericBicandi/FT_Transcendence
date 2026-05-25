@@ -14,6 +14,10 @@ config/name="Ft_Transcendence"
 run/main_scene="uid://vs4jvq30jo6l"
 config/features=PackedStringArray("4.6", "Forward Plus")
 
+[display]
+
+mouse_cursor/custom_image="res://Assets/cursor.png"
+
 [gui]
 
 theme/custom="res://Assets/Themes/global_theme.tres"
