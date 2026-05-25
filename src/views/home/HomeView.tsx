@@ -101,18 +101,27 @@ export function HomeView() {
 
       {!showGame && (
         <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-6 px-4">
-          <div className="flex flex-col items-center gap-3 text-center">
+          <div className="flex flex-col items-center gap-4 text-center">
             <Image
               src="/images/icon.png"
               alt="Pixel Fight icon"
-              width={80}
-              height={80}
+              width={112}
+              height={112}
               priority
-              className="h-20 w-20 [image-rendering:pixelated]"
+              className="h-24 w-24 animate-[float_3s_ease-in-out_infinite] drop-shadow-[0_6px_0_rgba(5,3,2,0.65)] [image-rendering:pixelated] sm:h-28 sm:w-28"
             />
-            <h1 className="text-5xl font-bold uppercase leading-none text-[#f5dfad] [text-shadow:0_4px_0_#050302,4px_0_0_#050302,0_-4px_0_#050302,-4px_0_0_#050302,4px_4px_0_#050302] sm:text-6xl">
-              PIXEL FIGHT
-            </h1>
+            <div className="flex flex-col items-center gap-2">
+              <h1 className="text-5xl font-bold uppercase leading-none tracking-[0.08em] text-[#f5dfad] [text-shadow:0_4px_0_#050302,4px_0_0_#050302,0_-4px_0_#050302,-4px_0_0_#050302,4px_4px_0_#050302] sm:text-7xl">
+                PIXEL FIGHT
+              </h1>
+              <div className="flex w-full items-center justify-center gap-3">
+                <span className="h-[3px] w-12 bg-[#f5dfad]/40 shadow-[0_1px_0_#050302]" />
+                <span className="text-xs font-bold uppercase tracking-[0.35em] text-[#f5dfad]/80 [text-shadow:0_2px_0_#050302] sm:text-sm">
+                  Battle Arena
+                </span>
+                <span className="h-[3px] w-12 bg-[#f5dfad]/40 shadow-[0_1px_0_#050302]" />
+              </div>
+            </div>
           </div>
 
           {isPlayerProfileLoading ? (
