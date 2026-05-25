@@ -17,6 +17,7 @@ var active_weapon: BaseWeapon
 var weapons_by_node_name: Dictionary = {}
 var weapons_by_id: Dictionary = {}
 var weapon_order: Array[StringName] = []
+var previous_weapon_name: StringName = &""
 var switch_audio_player: AudioStreamPlayer2D
 
 func _ready() -> void:
@@ -56,6 +57,8 @@ func equip_weapon(weapon_key: StringName) -> bool:
 		return true
 
 	var previous_weapon: BaseWeapon = active_weapon
+	if previous_weapon != null:
+		previous_weapon_name = StringName(previous_weapon.name)
 
 	# Keep only one weapon visible and controllable
 	if active_weapon != null and is_instance_valid(active_weapon):
@@ -90,6 +93,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 
 	if event is InputEventKey and event.pressed and not event.echo:
+		if is_previous_weapon_key(event):
+			equip_previous_weapon()
+			get_viewport().set_input_as_handled()
+			return
+
 		var weapon_slot := get_weapon_slot_from_key(event)
 		if weapon_slot != -1:
 			equip_weapon_slot(weapon_slot)
@@ -142,6 +150,16 @@ func cycle_weapon(step: int) -> void:
 	var next_index := posmod(current_index + step, weapon_order.size())
 	equip_weapon(weapon_order[next_index])
 
+func equip_previous_weapon() -> void:
+	if previous_weapon_name == &"":
+		return
+
+	if not weapons_by_node_name.has(previous_weapon_name):
+		previous_weapon_name = &""
+		return
+
+	equip_weapon(previous_weapon_name)
+
 func get_weapons_in_order() -> Array[BaseWeapon]:
 	var ordered_weapons: Array[BaseWeapon] = []
 	for weapon_name in weapon_order:
@@ -185,6 +203,13 @@ func get_weapon_slot_from_key(event: InputEventKey) -> int:
 			return 9
 
 	return -1
+
+func is_previous_weapon_key(event: InputEventKey) -> bool:
+	var keycode := event.physical_keycode
+	if keycode == 0:
+		keycode = event.keycode
+
+	return keycode == KEY_Q
 
 func _play_switch_sound() -> void:
 	if not switch_sound_enabled:

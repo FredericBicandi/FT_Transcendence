@@ -24,6 +24,7 @@ const MATCH_END_LEADERBOARD_SECONDS: float = 8.0
 const CHAT_MAX_MESSAGE_WORDS: int = 50
 const CHAT_REPEATED_CHAR_LIMIT: int = 8
 const CHAT_MESSAGE_LIFETIME: float = 5.0
+const CHAT_INPUT_FONT_SIZE: int = 13
 
 # Cache scene nodes once so gameplay updates stay cheap
 @onready var map: Node2D = $Map
@@ -456,10 +457,11 @@ func _create_chat() -> void:
 	chat_input.visible = false
 	chat_input.placeholder_text = Localization.translate("chat_placeholder")
 	chat_input.max_length = 0
-	chat_input.custom_minimum_size = Vector2(0.0, 34.0)
+	chat_input.custom_minimum_size = Vector2(0.0, 40.0)
 	chat_input.mouse_filter = Control.MOUSE_FILTER_STOP
-	chat_input.add_theme_font_override("font", Localization.get_arabic_font())
-	chat_input.add_theme_font_size_override("font_size", 10)
+	Localization.apply_readable_text_font(chat_input, chat_input.placeholder_text, CHAT_FONT)
+	chat_input.add_theme_font_size_override("font_size", CHAT_INPUT_FONT_SIZE)
+	chat_input.text_changed.connect(_on_chat_input_text_changed)
 	chat_input.text_submitted.connect(_on_chat_text_submitted)
 	chat_container.add_child(chat_input)
 
@@ -515,6 +517,11 @@ func _close_chat() -> void:
 
 func _on_chat_text_submitted(_submitted_text: String) -> void:
 	_submit_or_close_chat()
+
+func _on_chat_input_text_changed(next_text: String) -> void:
+	var font_sample := next_text if next_text != "" else chat_input.placeholder_text
+	Localization.apply_readable_text_font(chat_input, font_sample, CHAT_FONT)
+	chat_input.add_theme_font_size_override("font_size", CHAT_INPUT_FONT_SIZE)
 
 func _send_chat_message(clean_message: String) -> void:
 	var sender_id: String = local_player_id
