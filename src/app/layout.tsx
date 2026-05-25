@@ -6,6 +6,11 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "PXIELFIGHT",
   description: "Game dashboard",
+  icons: {
+    icon: "/icon.png",
+    shortcut: "/favicon.ico",
+    apple: "/icon.png",
+  },
 };
 
 export default function RootLayout({
