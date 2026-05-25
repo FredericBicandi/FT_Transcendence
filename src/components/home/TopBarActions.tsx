@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { PlayerProfile } from "@/models/player/playerProfile.model";
 import type {
   HomeLanguage,
@@ -80,9 +80,33 @@ export function TopBarActions({
   translations,
 }: TopBarActionsProps) {
   const [showLanguageMenu, setShowLanguageMenu] = useState(false);
+  const languageMenuRef = useRef<HTMLDivElement>(null);
   const playerName = playerProfile?.playerName ?? "Player";
   const avatarUrl = playerProfile?.isGuest ? undefined : playerProfile?.avatarUrl;
   const languageOptions: HomeLanguage[] = ["english", "french", "arabic"];
+
+  useEffect(() => {
+    if (!showLanguageMenu) {
+      return;
+    }
+
+    function handlePointerDown(event: PointerEvent) {
+      if (
+        event.target instanceof Node &&
+        languageMenuRef.current?.contains(event.target)
+      ) {
+        return;
+      }
+
+      setShowLanguageMenu(false);
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown);
+
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+    };
+  }, [showLanguageMenu]);
 
   return (
     <div className="absolute right-4 top-4 z-30 flex items-start gap-3 sm:right-6 sm:top-6">
@@ -111,7 +135,7 @@ export function TopBarActions({
         </span>
       </button>
 
-      <div className="relative">
+      <div className="relative" ref={languageMenuRef}>
         <button
           aria-expanded={showLanguageMenu}
           aria-label={translations.label}

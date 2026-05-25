@@ -77,76 +77,79 @@ export function HomeView() {
       />
 
       {!showGame && (
-        <>
-          <TopBarActions
-            language={language}
-            onLanguageChange={setLanguage}
-            onProfileClick={() => {
-              if (!needsUsernameSetup) {
-                setShowProfileModal(true);
-              }
-            }}
-            playerProfile={playerProfile}
-            translations={{
-              ...translations.language,
-              profile: translations.profile.profile,
-            }}
-          />
+        <TopBarActions
+          language={language}
+          onLanguageChange={setLanguage}
+          onProfileClick={() => {
+            if (!needsUsernameSetup) {
+              setShowProfileModal(true);
+            }
+          }}
+          playerProfile={playerProfile}
+          translations={{
+            ...translations.language,
+            profile: translations.profile.profile,
+          }}
+        />
+      )}
+
+      {!showGame && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center gap-8 px-4">
+          <div className="hidden w-[28rem] lg:block" aria-hidden="true" />
+
+          <div className="flex flex-col items-center gap-6">
+            <div className="flex flex-col items-center gap-4 text-center">
+              <Image
+                src="/images/icon.png"
+                alt="Pixel Fight icon"
+                width={112}
+                height={112}
+                priority
+                className="h-24 w-24 animate-[float_3s_ease-in-out_infinite] drop-shadow-[0_6px_0_rgba(5,3,2,0.65)] [image-rendering:pixelated] sm:h-28 sm:w-28"
+              />
+              <div className="flex flex-col items-center gap-2">
+                <h1 className="text-5xl font-bold uppercase leading-none tracking-[0.08em] text-[#f5dfad] [text-shadow:0_4px_0_#050302,4px_0_0_#050302,0_-4px_0_#050302,-4px_0_0_#050302,4px_4px_0_#050302] sm:text-7xl">
+                  PIXEL FIGHT
+                </h1>
+                <div className="flex w-full items-center justify-center gap-3">
+                  <span className="h-[3px] w-12 bg-[#f5dfad]/40 shadow-[0_1px_0_#050302]" />
+                  <span className="text-xs font-bold uppercase tracking-[0.35em] text-[#f5dfad]/80 [text-shadow:0_2px_0_#050302] sm:text-sm">
+                    Battle Arena
+                  </span>
+                  <span className="h-[3px] w-12 bg-[#f5dfad]/40 shadow-[0_1px_0_#050302]" />
+                </div>
+              </div>
+            </div>
+
+            {isPlayerProfileLoading ? (
+              <div className="bg-[#151819] px-6 py-4 text-sm uppercase text-[#f5dfad] shadow-[0_0_0_3px_#050302,0_4px_0_3px_#111515,inset_0_3px_0_#374041,inset_0_-3px_0_#050302]">
+                {translations.home.loading}
+              </div>
+            ) : (
+              <PlayButton
+                disabled={!gameUrl || needsUsernameSetup}
+                label={translations.home.play}
+                onClick={handlePlayGame}
+              />
+            )}
+
+            <OnlinePlayersBadge
+              label={translations.home.online}
+              onlineCount={onlineCount}
+            />
+
+            {playerProfile?.isGuest && (
+              <LoginSignupButton
+                label={translations.home.loginSignup}
+                onClick={() => setShowAuthModal(true)}
+              />
+            )}
+          </div>
+
           <GlobalChat
             playerProfile={playerProfile}
             translations={translations.chat}
           />
-        </>
-      )}
-
-      {!showGame && (
-        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-6 px-4">
-          <div className="flex flex-col items-center gap-4 text-center">
-            <Image
-              src="/images/icon.png"
-              alt="Pixel Fight icon"
-              width={112}
-              height={112}
-              priority
-              className="h-24 w-24 animate-[float_3s_ease-in-out_infinite] drop-shadow-[0_6px_0_rgba(5,3,2,0.65)] [image-rendering:pixelated] sm:h-28 sm:w-28"
-            />
-            <div className="flex flex-col items-center gap-2">
-              <h1 className="text-5xl font-bold uppercase leading-none tracking-[0.08em] text-[#f5dfad] [text-shadow:0_4px_0_#050302,4px_0_0_#050302,0_-4px_0_#050302,-4px_0_0_#050302,4px_4px_0_#050302] sm:text-7xl">
-                PIXEL FIGHT
-              </h1>
-              <div className="flex w-full items-center justify-center gap-3">
-                <span className="h-[3px] w-12 bg-[#f5dfad]/40 shadow-[0_1px_0_#050302]" />
-                <span className="text-xs font-bold uppercase tracking-[0.35em] text-[#f5dfad]/80 [text-shadow:0_2px_0_#050302] sm:text-sm">
-                  Battle Arena
-                </span>
-                <span className="h-[3px] w-12 bg-[#f5dfad]/40 shadow-[0_1px_0_#050302]" />
-              </div>
-            </div>
-          </div>
-
-          {isPlayerProfileLoading ? (
-            <div className="bg-[#151819] px-6 py-4 text-sm uppercase text-[#f5dfad] shadow-[0_0_0_3px_#050302,0_4px_0_3px_#111515,inset_0_3px_0_#374041,inset_0_-3px_0_#050302]">
-              {translations.home.loading}
-            </div>
-          ) : (
-            <PlayButton
-              disabled={!gameUrl || needsUsernameSetup}
-              label={translations.home.play}
-              onClick={handlePlayGame}
-            />
-          )}
-
-          <OnlinePlayersBadge
-            label={translations.home.online}
-            onlineCount={onlineCount}
-          />
-
-          {playerProfile?.isGuest && (
-            <LoginSignupButton
-              label={translations.home.loginSignup}
-              onClick={() => setShowAuthModal(true)}
-            />
-          )}
         </div>
       )}
 

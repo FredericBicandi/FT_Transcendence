@@ -119,8 +119,8 @@ export function GlobalChat({
   }
 
   return (
-    <section className="chat-font absolute bottom-4 right-4 z-30 w-[min(22rem,calc(100vw-2rem))] bg-black/55 shadow-[0_0_0_3px_#050302,0_4px_0_3px_rgba(0,0,0,0.55),inset_0_3px_0_rgba(255,255,255,0.08)] backdrop-blur-[2px] sm:bottom-6 sm:right-6">
-      <div className="max-h-72 overflow-y-auto px-3 py-2 text-[10px] leading-5 [scrollbar-color:#b8893b_rgba(0,0,0,0.35)]">
+    <section className="chat-font hidden w-[28rem] flex-col bg-black/55 shadow-[0_0_0_3px_#050302,0_4px_0_3px_rgba(0,0,0,0.55),inset_0_3px_0_rgba(255,255,255,0.08)] backdrop-blur-[2px] lg:flex" style={{ height: "28rem" }}>
+      <div className="flex-1 overflow-y-auto px-4 py-3 text-xs leading-6 [scrollbar-color:#b8893b_rgba(0,0,0,0.35)]">
         {coloredMessages.map((message) => (
           <p key={message.id} className="text-[#f5dfad]/90">
             <span className="text-[#d9b46b]/80">{message.sentAt}</span>{" "}
@@ -133,12 +133,12 @@ export function GlobalChat({
       </div>
 
       <form
-        className="border-t border-[#b8893b]/45 bg-[#050302]/60 px-2 py-2"
+        className="border-t border-[#b8893b]/45 bg-[#050302]/60 px-3 py-3"
         onSubmit={sendMessage}
       >
         <input
           aria-label={translations.inputLabel}
-          className="h-8 w-full bg-[#212627]/85 px-2 text-[10px] text-[#f5dfad] outline-none shadow-[inset_0_2px_0_#374041,inset_0_-2px_0_#151819] placeholder:text-[#d9b46b]/55 disabled:cursor-not-allowed disabled:text-[#d9b46b]/70 focus:shadow-[0_0_0_2px_#b8893b,inset_0_2px_0_#374041,inset_0_-2px_0_#151819]"
+          className="h-9 w-full bg-[#212627]/85 px-3 text-xs text-[#f5dfad] outline-none shadow-[inset_0_2px_0_#374041,inset_0_-2px_0_#151819] placeholder:text-[#d9b46b]/55 disabled:cursor-not-allowed disabled:text-[#d9b46b]/70 focus:shadow-[0_0_0_2px_#b8893b,inset_0_2px_0_#374041,inset_0_-2px_0_#151819]"
           disabled={!canSendMessages}
           maxLength={140}
           onChange={(event) => setDraftMessage(event.target.value)}

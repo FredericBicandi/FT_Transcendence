@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { getPixelAvatarDataUri } from "@/components/home/pixelAvatar";
 import type { PlayerProfile } from "@/models/player/playerProfile.model";
 import type {
@@ -110,6 +110,7 @@ export function ProfileBar({
   translations,
 }: ProfileBarProps) {
   const [showLanguageMenu, setShowLanguageMenu] = useState(false);
+  const languageMenuRef = useRef<HTMLDivElement>(null);
   const playerName = playerProfile?.playerName ?? "Player";
   const customAvatarUrl = playerProfile?.isGuest
     ? undefined
@@ -122,6 +123,29 @@ export function ProfileBar({
   const avatarImage = customAvatarUrl ?? pixelAvatarDataUri;
   const isGuest = playerProfile?.isGuest ?? false;
   const languageOptions: HomeLanguage[] = ["english", "french", "arabic"];
+
+  useEffect(() => {
+    if (!showLanguageMenu) {
+      return;
+    }
+
+    function handlePointerDown(event: PointerEvent) {
+      if (
+        event.target instanceof Node &&
+        languageMenuRef.current?.contains(event.target)
+      ) {
+        return;
+      }
+
+      setShowLanguageMenu(false);
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown);
+
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+    };
+  }, [showLanguageMenu]);
 
   return (
     <div
@@ -165,7 +189,7 @@ export function ProfileBar({
           </button>
         )}
 
-        <div className="relative">
+        <div className="relative" ref={languageMenuRef}>
           <button
             aria-expanded={showLanguageMenu}
             aria-label={translations.label}

@@ -240,9 +240,13 @@ export function ProfileModal({
   }
 
   return (
-    <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/35 px-4 backdrop-blur-[2px]">
+    <div
+      className="absolute inset-0 z-40 flex items-center justify-center bg-black/35 px-4 backdrop-blur-[2px]"
+      onClick={onClose}
+    >
       <section
         className="relative grid max-h-[calc(100vh-3rem)] w-[min(70rem,calc(100vw-2rem))] grid-cols-1 gap-8 overflow-y-auto px-7 py-14 shadow-[0_0_0_4px_#050302,0_8px_0_4px_#111515,inset_0_4px_0_#374041,inset_0_-4px_0_#151819] md:grid-cols-[20rem_minmax(0,1fr)] md:px-9"
+        onClick={(event) => event.stopPropagation()}
         style={brickWallStyle}
       >
         <button
