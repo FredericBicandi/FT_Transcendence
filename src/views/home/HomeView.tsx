@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useState } from "react";
 import { AuthModal } from "@/components/home/AuthModal";
 import { LoginSignupButton } from "@/components/home/LoginSignupButton";
@@ -99,7 +100,21 @@ export function HomeView() {
       )}
 
       {!showGame && (
-        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-6">
+        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-6 px-4">
+          <div className="flex flex-col items-center gap-3 text-center">
+            <Image
+              src="/images/icon.png"
+              alt="Pixel Fight icon"
+              width={80}
+              height={80}
+              priority
+              className="h-20 w-20 [image-rendering:pixelated]"
+            />
+            <h1 className="text-5xl font-bold uppercase leading-none text-[#f5dfad] [text-shadow:0_4px_0_#050302,4px_0_0_#050302,0_-4px_0_#050302,-4px_0_0_#050302,4px_4px_0_#050302] sm:text-6xl">
+              PIXEL FIGHT
+            </h1>
+          </div>
+
           {isPlayerProfileLoading ? (
             <div className="bg-[#151819] px-6 py-4 text-sm uppercase text-[#f5dfad] shadow-[0_0_0_3px_#050302,0_4px_0_3px_#111515,inset_0_3px_0_#374041,inset_0_-3px_0_#050302]">
               {translations.home.loading}
