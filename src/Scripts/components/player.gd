@@ -96,6 +96,8 @@ var walk_dust_local_position: Vector2 = Vector2.ZERO
 var walk_dust_scale: Vector2 = Vector2.ONE
 var walk_dust_speed_scale: float = 1.0
 var walk_dust_z_index: int = 0
+var camera_focus_enabled := false
+var camera_focus_strength := 0.0
 
 @onready var head: AnimatedSprite2D = $Head
 @onready var legs: AnimatedSprite2D = $Leg
@@ -197,6 +199,7 @@ func _physics_process(delta: float) -> void:
 	_update_walk_dust(direction, delta, global_position.distance_to(previous_position) >= walk_dust_min_move_distance)
 	_report_position_sync(previous_position, delta)
 
+
 func _process(delta: float) -> void:
 	shoot_sound_cooldown_remaining = maxf(shoot_sound_cooldown_remaining - delta, 0.0)
 	listener_sound_time += delta
@@ -227,6 +230,13 @@ func _process(delta: float) -> void:
 	update_hit_flash(delta)
 	update_head_direction_from_weapon()
 	_update_overhead_ui()
+	
+	camera_focus_enabled = Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT)
+
+	if camera_focus_enabled:
+		camera_focus_strength = 1.0
+	else:
+		camera_focus_strength = 0.
 
 func update_legs(direction: Vector2, delta: float) -> void:
 	# Pick the walk cycle that matches the movement direction
@@ -1349,3 +1359,8 @@ func _report_angle_on_frame_change() -> void:
 	last_sent_aim_frame = current_aim_frame
 	last_sent_angle = _get_current_aim_angle()
 	network_client.send_angle(last_sent_angle)
+
+
+func is_sniper_equipped() -> bool:
+	var w := weapon.get_active_weapon()
+	return w != null and w.get_weapon_name().to_lower().contains("sniper")

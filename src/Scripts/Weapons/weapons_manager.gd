@@ -7,7 +7,7 @@ const SWITCH_WEAPON_SOUND: AudioStream = preload("res://Assets/Audio/Weapons/swi
 signal active_weapon_changed(weapon: BaseWeapon)
 
 # This uses the scene node name, not the WeaponData id
-@export var default_weapon_node: StringName = &"Sniper"
+@export var default_weapon_node: StringName = &"Assult_rifle"
 @export var input_enabled: bool = true
 @export var switch_sound_volume_db: float = -4.0
 @export var switch_sound_enabled: bool = true
@@ -19,6 +19,7 @@ var weapons_by_id: Dictionary = {}
 var weapon_order: Array[StringName] = []
 var previous_weapon_name: StringName = &""
 var switch_audio_player: AudioStreamPlayer2D
+
 
 func _ready() -> void:
 	switch_audio_player = AudioStreamPlayer2D.new()

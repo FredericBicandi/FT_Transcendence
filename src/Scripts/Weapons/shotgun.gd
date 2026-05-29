@@ -1,7 +1,7 @@
 class_name Shotgun
 extends WeaponSprite
 
-const PELLET_COUNT := 6
+const PELLET_COUNT := 8
 const PELLET_SPREAD := 0.25
 const TOTAL_DAMAGE := 72
 var shell_reloading: bool = false
