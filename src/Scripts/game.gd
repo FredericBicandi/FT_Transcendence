@@ -3,6 +3,7 @@ extends Node2D
 const Localization = preload("res://src/Scripts/components/localization.gd")
 const PLAYER_SCENE: PackedScene = preload("res://src/Objects/player.tscn")
 const DEFAULT_CURSOR_TEXTURE: Texture2D = null
+const ANIMATED_CHAT_PROMPT_SCRIPT: Script = preload("res://src/Scripts/components/animated_chat_prompt.gd")
 const KILL_FEED_RIFLE_TEXTURE: Texture2D = preload("res://Assets/Textures/Guns/AFRifle/image.png")
 const KILL_FEED_SNIPER_TEXTURE: Texture2D = preload("res://Assets/Textures/Guns/Sniper/image.png")
 const KILL_FEED_ROCKET_TEXTURE: Texture2D = preload("res://Assets/Textures/Guns/RocketLuncher/image.png")
@@ -59,7 +60,7 @@ var kill_feed_container: VBoxContainer
 var chat_layer: CanvasLayer
 var chat_container: VBoxContainer
 var chat_messages_container: VBoxContainer
-var chat_prompt_label: Label
+var chat_prompt_label: Control
 var chat_input: LineEdit
 var chat_message_audio_player: AudioStreamPlayer
 var chat_is_open: bool = false
@@ -440,16 +441,10 @@ func _create_chat() -> void:
 	chat_messages_container.add_theme_constant_override("separation", 4)
 	chat_container.add_child(chat_messages_container)
 
-	chat_prompt_label = Label.new()
+	chat_prompt_label = ANIMATED_CHAT_PROMPT_SCRIPT.new() as Control
 	chat_prompt_label.name = "ChatPrompt"
-	chat_prompt_label.text = Localization.translate("chat_prompt")
-	chat_prompt_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	chat_prompt_label.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0, 0.78))
-	chat_prompt_label.add_theme_color_override("font_shadow_color", Color(0.0, 0.0, 0.0, 0.75))
-	chat_prompt_label.add_theme_constant_override("shadow_offset_x", 1)
-	chat_prompt_label.add_theme_constant_override("shadow_offset_y", 1)
-	Localization.apply_readable_text_font(chat_prompt_label, chat_prompt_label.text, CHAT_FONT)
-	chat_prompt_label.add_theme_font_size_override("font_size", 13)
+	chat_prompt_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	chat_prompt_label.call("set_prompt_text", Localization.translate("chat_prompt"), CHAT_FONT)
 	chat_container.add_child(chat_prompt_label)
 
 	chat_input = LineEdit.new()

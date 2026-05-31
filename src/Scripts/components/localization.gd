@@ -30,6 +30,7 @@ const TRANSLATIONS := {
 		"leave_game_body": "Are you sure you want to leave the game?",
 		"chat_prompt": "Press Enter to chat",
 		"chat_placeholder": "type chat",
+		"sniper_rmb_hint": "Hold RMB to aim farther",
 		"cancel": "Cancel",
 		"yes": "Yes"
 	},
@@ -57,6 +58,7 @@ const TRANSLATIONS := {
 		"leave_game_body": "Voulez-vous vraiment quitter la partie ?",
 		"chat_prompt": "Appuyez sur Entree pour discuter",
 		"chat_placeholder": "ecrire un message",
+		"sniper_rmb_hint": "Maintenez clic droit pour viser plus loin",
 		"cancel": "Annuler",
 		"yes": "Oui"
 	},
@@ -84,6 +86,7 @@ const TRANSLATIONS := {
 		"leave_game_body": "هل تريد مغادرة اللعبة؟",
 		"chat_prompt": "اضغط Enter للدردشة",
 		"chat_placeholder": "اكتب رسالة",
+		"sniper_rmb_hint": "اضغط الزر الأيمن للتصويب أبعد",
 		"cancel": "إلغاء",
 		"yes": "نعم"
 	}
