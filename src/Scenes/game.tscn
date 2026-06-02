@@ -7,9 +7,9 @@
 [ext_resource type="PackedScene" uid="uid://daaxgnf8jlf6p" path="res://src/Scenes/respawn.tscn" id="5_b2r7h"]
 [ext_resource type="PackedScene" uid="uid://dimb5ix4olid2" path="res://src/Scenes/timer.tscn" id="6_v1g0a"]
 [ext_resource type="PackedScene" uid="uid://e3lcnmeh7xhk" path="res://src/Scenes/leaderboard.tscn" id="7_0plu0"]
-[ext_resource type="Script" uid="uid://d2aph5sjogruv" path="res://src/Objects/rmb_sniper_hint.gd" id="8_0plu0"]
+[ext_resource type="Script" uid="uid://d2aph5sjogruv" path="res://src/Scripts/components/rmb_sniper_hint.gd" id="8_0plu0"]
 [ext_resource type="Texture2D" uid="uid://bjtgebt3i47yw" path="res://Assets/Textures/Guns/Sniper/rmb.png" id="9_mhgmy"]
-[ext_resource type="Script" uid="uid://bp3jqn5iodk7j" path="res://src/Scenes/rmb.gd" id="10_mhgmy"]
+[ext_resource type="Script" uid="uid://bp3jqn5iodk7j" path="res://src/Scripts/rmb.gd" id="10_mhgmy"]
 
 [sub_resource type="GDScript" id="GDScript_jma1v"]
 script/source = "extends Node2D

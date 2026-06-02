@@ -6,7 +6,7 @@
 [ext_resource type="Texture2D" uid="uid://dynpgad2iy322" path="res://Assets/Textures/Character/Legs/leg.png" id="3_gl4sb"]
 [ext_resource type="Texture2D" uid="uid://dgev56c5418a8" path="res://Assets/Textures/Character/dust.png" id="5_k3wyq"]
 [ext_resource type="FontFile" uid="uid://c0kqf073e3q3o" path="res://Assets/Fonts/dogica.ttf" id="5_player_name_font"]
-[ext_resource type="Script" uid="uid://cdto0y71cf6v8" path="res://src/Objects/camera_2d.gd" id="6_41rav"]
+[ext_resource type="Script" uid="uid://cdto0y71cf6v8" path="res://src/Scripts/camera_2d.gd" id="6_41rav"]
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_gh0nf"]
 atlas = ExtResource("3_gl4sb")

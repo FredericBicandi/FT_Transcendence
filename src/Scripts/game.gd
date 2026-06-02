@@ -8,6 +8,7 @@ const KILL_FEED_RIFLE_TEXTURE: Texture2D = preload("res://Assets/Textures/Guns/A
 const KILL_FEED_SNIPER_TEXTURE: Texture2D = preload("res://Assets/Textures/Guns/Sniper/image.png")
 const KILL_FEED_ROCKET_TEXTURE: Texture2D = preload("res://Assets/Textures/Guns/RocketLuncher/image.png")
 const KILL_FEED_SHOTGUN_TEXTURE: Texture2D = preload("res://Assets/Textures/Guns/Shotgun/image.png")
+const KILL_FEED_DEATH_ICON_SCRIPT: Script = preload("res://src/Scripts/components/kill_feed_death_icon.gd")
 const CHAT_MESSAGE_SOUND: AudioStream = preload("res://Assets/Audio/new message.mp3")
 const CHAT_FONT: FontFile = preload("res://Assets/Fonts/pf_ronda_seven.woff2")
 const RESPAWN_LAYER_20_MASK: int = 1 << 19
@@ -354,6 +355,12 @@ func _set_cursor_for_weapon(weapon: BaseWeapon) -> void:
 	if default_cursor == null:
 		return
 
+	if weapon != null and weapon.hides_cursor_when_selected():
+		default_cursor.visible = false
+		if cursor_reload_ring != null:
+			cursor_reload_ring.call("set_ring_visible", false)
+		return
+
 	var crosshair_texture := DEFAULT_CURSOR_TEXTURE
 	if weapon != null:
 		var weapon_crosshair := weapon.get_weapon_crosshair()
@@ -376,6 +383,7 @@ func _update_cursor_reload_ring() -> void:
 		cursor != null
 		and cursor.visible
 		and observed_weapon != null
+		and not observed_weapon.hides_cursor_when_selected()
 		and observed_weapon.is_reloading()
 	)
 	cursor_reload_ring.call("set_ring_visible", ring_active)
@@ -720,10 +728,10 @@ func _show_kill_feed_entry(killer_name: String, killed_name: String, weapon_type
 	columns.add_child(killer_label)
 
 	if is_self_kill:
-		var skull_label: Label = _create_kill_feed_label("☠", Color(0.92, 0.95, 1.0, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
-		skull_label.custom_minimum_size = Vector2(28.0, 0.0)
-		skull_label.add_theme_font_size_override("font_size", 18)
-		columns.add_child(skull_label)
+		var death_icon := KILL_FEED_DEATH_ICON_SCRIPT.new() as Control
+		death_icon.custom_minimum_size = Vector2(28.0, 22.0)
+		death_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		columns.add_child(death_icon)
 	else:
 		var icon := TextureRect.new()
 		icon.texture = _get_kill_feed_weapon_texture(weapon_type)

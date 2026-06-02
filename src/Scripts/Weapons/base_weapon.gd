@@ -3,11 +3,14 @@ extends Node2D
 
 const WeaponData = preload("res://src/Scripts/Weapons/weapon_data.gd")
 const Projectile = preload("res://src/Scripts/Weapons/projectile.gd")
+const TargetArcIndicatorScript = preload("res://src/Scripts/Weapons/target_arc_indicator.gd")
 const DAMAGEABLE_PLAYER_GROUP := "damageable_player"
 const DEFAULT_MUZZLE_COLLISION_MASK := 1
 const DEFAULT_MUZZLE_WALL_PADDING := 1.5
 const DEFAULT_MUZZLE_WALL_VISUAL_PULLBACK := 4.0
 const DEFAULT_MUZZLE_WALL_MIN_VISUAL_SCALE := 0.6
+const DEFAULT_TARGET_ARC_SELF_AIM_DISTANCE := 96.0
+const DEFAULT_TARGET_ARC_INDICATOR_FILL_COLOR := Color(1.0, 0.12, 0.35, 0.22)
 const MAX_ACTIVE_BULLETS_PER_WEAPON := 128
 
 signal ammo_changed(current_ammo: int, max_ammo: int)
@@ -47,6 +50,7 @@ var muzzle_raycast_cache_gun_position: Vector2 = Vector2.ZERO
 var muzzle_raycast_cache_gun_scale: Vector2 = Vector2.ONE
 var muzzle_raycast_cache_safe_position: Vector2 = Vector2.ZERO
 var muzzle_raycast_cache_has_safe_position: bool = false
+var target_arc_indicator: Node2D
 const MUZZLE_RAYCAST_CACHE_EPSILON: float = 0.5
 
 @onready var gun: AnimatedSprite2D = $Gun
@@ -80,6 +84,7 @@ func _ready() -> void:
 	add_child(reload_audio_player)
 
 func _exit_tree() -> void:
+	_free_target_arc_indicator()
 	_clear_active_bullets()
 
 func _process(delta: float) -> void:
@@ -98,12 +103,15 @@ func _process(delta: float) -> void:
 	update_bullets(delta)
 
 	if not is_active_weapon:
+		_hide_target_arc_indicator()
 		return
 
 	if has_aim_target_override:
 		update_aim(aim_target_override)
 	else:
 		update_aim(get_global_mouse_position())
+
+	_update_target_arc_indicator()
 
 	if accepts_player_input:
 		if Input.is_key_pressed(KEY_R):
@@ -146,6 +154,8 @@ func _free_bullet_node(bullet_instance_id: int) -> void:
 func set_active(is_active: bool) -> void:
 	is_active_weapon = is_active
 	visible = is_active
+	if not is_active:
+		_hide_target_arc_indicator()
 
 func update_movement(direction: Vector2) -> void:
 	var config := get_weapon_config()
@@ -205,7 +215,30 @@ func should_use_current_frame_for_shot(target_position: Vector2) -> bool:
 func get_current_frame_shot_target(start_position: Vector2, config: Dictionary) -> Vector2:
 	var bullet_speed := maxf(float(config.get("bullet_speed", 320.0)), 1.0)
 	var bullet_lifetime := maxf(float(config.get("bullet_lifetime", 1.0)), 0.1)
-	return start_position + get_current_frame_direction() * bullet_speed * bullet_lifetime
+	var shot_distance := bullet_speed * bullet_lifetime
+	if Projectile.uses_target_arc(config):
+		shot_distance = maxf(float(config.get("target_arc_self_aim_distance", DEFAULT_TARGET_ARC_SELF_AIM_DISTANCE)), 1.0)
+	return start_position + get_current_frame_direction() * shot_distance
+
+func clamp_target_arc_shot_target(range_origin: Vector2, target_position: Vector2, config: Dictionary) -> Vector2:
+	if not Projectile.uses_target_arc(config):
+		return target_position
+
+	var max_distance := maxf(float(config.get("target_arc_max_distance", 0.0)), 0.0)
+	if max_distance <= 0.0:
+		return target_position
+
+	var target_offset := target_position - range_origin
+	if target_offset.length() <= max_distance:
+		return target_position
+
+	return range_origin + target_offset.limit_length(max_distance)
+
+func get_target_arc_range_origin(fallback_position: Vector2) -> Vector2:
+	var owner_body := find_owner_body()
+	if owner_body != null:
+		return owner_body.global_position
+	return fallback_position
 
 func shoot() -> void:
 	if fire_cooldown > 0.0 or reload_cooldown > 0.0:
@@ -228,7 +261,11 @@ func shoot() -> void:
 
 	var shot_start_position := get_shot_start_position(config)
 	var frame_shot_target := get_current_frame_shot_target(shot_start_position, config)
-	var desired_shot_target := frame_shot_target if should_use_current_frame_for_shot(raw_shot_target) else raw_shot_target
+	var uses_target_arc := Projectile.uses_target_arc(config)
+	var should_use_frame_target := should_use_current_frame_for_shot(raw_shot_target) and not uses_target_arc
+	var desired_shot_target := frame_shot_target if should_use_frame_target else raw_shot_target
+	var range_origin := get_target_arc_range_origin(shot_start_position) if uses_target_arc else shot_start_position
+	desired_shot_target = clamp_target_arc_shot_target(range_origin, desired_shot_target, config)
 	var shot_target := _resolve_shot_target(shot_start_position, desired_shot_target, config)
 	var bullet_offset := shot_target - shot_start_position
 	var bullet_direction := bullet_offset.normalized() if bullet_offset != Vector2.ZERO else Vector2.RIGHT
@@ -384,6 +421,66 @@ func _resolve_shot_target(start_position: Vector2, target_position: Vector2, con
 		return target_position
 
 	return hit.get("position", target_position)
+
+func _update_target_arc_indicator() -> void:
+	var config := get_weapon_config()
+	if not _should_show_target_arc_indicator(config):
+		_hide_target_arc_indicator()
+		return
+
+	var indicator := _ensure_target_arc_indicator(config)
+	if indicator == null:
+		return
+
+	indicator.call(
+		"configure",
+		float(config.get("explosion_radius", 0.0)),
+		_get_color_config(config, "target_arc_indicator_fill_color", DEFAULT_TARGET_ARC_INDICATOR_FILL_COLOR)
+	)
+	indicator.global_position = _get_target_arc_preview_position(get_global_mouse_position(), config)
+	indicator.visible = true
+
+func _get_target_arc_preview_position(raw_target: Vector2, config: Dictionary) -> Vector2:
+	return clamp_target_arc_shot_target(get_target_arc_range_origin(global_position), raw_target, config)
+
+func _should_show_target_arc_indicator(config: Dictionary) -> bool:
+	return (
+		is_active_weapon
+		and accepts_player_input
+		and not has_aim_target_override
+		and Projectile.uses_target_arc(config)
+		and bool(config.get("show_target_arc_indicator", false))
+		and float(config.get("explosion_radius", 0.0)) > 0.0
+	)
+
+func _ensure_target_arc_indicator(config: Dictionary) -> Node2D:
+	if target_arc_indicator != null and is_instance_valid(target_arc_indicator):
+		return target_arc_indicator
+
+	var parent := get_tree().current_scene
+	if parent == null:
+		return null
+
+	target_arc_indicator = TargetArcIndicatorScript.new() as Node2D
+	target_arc_indicator.name = "%sTargetArcIndicator" % get_weapon_name().replace(" ", "")
+	target_arc_indicator.visible = false
+	target_arc_indicator.z_index = int(config.get("target_arc_indicator_z_index", 1000))
+	target_arc_indicator.z_as_relative = false
+	parent.add_child(target_arc_indicator)
+	return target_arc_indicator
+
+func _hide_target_arc_indicator() -> void:
+	if target_arc_indicator != null and is_instance_valid(target_arc_indicator):
+		target_arc_indicator.visible = false
+
+func _free_target_arc_indicator() -> void:
+	if target_arc_indicator != null and is_instance_valid(target_arc_indicator):
+		target_arc_indicator.queue_free()
+	target_arc_indicator = null
+
+func _get_color_config(config: Dictionary, key: String, fallback: Color) -> Color:
+	var value: Variant = config.get(key, fallback)
+	return value if value is Color else fallback
 
 func _to_string_array(values: Variant) -> Array[String]:
 	var result: Array[String] = []
@@ -545,10 +642,14 @@ func get_current_ammo() -> int:
 func get_weapon_name() -> String:
 	return weapon_id
 
+func hides_cursor_when_selected() -> bool:
+	return bool(get_weapon_config().get("hide_cursor_when_selected", false))
+
 func set_input_enabled(is_enabled: bool) -> void:
 	accepts_player_input = is_enabled
 	if not is_enabled:
 		fire_locked_until_click_released = false
+		_hide_target_arc_indicator()
 
 func lock_fire_until_click_released() -> void:
 	fire_locked_until_click_released = Input.is_action_pressed("click")
@@ -556,6 +657,7 @@ func lock_fire_until_click_released() -> void:
 func set_aim_target(target_position: Vector2) -> void:
 	has_aim_target_override = true
 	aim_target_override = target_position
+	_hide_target_arc_indicator()
 
 func clear_aim_target() -> void:
 	has_aim_target_override = false

@@ -1,15 +1,16 @@
 extends Node
 
-const SLOT_SIZE := Vector2(150.0, 72.0)
+const SLOT_SIZE := Vector2(190.0, 76.0)
 const ICON_SIZE := Vector2(92.0, 32.0)
 const SLOT_SPACING := 4.0
-const PANEL_LEFT_MARGIN := 8.0
-const PANEL_BOTTOM_MARGIN := 18.0
+const PANEL_RIGHT_MARGIN := 18.0
+const PANEL_BOTTOM_MARGIN := 82.0
 const INACTIVE_PANEL_COLOR := Color(0.08, 0.1, 0.11, 0.9)
 const ACTIVE_PANEL_COLOR := Color(0.12, 0.14, 0.16, 0.95)
 const INACTIVE_BORDER_COLOR := Color(0.35, 0.39, 0.42, 0.95)
 const ACTIVE_BORDER_COLOR := Color(0.88, 0.91, 0.94, 1.0)
 const TEXT_COLOR := Color(0.96, 0.98, 1.0, 1.0)
+const INFINITE_AMMO_ICON := "∞"
 
 @onready var weapon_panel: Control = $CanvasLayer/WeaponHud
 
@@ -38,10 +39,10 @@ func set_ammo(current_ammo: int, max_ammo: int) -> void:
 	_update_weapon_ammo(active_weapon, current_ammo, max_ammo)
 
 func _build_shell() -> void:
-	weapon_panel.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
-	weapon_panel.offset_left = PANEL_LEFT_MARGIN
+	weapon_panel.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+	weapon_panel.offset_left = -(PANEL_RIGHT_MARGIN + SLOT_SIZE.x)
 	weapon_panel.offset_top = -242.0
-	weapon_panel.offset_right = PANEL_LEFT_MARGIN + SLOT_SIZE.x
+	weapon_panel.offset_right = -PANEL_RIGHT_MARGIN
 	weapon_panel.offset_bottom = -PANEL_BOTTOM_MARGIN
 	weapon_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	if weapon_panel is PanelContainer:
@@ -105,29 +106,25 @@ func _create_slot_row(weapon: BaseWeapon, index: int) -> PanelContainer:
 	row.add_child(margin)
 
 	var layout: VBoxContainer = VBoxContainer.new()
-	layout.add_theme_constant_override("separation", 1)
+	layout.add_theme_constant_override("separation", 0)
 	margin.add_child(layout)
 
-	var header: HBoxContainer = HBoxContainer.new()
-	header.custom_minimum_size = Vector2(0.0, 18.0)
-	header.add_theme_constant_override("separation", 5)
-	layout.add_child(header)
+	var top_row: HBoxContainer = HBoxContainer.new()
+	top_row.custom_minimum_size = Vector2(0.0, 17.0)
+	layout.add_child(top_row)
 
-	var ammo_label: Label = Label.new()
-	ammo_label.name = "AmmoLabel"
-	ammo_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	ammo_label.add_theme_color_override("font_color", TEXT_COLOR)
-	ammo_label.add_theme_font_size_override("font_size", 14)
-	ammo_label.text = _format_ammo(weapon.get_current_ammo(), weapon.get_magazine_size())
-	header.add_child(ammo_label)
+	var weapon_slot_label: Label = Label.new()
+	weapon_slot_label.name = "WeaponSlotLabel"
+	weapon_slot_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	weapon_slot_label.add_theme_color_override("font_color", TEXT_COLOR)
+	weapon_slot_label.add_theme_font_size_override("font_size", 13)
+	weapon_slot_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	weapon_slot_label.text = _format_weapon_slot_text(weapon, index)
+	top_row.add_child(weapon_slot_label)
 
 	var icon_row: HBoxContainer = HBoxContainer.new()
-	icon_row.add_theme_constant_override("separation", 4)
+	icon_row.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	layout.add_child(icon_row)
-
-	var spacer: Control = Control.new()
-	spacer.custom_minimum_size = Vector2(14.0, 1.0)
-	icon_row.add_child(spacer)
 
 	var icon: TextureRect = TextureRect.new()
 	icon.name = "WeaponIcon"
@@ -138,15 +135,30 @@ func _create_slot_row(weapon: BaseWeapon, index: int) -> PanelContainer:
 	icon.texture = weapon.get_weapon_icon()
 	icon_row.add_child(icon)
 
-	var current_key: Label = Label.new()
-	current_key.name = "CurrentKey"
-	current_key.custom_minimum_size = Vector2(20.0, 32.0)
-	current_key.add_theme_color_override("font_color", TEXT_COLOR)
-	current_key.add_theme_font_size_override("font_size", 14)
-	current_key.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
-	current_key.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	current_key.text = "[%s]" % _get_slot_key_text(index)
-	icon_row.add_child(current_key)
+	var bottom_row: HBoxContainer = HBoxContainer.new()
+	bottom_row.custom_minimum_size = Vector2(0.0, 17.0)
+	bottom_row.add_theme_constant_override("separation", 4)
+	layout.add_child(bottom_row)
+
+	var bottom_spacer: Control = Control.new()
+	bottom_spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	bottom_row.add_child(bottom_spacer)
+
+	var infinite_ammo_icon: Label = Label.new()
+	infinite_ammo_icon.name = "InfiniteAmmoIcon"
+	infinite_ammo_icon.add_theme_color_override("font_color", TEXT_COLOR)
+	infinite_ammo_icon.add_theme_font_size_override("font_size", 15)
+	infinite_ammo_icon.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	infinite_ammo_icon.text = INFINITE_AMMO_ICON
+	bottom_row.add_child(infinite_ammo_icon)
+
+	var ammo_label: Label = Label.new()
+	ammo_label.name = "AmmoLabel"
+	ammo_label.add_theme_color_override("font_color", TEXT_COLOR)
+	ammo_label.add_theme_font_size_override("font_size", 14)
+	ammo_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	ammo_label.text = _format_ammo(weapon.get_current_ammo(), weapon.get_magazine_size())
+	bottom_row.add_child(ammo_label)
 
 	return row
 
@@ -186,10 +198,13 @@ func _create_slot_style(is_active: bool) -> StyleBoxFlat:
 	return style
 
 func _format_ammo(current_ammo: int, max_ammo: int) -> String:
-	if max_ammo <= 1:
+	if max_ammo <= 0:
 		return "INF" if current_ammo > 999 else "%d" % current_ammo
 
-	return "%d (%d)" % [current_ammo, max_ammo]
+	return "%d/%d" % [current_ammo, max_ammo]
+
+func _format_weapon_slot_text(weapon: BaseWeapon, index: int) -> String:
+	return "%s [%s]" % [weapon.get_weapon_name(), _get_slot_key_text(index)]
 
 func _get_slot_key_text(index: int) -> String:
 	if index == 9:

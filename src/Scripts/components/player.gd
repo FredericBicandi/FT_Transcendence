@@ -2,6 +2,13 @@ class_name Player
 extends CharacterBody2D
 
 const Localization = preload("res://src/Scripts/components/localization.gd")
+const DEATH_SCENE_TEXTURE: Texture2D = preload("res://Assets/Textures/Character/dead.png")
+const DEATH_MEDKIT_TEXTURE: Texture2D = preload("res://Assets/medkit.png")
+const DEATH_MEDKIT_LAYER_NAME := "DeathMedkits"
+const DEATH_MEDKIT_VISUAL_SCALE := Vector2(0.45, 0.45)
+const DEATH_MEDKIT_VISUAL_OFFSET := Vector2(7.0, -5.0)
+const DEATH_MEDKIT_PICKUP_RADIUS: float = 10.0
+const PLAYER_COLLISION_LAYER_MASK: int = 2
 const POSITION_HEARTBEAT_INTERVAL: float = 5.0
 const MOVE_SYNC_INTERVAL: float = 0.05
 const MOVE_SYNC_FORCE_DISTANCE: float = 10.0
@@ -65,6 +72,7 @@ var listener_sound_time: float = 0.0
 var active_shot_voices: Array[Dictionary] = []
 var last_shot_time_by_stream: Dictionary = {}
 var damage_number_settings: LabelSettings
+var heal_number_settings: LabelSettings
 var match_controls_enabled: bool = true
 var is_remote_proxy: bool = false
 var has_received_remote_snapshot: bool = false
@@ -98,6 +106,8 @@ var walk_dust_speed_scale: float = 1.0
 var walk_dust_z_index: int = 0
 var camera_focus_enabled := false
 var camera_focus_strength := 0.0
+var active_death_drop: Node2D
+var active_death_medkit: Area2D
 
 @onready var head: AnimatedSprite2D = $Head
 @onready var legs: AnimatedSprite2D = $Leg
@@ -155,6 +165,7 @@ func _ready() -> void:
 	_schedule_join_state_sync()
 
 func _exit_tree() -> void:
+	_remove_death_drop()
 	_clear_active_shot_voices()
 
 	if weapon != null:
@@ -188,8 +199,10 @@ func _physics_process(delta: float) -> void:
 
 	var previous_position := global_position
 
-	# Only local players read keyboard movement here
-	var direction := Input.get_vector("left", "right", "up", "down") if accepts_input and match_controls_enabled else Vector2.ZERO
+	# Scoped sniper aim locks movement but still allows aiming and shooting.
+	var direction := Vector2.ZERO
+	if accepts_input and match_controls_enabled and not is_sniper_scope_active():
+		direction = Input.get_vector("left", "right", "up", "down")
 	velocity = direction * move_speed
 	move_and_slide()
 
@@ -231,7 +244,7 @@ func _process(delta: float) -> void:
 	update_head_direction_from_weapon()
 	_update_overhead_ui()
 	
-	camera_focus_enabled = Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT)
+	camera_focus_enabled = is_sniper_scope_active()
 
 	if camera_focus_enabled:
 		camera_focus_strength = 1.0
@@ -370,6 +383,12 @@ func _configure_damage_numbers() -> void:
 	damage_number_settings.outline_size = 4
 	damage_number_settings.outline_color = Color(0.18, 0.05, 0.05, 0.95)
 
+	heal_number_settings = LabelSettings.new()
+	heal_number_settings.font_size = 14
+	heal_number_settings.font_color = Color(0.35, 1.0, 0.4, 1.0)
+	heal_number_settings.outline_size = 4
+	heal_number_settings.outline_color = Color(0.02, 0.18, 0.05, 0.95)
+
 func _show_damage_number(amount: int, hit_position: Vector2) -> void:
 	if damage_numbers == null:
 		return
@@ -384,6 +403,28 @@ func _show_damage_number(amount: int, hit_position: Vector2) -> void:
 	if hit_position != Vector2.ZERO:
 		base_position = to_local(hit_position) + Vector2(-6.0, -12.0)
 
+	base_position.x += randf_range(-damage_number_spread, damage_number_spread)
+	label.position = base_position
+	damage_numbers.add_child(label)
+
+	var end_position := label.position + Vector2(randf_range(-4.0, 4.0), -damage_number_rise_distance)
+	var tween := create_tween()
+	tween.set_parallel(true)
+	tween.tween_property(label, "position", end_position, DAMAGE_NUMBER_LIFETIME).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	tween.tween_property(label, "modulate:a", 0.0, DAMAGE_NUMBER_LIFETIME).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	tween.finished.connect(label.queue_free)
+
+func _show_heal_number(amount: int) -> void:
+	if damage_numbers == null or amount <= 0:
+		return
+
+	var label := Label.new()
+	label.text = "+%d" % amount
+	label.label_settings = heal_number_settings
+	label.z_index = 3
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	var base_position := Vector2(-8.0, -22.0)
 	base_position.x += randf_range(-damage_number_spread, damage_number_spread)
 	label.position = base_position
 	damage_numbers.add_child(label)
@@ -593,6 +634,7 @@ func die() -> void:
 	legs.modulate = Color.WHITE
 	head.modulate = Color.WHITE
 	_clear_active_shot_voices()
+	_spawn_death_medkit()
 	legs.visible = false
 	head.visible = false
 	overhead_panel.visible = false
@@ -613,6 +655,144 @@ func respawn() -> void:
 
 	if accepts_input and network_client != null:
 		_send_respawn_state()
+
+func _spawn_death_medkit() -> void:
+	_remove_death_drop()
+
+	var parent := _get_death_medkit_layer()
+	if parent == null:
+		return
+
+	active_death_drop = Node2D.new()
+	active_death_drop.name = "DeathDrop"
+	parent.add_child(active_death_drop)
+	active_death_drop.global_position = global_position
+
+	var dead_scene := Sprite2D.new()
+	dead_scene.name = "DeadScene"
+	dead_scene.texture = DEATH_SCENE_TEXTURE
+	dead_scene.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	dead_scene.z_index = 0
+	active_death_drop.add_child(dead_scene)
+
+	active_death_medkit = Area2D.new()
+	active_death_medkit.name = "DeathMedkit"
+	active_death_medkit.monitoring = true
+	active_death_medkit.monitorable = false
+	active_death_medkit.collision_layer = 0
+	active_death_medkit.collision_mask = PLAYER_COLLISION_LAYER_MASK
+	active_death_medkit.position = DEATH_MEDKIT_VISUAL_OFFSET
+	active_death_medkit.z_index = 1
+	active_death_medkit.body_entered.connect(_on_death_medkit_body_entered.bind(active_death_medkit))
+	active_death_drop.add_child(active_death_medkit)
+
+	var sprite := Sprite2D.new()
+	sprite.name = "Sprite"
+	sprite.texture = DEATH_MEDKIT_TEXTURE
+	sprite.scale = DEATH_MEDKIT_VISUAL_SCALE
+	sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	active_death_medkit.add_child(sprite)
+
+	var collision := CollisionShape2D.new()
+	collision.name = "PickupRadius"
+	var shape := CircleShape2D.new()
+	shape.radius = DEATH_MEDKIT_PICKUP_RADIUS
+	collision.shape = shape
+	active_death_medkit.add_child(collision)
+
+	get_tree().create_timer(maxf(respawn_delay, 0.1)).timeout.connect(_remove_death_drop.bind(active_death_drop))
+
+func _get_death_medkit_layer() -> Node2D:
+	var layer_root := _get_death_medkit_layer_root()
+	if layer_root == null:
+		return null
+
+	var existing_layer := layer_root.get_node_or_null(DEATH_MEDKIT_LAYER_NAME) as Node2D
+	if existing_layer != null:
+		return existing_layer
+
+	var layer := Node2D.new()
+	layer.name = DEATH_MEDKIT_LAYER_NAME
+	layer.y_sort_enabled = true
+	layer_root.add_child(layer)
+
+	var map_node := layer_root.get_node_or_null("Map") as Node2D
+	if map_node != null:
+		layer_root.move_child(layer, map_node.get_index() + 1)
+
+	return layer
+
+func _get_death_medkit_layer_root() -> Node2D:
+	var current := get_parent()
+	while current != null:
+		var current_node := current as Node2D
+		if current_node != null and current_node.get_node_or_null("Map") != null:
+			return current_node
+		current = current.get_parent()
+
+	return get_tree().current_scene as Node2D
+
+func _on_death_medkit_body_entered(body: Node2D, medkit: Area2D) -> void:
+	if medkit == null or medkit != active_death_medkit or not is_instance_valid(medkit):
+		return
+
+	var collector := body as Player
+	if collector == null or not collector.can_collect_death_medkit():
+		return
+
+	collector.collect_death_medkit()
+	_remove_death_medkit(medkit)
+
+func can_collect_death_medkit() -> bool:
+	return accepts_input and not is_remote_proxy and not is_dead and health < max_health
+
+func collect_death_medkit() -> void:
+	var healed_amount := max_health - health
+	set_health(max_health)
+	_show_heal_number(healed_amount)
+	_send_health_state(healed_amount, "medkit")
+
+func _remove_death_medkit(medkit: Area2D = null) -> void:
+	if medkit != null:
+		if not is_instance_valid(medkit):
+			return
+		if medkit != active_death_medkit:
+			medkit.queue_free()
+			return
+
+	if active_death_medkit != null and is_instance_valid(active_death_medkit):
+		active_death_medkit.queue_free()
+	active_death_medkit = null
+
+func _remove_death_drop(drop: Node2D = null) -> void:
+	if drop != null:
+		if not is_instance_valid(drop):
+			return
+		if drop != active_death_drop:
+			drop.queue_free()
+			return
+
+	if active_death_drop != null and is_instance_valid(active_death_drop):
+		active_death_drop.queue_free()
+	active_death_drop = null
+	active_death_medkit = null
+
+func _send_health_state(heal_amount: int = 0, source: String = "") -> void:
+	var active_weapon := weapon.get_active_weapon() if weapon != null else null
+	if active_weapon == null or network_client == null:
+		return
+
+	last_sent_angle = _get_current_aim_angle()
+	network_client.send_health_update(
+		health,
+		is_dead,
+		global_position.x,
+		global_position.y,
+		last_sent_angle,
+		active_weapon.get_weapon_name(),
+		heal_amount,
+		source
+	)
 
 func update_auto_attack() -> void:
 	# AI picks a live target and keeps aiming at it
@@ -1017,6 +1197,7 @@ func _restore_after_respawn() -> void:
 	has_requested_server_respawn = false
 	server_respawn_retry_timer = 0.0
 	idle_position_heartbeat_time = 0.0
+	_remove_death_drop()
 	# Snapshots enqueued while we were dead never played (physics process
 	# bails for dead bodies); drop them so respawn does not warp through them.
 	if is_remote_proxy:
@@ -1364,3 +1545,13 @@ func _report_angle_on_frame_change() -> void:
 func is_sniper_equipped() -> bool:
 	var w := weapon.get_active_weapon()
 	return w != null and w.get_weapon_name().to_lower().contains("sniper")
+
+func is_sniper_scope_active() -> bool:
+	return (
+		accepts_input
+		and match_controls_enabled
+		and not is_remote_proxy
+		and not is_dead
+		and is_sniper_equipped()
+		and Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT)
+	)

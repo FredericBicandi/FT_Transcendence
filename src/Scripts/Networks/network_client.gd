@@ -215,6 +215,55 @@ func send_respawn(x: float, y: float, angle: float, weapon_type: String) -> void
 		}
 	)
 
+func send_health_update(health: int, is_dead: bool, x: float, y: float, angle: float, weapon_type: String, heal_amount: int = 0, source: String = "") -> void:
+	if socket.get_ready_state() != WebSocketPeer.STATE_OPEN:
+		return
+	if not are_finite_numbers([x, y, angle]):
+		return
+
+	var clamped_health := maxi(health, 0)
+	var clamped_heal_amount := maxi(heal_amount, 0)
+	var normalized_source := source.strip_edges()
+	var health_state := {
+		"health": clamped_health,
+		"newHealth": clamped_health,
+		"currentHealth": clamped_health,
+		"playerHealth": clamped_health,
+		"isDead": is_dead,
+		"x": x,
+		"y": y,
+		"angle": angle,
+		"weaponType": weapon_type
+	}
+
+	if clamped_heal_amount > 0:
+		health_state["amount"] = clamped_heal_amount
+		health_state["healAmount"] = clamped_heal_amount
+	if normalized_source != "":
+		health_state["source"] = normalized_source
+
+	var payload := health_state.duplicate()
+	payload["type"] = "heal"
+	payload["request"] = "medkit_heal" if normalized_source == "medkit" else "health_update"
+	_apply_local_packet_identity(payload)
+	_send_json(payload)
+
+	var compatibility_payload := health_state.duplicate()
+	compatibility_payload["type"] = "player_health"
+	compatibility_payload["request"] = "health_update"
+	_apply_local_packet_identity(compatibility_payload)
+	_send_json(compatibility_payload)
+
+func _apply_local_packet_identity(payload: Dictionary) -> void:
+	if local_player_id != "":
+		payload["playerId"] = local_player_id
+	elif player_id != "":
+		payload["playerId"] = player_id
+
+	if local_room_id != "":
+		payload["roomId"] = local_room_id
+		payload["room_id"] = local_room_id
+
 func send_hit(target_player_id: String, weapon_type: String, damage: int, shot_id: String, x: float, y: float, angle: float, timestamp: int) -> void:
 	if socket.get_ready_state() != WebSocketPeer.STATE_OPEN:
 		return
