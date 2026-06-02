@@ -30,8 +30,12 @@ public sealed class Ws
     private const double DefaultSpawnY = 0.0;
     internal const double DefaultSpawnAngle = 0.0;
     private const double MaxHitDamage = DefaultPlayerHealth;
+    private const double DefaultMedkitHealAmount = 75.0;
+    private const double MaxMedkitHealAmount = DefaultMedkitHealAmount;
     private const double MinRocketLauncherDamage = 1.0;
     private const double MaxRocketLauncherDamage = 80.0;
+    private const string MedkitHealRequest = "medkit_heal";
+    private const string MedkitSource = "medkit";
     private const string AssultRifleWeaponType = "Assult rifle";
     private const string SniperWeaponType = "Sniper";
     private const string RocketLauncherWeaponType = "Rocket Launcher";
@@ -793,6 +797,43 @@ public sealed class Ws
                 return;
             }
 
+            if (type == "heal")
+            {
+                if (!await RequireActiveJoinedAsync(client, type, message))
+                    return;
+
+                if (!TryReadHeal(root, message, client.PlayerId, out var heal))
+                    return;
+
+                var result = client.ApplyHeal(heal.Amount);
+                if (result.Heal <= 0)
+                {
+                    Console.WriteLine($"Rejected heal from {client.PlayerId}: player is dead, full health, or heal amount is zero");
+                    return;
+                }
+
+                await BroadcastToRoomAsync(client.RoomId, new
+                {
+                    type = "player_health",
+                    request = heal.Request,
+                    playerId = client.PlayerId,
+                    health = result.Health,
+                    newHealth = result.Health,
+                    currentHealth = result.Health,
+                    playerHealth = result.Health,
+                    previousHealth = result.PreviousHealth,
+                    heal = result.Heal,
+                    healAmount = result.Heal,
+                    amount = result.Heal,
+                    requestedAmount = heal.Amount,
+                    source = heal.Source,
+                    isDead = result.IsDead,
+                    reason = heal.Request
+                });
+
+                return;
+            }
+
             if (type == "health_update")
             {
                 Console.WriteLine($"Rejected client-authoritative health update from {client.PlayerId}: {message}");
@@ -1107,6 +1148,57 @@ public sealed class Ws
 
     private static bool IsRocketLauncher(string weaponType) =>
         string.Equals(weaponType, RocketLauncherWeaponType, StringComparison.OrdinalIgnoreCase);
+
+    private static bool TryReadHeal(
+        JsonElement root,
+        string message,
+        string playerId,
+        out HealRequest heal)
+    {
+        heal = default;
+
+        if (!Helper.TryGetString(root, "request", out var request) ||
+            !string.Equals(request, MedkitHealRequest, StringComparison.OrdinalIgnoreCase))
+        {
+            Console.WriteLine($"Invalid heal request from {playerId}: {message}");
+            return false;
+        }
+
+        var source = MedkitSource;
+        if (root.TryGetProperty("source", out _))
+        {
+            if (!Helper.TryGetString(root, "source", out source) ||
+                !string.Equals(source, MedkitSource, StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine($"Invalid heal source from {playerId}: {message}");
+                return false;
+            }
+
+            source = MedkitSource;
+        }
+
+        var amount = DefaultMedkitHealAmount;
+        if (root.TryGetProperty("healAmount", out _) || root.TryGetProperty("amount", out _))
+        {
+            if (!Helper.TryGetNumber(root, "healAmount", out amount) &&
+                !Helper.TryGetNumber(root, "amount", out amount))
+            {
+                Console.WriteLine($"Invalid heal amount from {playerId}: {message}");
+                return false;
+            }
+        }
+
+        if (!double.IsFinite(amount) || amount <= 0)
+        {
+            Console.WriteLine($"Invalid heal amount from {playerId}: {message}");
+            return false;
+        }
+
+        amount = Math.Clamp(amount, 0, MaxMedkitHealAmount);
+
+        heal = new HealRequest(request, source, amount);
+        return true;
+    }
 
     private static bool TryReadOptionalRespawnPosition(
         JsonElement root,
@@ -1833,6 +1925,11 @@ public readonly record struct HitRequest(
     double Damage,
     string? ShotId);
 
+public readonly record struct HealRequest(
+    string Request,
+    string Source,
+    double Amount);
+
 public readonly record struct ShootRequest(
     string? WeaponType,
     double Angle,
@@ -1876,6 +1973,8 @@ public readonly record struct HealthSnapshot(double Health, bool IsDead);
 public readonly record struct RespawnResult(double Health, bool IsDead, double X, double Y, double Angle);
 
 public readonly record struct DamageResult(double Health, double Damage, bool IsDead);
+
+public readonly record struct HealResult(double Health, double Heal, double PreviousHealth, bool IsDead);
 
 public readonly record struct PlayerState(double X, double Y, double Angle, string Weapon, double Health, bool IsDead);
 
@@ -2160,6 +2259,20 @@ public sealed class ClientConnection
                 isDead = true;
 
             return new DamageResult(health, previousHealth - health, isDead);
+        }
+    }
+
+    public HealResult ApplyHeal(double amount)
+    {
+        lock (stateLock)
+        {
+            if (!hasState || isDead || amount <= 0)
+                return new HealResult(health, 0, health, isDead);
+
+            var previousHealth = health;
+            health = Math.Clamp(health + amount, 0, 100.0);
+
+            return new HealResult(health, health - previousHealth, previousHealth, isDead);
         }
     }
 
