@@ -10,6 +10,7 @@ const KILL_FEED_ROCKET_TEXTURE: Texture2D = preload("res://Assets/Textures/Guns/
 const KILL_FEED_SHOTGUN_TEXTURE: Texture2D = preload("res://Assets/Textures/Guns/Shotgun/image.png")
 const KILL_FEED_DEATH_ICON_SCRIPT: Script = preload("res://src/Scripts/components/kill_feed_death_icon.gd")
 const CHAT_MESSAGE_SOUND: AudioStream = preload("res://Assets/Audio/new message.mp3")
+const MATCH_END_SOUND: AudioStream = preload("res://Assets/Audio/win.ogg")
 const CHAT_FONT: FontFile = preload("res://Assets/Fonts/pf_ronda_seven.woff2")
 const RESPAWN_LAYER_20_MASK: int = 1 << 19
 const RESPAWN_TILE_SOURCE_ID: int = 10
@@ -64,11 +65,13 @@ var chat_messages_container: VBoxContainer
 var chat_prompt_label: Control
 var chat_input: LineEdit
 var chat_message_audio_player: AudioStreamPlayer
+var match_end_audio_player: AudioStreamPlayer
 var chat_is_open: bool = false
 var chat_controls_enabled_before_open: bool = true
 var match_started_msec: int = 0
 var final_match_summary: Dictionary = {}
 var match_end_exit_scheduled: bool = false
+var match_end_sound_played: bool = false
 var pending_remote_player_states: Dictionary = {}
 
 func _ready() -> void:
@@ -96,12 +99,16 @@ func _ready() -> void:
 	_create_kill_feed()
 	_create_chat()
 	_create_chat_audio_player()
+	_create_match_end_audio_player()
 	_create_exit_dialog()
 	Localization.apply_active_language_font(self)
 	if match_has_ended:
+		remaining_match_seconds = 0.0
+		timer_ui.call("set_remaining_seconds", remaining_match_seconds)
 		_freeze_match_play()
 		leaderboard_ui.set("tab_visibility_enabled", false)
 		leaderboard_ui.call("set_leaderboard_visible", true)
+		_play_match_end_sound()
 		final_match_summary = _build_match_summary()
 		_schedule_match_end_dashboard_return()
 
@@ -474,6 +481,12 @@ func _create_chat_audio_player() -> void:
 	chat_message_audio_player.stream = CHAT_MESSAGE_SOUND
 	add_child(chat_message_audio_player)
 
+func _create_match_end_audio_player() -> void:
+	match_end_audio_player = AudioStreamPlayer.new()
+	match_end_audio_player.name = "MatchEndAudioPlayer"
+	match_end_audio_player.stream = MATCH_END_SOUND
+	add_child(match_end_audio_player)
+
 func _open_chat() -> void:
 	if chat_input == null or match_has_ended:
 		return
@@ -613,6 +626,14 @@ func _play_chat_message_sound() -> void:
 
 	chat_message_audio_player.stop()
 	chat_message_audio_player.play()
+
+func _play_match_end_sound() -> void:
+	if match_end_sound_played or match_end_audio_player == null:
+		return
+
+	match_end_sound_played = true
+	match_end_audio_player.stop()
+	match_end_audio_player.play()
 
 func _create_chat_message_style() -> StyleBoxFlat:
 	var style: StyleBoxFlat = StyleBoxFlat.new()
@@ -912,6 +933,10 @@ func apply_network_snapshot() -> void:
 	leaderboard_ui.call("set_local_player_id", local_player_id)
 	remaining_match_seconds = maxf(network_client.remaining_seconds, 0.0)
 	match_has_ended = network_client.match_finished
+	if match_has_ended:
+		remaining_match_seconds = 0.0
+	else:
+		match_end_sound_played = false
 	player_body.set_match_controls_enabled(not match_has_ended)
 	_apply_leaderboard_snapshot(network_client.last_room_joined_message)
 	_apply_local_player_state(network_client.last_room_joined_message, false)
@@ -930,6 +955,7 @@ func _on_room_joined(message: Dictionary) -> void:
 	leaderboard_ui.call("set_local_player_id", local_player_id)
 	remaining_match_seconds = maxf(NetworkClient.get_finite_float(message.get("remainingSeconds", 0.0), 0.0), 0.0)
 	match_has_ended = false
+	match_end_sound_played = false
 	player_body.set_match_controls_enabled(true)
 	pending_remote_player_states.clear()
 	_apply_leaderboard_snapshot(message)
@@ -1041,11 +1067,13 @@ func _on_match_ended(message: Dictionary) -> void:
 
 	match_has_ended = true
 	remaining_match_seconds = 0.0
+	timer_ui.call("set_remaining_seconds", remaining_match_seconds)
 	pending_remote_player_states.clear()
 	_apply_leaderboard_snapshot(message)
 	_freeze_match_play()
 	leaderboard_ui.set("tab_visibility_enabled", false)
 	leaderboard_ui.call("set_leaderboard_visible", true)
+	_play_match_end_sound()
 	final_match_summary = _build_match_summary()
 	_schedule_match_end_dashboard_return()
 
