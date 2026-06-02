@@ -4,10 +4,13 @@ extends CharacterBody2D
 const Localization = preload("res://src/Scripts/components/localization.gd")
 const DEATH_SCENE_TEXTURE: Texture2D = preload("res://Assets/Textures/Character/dead.png")
 const DEATH_MEDKIT_TEXTURE: Texture2D = preload("res://Assets/medkit.png")
+const FOOTSTEP_SOUND: AudioStream = preload("res://Assets/Audio/step.ogg")
 const DEATH_MEDKIT_LAYER_NAME := "DeathMedkits"
 const DEATH_MEDKIT_VISUAL_SCALE := Vector2(0.45, 0.45)
 const DEATH_MEDKIT_VISUAL_OFFSET := Vector2(7.0, -5.0)
 const DEATH_MEDKIT_PICKUP_RADIUS: float = 10.0
+const DEATH_MEDKIT_PICKUP_SYNC_MARGIN: float = 14.0
+const DEATH_MEDKIT_CONSUMED_META := "consumed"
 const PLAYER_COLLISION_LAYER_MASK: int = 2
 const POSITION_HEARTBEAT_INTERVAL: float = 5.0
 const MOVE_SYNC_INTERVAL: float = 0.05
@@ -53,6 +56,11 @@ const BULLET_SPAWN_SNAP_DISTANCE: float = 24.0
 @export var camera_cursor_follow_smoothing: float = 3.5
 @export var walk_dust_interval: float = 0.24
 @export var walk_dust_min_move_distance: float = 1.0
+@export var footstep_interval: float = 0.36
+@export var footstep_volume_db: float = -8.0
+@export var footstep_pitch_randomness: float = 0.06
+@export var footstep_max_distance: float = 420.0
+@export var footstep_attenuation: float = 1.2
 
 # Runtime state for health, network sync, sounds, and remote smoothing
 var health: int
@@ -104,6 +112,8 @@ var walk_dust_local_position: Vector2 = Vector2.ZERO
 var walk_dust_scale: Vector2 = Vector2.ONE
 var walk_dust_speed_scale: float = 1.0
 var walk_dust_z_index: int = 0
+var footstep_cooldown: float = 0.0
+var footstep_audio_player: AudioStreamPlayer2D
 var camera_focus_enabled := false
 var camera_focus_strength := 0.0
 var active_death_drop: Node2D
@@ -146,6 +156,7 @@ func _ready() -> void:
 	head.z_index = 1
 	_configure_walk_dust()
 	_configure_shoot_sound()
+	_configure_footstep_sound()
 	_validate_collision_shapes()
 	get_viewport().size_changed.connect(_on_viewport_size_changed)
 
@@ -191,6 +202,7 @@ func _physics_process(delta: float) -> void:
 		update_legs(Vector2.ZERO, delta)
 		weapon.update_movement(Vector2.ZERO)
 		_update_walk_dust(Vector2.ZERO, delta, false)
+		_update_footstep_sound(delta, false)
 		return
 
 	if is_remote_proxy:
@@ -209,7 +221,9 @@ func _physics_process(delta: float) -> void:
 	# Keep legs and weapon sway using the same movement direction
 	update_legs(direction, delta)
 	weapon.update_movement(direction)
-	_update_walk_dust(direction, delta, global_position.distance_to(previous_position) >= walk_dust_min_move_distance)
+	var moved_enough := global_position.distance_to(previous_position) >= walk_dust_min_move_distance
+	_update_walk_dust(direction, delta, moved_enough)
+	_update_footstep_sound(delta, direction != Vector2.ZERO and global_position.distance_to(previous_position) > 0.001)
 	_report_position_sync(previous_position, delta)
 
 
@@ -316,6 +330,42 @@ func _spawn_walk_dust() -> void:
 	dust.global_position = to_global(walk_dust_local_position)
 	dust.animation_finished.connect(dust.queue_free)
 	dust.play(&"default")
+
+func _configure_footstep_sound() -> void:
+	if footstep_audio_player == null:
+		footstep_audio_player = AudioStreamPlayer2D.new()
+		footstep_audio_player.name = "FootstepSound"
+		add_child(footstep_audio_player)
+
+	footstep_audio_player.stream = FOOTSTEP_SOUND
+	footstep_audio_player.volume_db = footstep_volume_db
+	footstep_audio_player.max_distance = footstep_max_distance
+	footstep_audio_player.attenuation = footstep_attenuation
+
+func _update_footstep_sound(delta: float, is_moving: bool) -> void:
+	footstep_cooldown = maxf(footstep_cooldown - delta, 0.0)
+	if not is_moving or is_dead or not match_controls_enabled:
+		return
+
+	if footstep_audio_player == null or footstep_cooldown > 0.0:
+		return
+
+	_play_footstep_sound()
+	footstep_cooldown = maxf(footstep_interval, 0.08) * randf_range(0.9, 1.15)
+
+func _play_footstep_sound() -> void:
+	if footstep_audio_player == null:
+		return
+
+	if footstep_audio_player.playing:
+		footstep_audio_player.stop()
+	footstep_audio_player.pitch_scale = randf_range(1.0 - footstep_pitch_randomness, 1.0 + footstep_pitch_randomness)
+	footstep_audio_player.volume_db = footstep_volume_db + randf_range(-2.0, 0.0)
+	footstep_audio_player.play()
+
+func _stop_footstep_sound() -> void:
+	if footstep_audio_player != null and footstep_audio_player.playing:
+		footstep_audio_player.stop()
 
 func update_head_direction_from_weapon() -> void:
 	# Match the head direction to the weapon aim
@@ -634,6 +684,7 @@ func die() -> void:
 	legs.modulate = Color.WHITE
 	head.modulate = Color.WHITE
 	_clear_active_shot_voices()
+	_stop_footstep_sound()
 	_spawn_death_medkit()
 	legs.visible = false
 	head.visible = false
@@ -681,6 +732,7 @@ func _spawn_death_medkit() -> void:
 	active_death_medkit.monitorable = false
 	active_death_medkit.collision_layer = 0
 	active_death_medkit.collision_mask = PLAYER_COLLISION_LAYER_MASK
+	active_death_medkit.set_meta(DEATH_MEDKIT_CONSUMED_META, false)
 	active_death_medkit.position = DEATH_MEDKIT_VISUAL_OFFSET
 	active_death_medkit.z_index = 1
 	active_death_medkit.body_entered.connect(_on_death_medkit_body_entered.bind(active_death_medkit))
@@ -735,22 +787,64 @@ func _get_death_medkit_layer_root() -> Node2D:
 func _on_death_medkit_body_entered(body: Node2D, medkit: Area2D) -> void:
 	if medkit == null or medkit != active_death_medkit or not is_instance_valid(medkit):
 		return
+	if _is_death_medkit_consumed(medkit):
+		return
 
 	var collector := body as Player
 	if collector == null or not collector.can_collect_death_medkit():
 		return
 
-	collector.collect_death_medkit()
-	_remove_death_medkit(medkit)
+	_consume_death_medkit(medkit)
+	if collector.can_apply_death_medkit_heal():
+		collector.collect_death_medkit()
 
 func can_collect_death_medkit() -> bool:
+	return (accepts_input or is_remote_proxy) and not is_dead and health < max_health
+
+func can_apply_death_medkit_heal() -> bool:
 	return accepts_input and not is_remote_proxy and not is_dead and health < max_health
 
 func collect_death_medkit() -> void:
 	var healed_amount := max_health - health
+	if healed_amount <= 0:
+		return
 	set_health(max_health)
 	_show_heal_number(healed_amount)
 	_send_health_state(healed_amount, "medkit")
+
+func consume_death_medkit_near(point: Vector2, extra_margin: float = DEATH_MEDKIT_PICKUP_SYNC_MARGIN) -> bool:
+	if active_death_medkit == null or not is_instance_valid(active_death_medkit):
+		return false
+	if _is_death_medkit_consumed(active_death_medkit):
+		return false
+
+	var pickup_distance := DEATH_MEDKIT_PICKUP_RADIUS + maxf(extra_margin, 0.0)
+	if active_death_medkit.global_position.distance_to(point) > pickup_distance:
+		return false
+
+	_consume_death_medkit(active_death_medkit)
+	return true
+
+func get_death_medkit_distance_to(point: Vector2) -> float:
+	if active_death_medkit == null or not is_instance_valid(active_death_medkit):
+		return INF
+	if _is_death_medkit_consumed(active_death_medkit):
+		return INF
+
+	return active_death_medkit.global_position.distance_to(point)
+
+func _consume_death_medkit(medkit: Area2D) -> void:
+	if medkit == null or not is_instance_valid(medkit) or _is_death_medkit_consumed(medkit):
+		return
+
+	medkit.set_meta(DEATH_MEDKIT_CONSUMED_META, true)
+	medkit.visible = false
+	medkit.set_deferred("monitoring", false)
+	medkit.set_deferred("collision_mask", 0)
+	_remove_death_medkit(medkit)
+
+func _is_death_medkit_consumed(medkit: Area2D) -> bool:
+	return medkit != null and is_instance_valid(medkit) and bool(medkit.get_meta(DEATH_MEDKIT_CONSUMED_META, false))
 
 func _remove_death_medkit(medkit: Area2D = null) -> void:
 	if medkit != null:
@@ -1016,6 +1110,7 @@ func set_match_controls_enabled(is_enabled: bool) -> void:
 	move_sync_elapsed = 0.0
 	last_sent_position = global_position
 	if not is_enabled:
+		_stop_footstep_sound()
 		_clear_remote_snapshots()
 		remote_walk_animation_hold_remaining = 0.0
 		remote_last_move_direction = Vector2.ZERO
@@ -1167,11 +1262,12 @@ func apply_screen_shake(source_position: Vector2, radius: float, strength: float
 	camera_shake_remaining = duration
 	camera_shake_duration = duration
 
-func apply_authoritative_health_state(new_health: int, authoritative_is_dead: bool, reported_damage: int = 0) -> void:
+func apply_authoritative_health_state(new_health: int, authoritative_is_dead: bool, reported_damage: int = 0, reported_heal_amount: int = 0, heal_source: String = "") -> void:
 	if is_dead and not authoritative_is_dead and respawn_timer > 0.0 and not is_remote_proxy:
 		# Do not let late health packets cancel a local respawn countdown
 		return
 
+	var previous_health := health
 	var clamped_health := clampi(new_health, 0, max_health)
 	var took_damage := clamped_health < health
 	health = clamped_health
@@ -1182,6 +1278,17 @@ func apply_authoritative_health_state(new_health: int, authoritative_is_dead: bo
 		if reported_damage > 0:
 			_show_damage_number(reported_damage, global_position)
 
+	var health_delta := clamped_health - previous_health
+	var heal_feedback_amount := reported_heal_amount if reported_heal_amount > 0 else health_delta
+	if (
+		heal_feedback_amount > 0
+		and health_delta > 0
+		and not authoritative_is_dead
+		and not took_damage
+		and _should_show_authoritative_heal_feedback(heal_source)
+	):
+		_show_heal_number(heal_feedback_amount)
+
 	if authoritative_is_dead:
 		die()
 		health = 0
@@ -1190,6 +1297,12 @@ func apply_authoritative_health_state(new_health: int, authoritative_is_dead: bo
 
 	if is_dead:
 		_restore_after_respawn()
+
+func _should_show_authoritative_heal_feedback(heal_source: String) -> bool:
+	if not is_remote_proxy:
+		return false
+
+	return heal_source.strip_edges().to_lower() == "medkit"
 
 func _restore_after_respawn() -> void:
 	is_dead = false
@@ -1430,6 +1543,7 @@ func _process_remote_movement(delta: float) -> void:
 		else:
 			update_legs(Vector2.ZERO, delta)
 			weapon.update_movement(Vector2.ZERO)
+		_update_footstep_sound(delta, false)
 		_apply_remote_aim(global_position + remote_facing_direction, NAN)
 		return
 
@@ -1438,6 +1552,7 @@ func _process_remote_movement(delta: float) -> void:
 	var offset := target_position - global_position
 	var direction := offset.normalized()
 	var step_distance := move_speed * delta
+	var previous_position := global_position
 	if offset.length() <= step_distance:
 		global_position = target_position
 		_pop_next_remote_snapshot()
@@ -1450,6 +1565,7 @@ func _process_remote_movement(delta: float) -> void:
 	velocity = Vector2.ZERO
 	update_legs(direction, delta)
 	weapon.update_movement(direction)
+	_update_footstep_sound(delta, global_position.distance_to(previous_position) > 0.001)
 	_apply_remote_aim(target_position, float(next_snapshot.get("aim_angle_degrees", NAN)))
 
 func _apply_remote_aim(target_position: Vector2, aim_angle_degrees: float) -> void:

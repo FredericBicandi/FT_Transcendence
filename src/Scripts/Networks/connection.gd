@@ -314,14 +314,20 @@ func _apply_preview_remote_player_state(message: Dictionary) -> void:
 	if weapon_type != "":
 		remote_body.set_remote_weapon(weapon_type)
 
+	var has_health := NetworkClient.has_authoritative_health(message)
+	var new_health := remote_body.health
 	var authoritative_is_dead := bool(message.get("isDead", remote_body.is_dead))
-	if message.has("health") and not message.has("isDead"):
-		authoritative_is_dead = NetworkClient.get_finite_int(message["health"], remote_body.health) <= 0
-	if message.has("health"):
+	if has_health:
+		new_health = NetworkClient.get_authoritative_health(message, remote_body.health)
+	if has_health and not message.has("isDead"):
+		authoritative_is_dead = new_health <= 0
+	if has_health or message.has("isDead"):
 		remote_body.apply_authoritative_health_state(
-			NetworkClient.get_finite_int(message["health"], remote_body.health),
+			new_health,
 			authoritative_is_dead,
-			NetworkClient.get_finite_int(message.get("damage", 0), 0)
+			NetworkClient.get_finite_int(message.get("damage", 0), 0),
+			NetworkClient.get_health_heal_amount(message, remote_body.health, new_health),
+			"medkit" if NetworkClient.is_medkit_heal(message) else NetworkClient.get_health_source(message)
 		)
 
 	var aim_angle_degrees := NAN
@@ -334,7 +340,7 @@ func _apply_preview_remote_player_state(message: Dictionary) -> void:
 
 	if has_position:
 		var remote_position := NetworkClient.get_finite_vector2(message, "x", "y")
-		var is_respawn_snap := was_dead and not authoritative_is_dead and message.has("health") and NetworkClient.get_finite_int(message["health"], 0) > 0
+		var is_respawn_snap := was_dead and not authoritative_is_dead and has_health and new_health > 0
 		if is_respawn_snap:
 			# Respawns should snap so players do not slide from the death spot
 			remote_body.snap_remote_snapshot(remote_position, aim_angle_degrees)

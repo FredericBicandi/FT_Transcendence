@@ -452,6 +452,9 @@ func _handle_message(message: Dictionary) -> void:
 		"player_health":
 			_store_remote_player_snapshot(message)
 			player_health_received.emit(message)
+		"heal":
+			_store_remote_player_snapshot(message)
+			player_health_received.emit(message)
 		"player_heartbeat":
 			_store_remote_player_snapshot(message)
 			player_health_received.emit(message)
@@ -552,12 +555,50 @@ static func get_first_finite_float(message: Dictionary, keys: Array[String], fal
 
 	return fallback
 
+static func has_authoritative_health(message: Dictionary) -> bool:
+	for key in ["health", "newHealth", "currentHealth", "playerHealth"]:
+		if message.has(key) and is_finite_number(message[key]):
+			return true
+
+	return false
+
+static func get_authoritative_health(message: Dictionary, fallback: int = 0) -> int:
+	return get_finite_int(
+		get_first_finite_float(message, ["health", "newHealth", "currentHealth", "playerHealth"], float(fallback)),
+		fallback
+	)
+
+static func get_health_source(message: Dictionary) -> String:
+	for key in ["source", "healSource", "heal_source"]:
+		if not message.has(key):
+			continue
+
+		var source := str(message[key]).strip_edges().to_lower()
+		if source != "":
+			return source
+
+	return ""
+
+static func is_medkit_heal(message: Dictionary) -> bool:
+	var request_type := str(message.get("request", "")).strip_edges().to_lower()
+	return get_health_source(message) == "medkit" or request_type == "medkit_heal"
+
+static func get_health_heal_amount(message: Dictionary, previous_health: int, new_health: int) -> int:
+	for key in ["healAmount", "heal_amount", "healedAmount", "amount"]:
+		if message.has(key):
+			return maxi(get_finite_int(message[key], 0), 0)
+
+	if is_medkit_heal(message):
+		return maxi(new_health - previous_health, 0)
+
+	return 0
+
 static func get_authoritative_remote_weapon_type(message: Dictionary) -> String:
 	var message_type := str(message.get("type", ""))
 	var weapon_keys: Array[String] = []
 
 	match message_type:
-		"player_health":
+		"player_health", "heal":
 			# Health packets often describe the attacker weapon. Only accept
 			# fields that explicitly name the damaged player's equipped weapon.
 			weapon_keys = ["targetWeapon", "targetWeaponType", "target_weapon", "target_weapon_type", "targetCurrentWeapon"]
@@ -796,7 +837,7 @@ func _store_remote_player_snapshot(message: Dictionary) -> void:
 		var key := str(key_variant)
 		if key == "type":
 			continue
-		if str(message.get("type", "")) == "player_health" and _is_ambiguous_health_weapon_field(key):
+		if ["player_health", "heal"].has(str(message.get("type", ""))) and _is_ambiguous_health_weapon_field(key):
 			continue
 
 		merged_snapshot[key_variant] = message[key_variant]

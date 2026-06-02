@@ -434,8 +434,9 @@ func _update_target_arc_indicator() -> void:
 
 	indicator.call(
 		"configure",
-		float(config.get("explosion_radius", 0.0)),
-		_get_color_config(config, "target_arc_indicator_fill_color", DEFAULT_TARGET_ARC_INDICATOR_FILL_COLOR)
+		float(config.get("target_arc_indicator_radius", config.get("explosion_radius", 0.0))),
+		_get_color_config(config, "target_arc_indicator_fill_color", DEFAULT_TARGET_ARC_INDICATOR_FILL_COLOR),
+		float(config.get("target_arc_indicator_center_dot_radius", 1.5))
 	)
 	indicator.global_position = _get_target_arc_preview_position(get_global_mouse_position(), config)
 	indicator.visible = true

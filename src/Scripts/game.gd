@@ -1241,12 +1241,18 @@ func _apply_local_player_state(message: Dictionary, should_apply_position: bool 
 		player_body.global_position = authoritative_position
 		player_body.set_spawn_position(authoritative_position)
 
-	if message.has("health") or message.has("isDead"):
+	var has_health := NetworkClient.has_authoritative_health(message)
+	if has_health or message.has("isDead"):
+		var new_health := NetworkClient.get_authoritative_health(message, player_body.health)
 		player_body.apply_authoritative_health_state(
-			NetworkClient.get_finite_int(message.get("health", player_body.health), player_body.health),
+			new_health,
 			bool(message.get("isDead", player_body.is_dead)),
-			NetworkClient.get_finite_int(message.get("damage", 0), 0)
+			NetworkClient.get_finite_int(message.get("damage", 0), 0),
+			NetworkClient.get_health_heal_amount(message, player_body.health, new_health),
+			_get_health_feedback_source(message)
 		)
+		if NetworkClient.is_medkit_heal(message):
+			_consume_collected_death_medkit(_get_health_packet_position(message, player_body))
 
 func _get_remote_player(player_id: String) -> Player:
 	var existing_wrapper := remote_players.get(player_id) as Node2D
@@ -1304,15 +1310,23 @@ func _apply_remote_player_state(message: Dictionary) -> void:
 	if weapon_type != "":
 		remote_body.set_remote_weapon(weapon_type)
 
+	var has_health := NetworkClient.has_authoritative_health(message)
+	var new_health := remote_body.health
 	var authoritative_is_dead := bool(message.get("isDead", remote_body.is_dead))
-	if message.has("health") and not message.has("isDead"):
-		authoritative_is_dead = NetworkClient.get_finite_int(message["health"], remote_body.health) <= 0
-	if message.has("health"):
+	if has_health:
+		new_health = NetworkClient.get_authoritative_health(message, remote_body.health)
+	if has_health and not message.has("isDead"):
+		authoritative_is_dead = new_health <= 0
+	if has_health or message.has("isDead"):
 		remote_body.apply_authoritative_health_state(
-			NetworkClient.get_finite_int(message["health"], remote_body.health),
+			new_health,
 			authoritative_is_dead,
-			NetworkClient.get_finite_int(message.get("damage", 0), 0)
+			NetworkClient.get_finite_int(message.get("damage", 0), 0),
+			NetworkClient.get_health_heal_amount(message, remote_body.health, new_health),
+			_get_health_feedback_source(message)
 		)
+		if NetworkClient.is_medkit_heal(message):
+			_consume_collected_death_medkit(_get_health_packet_position(message, remote_body))
 
 	var aim_angle_degrees := NAN
 	if message.has("angle"):
@@ -1324,7 +1338,7 @@ func _apply_remote_player_state(message: Dictionary) -> void:
 
 	if has_position:
 		var remote_position := NetworkClient.get_finite_vector2(message, "x", "y")
-		var is_respawn_snap := was_dead and not authoritative_is_dead and message.has("health") and NetworkClient.get_finite_int(message["health"], 0) > 0
+		var is_respawn_snap := was_dead and not authoritative_is_dead and has_health and new_health > 0
 		if is_respawn_snap:
 			# Respawns should appear immediately at the new spawn point
 			remote_body.snap_remote_snapshot(remote_position, aim_angle_degrees)
@@ -1332,6 +1346,47 @@ func _apply_remote_player_state(message: Dictionary) -> void:
 			remote_body.enqueue_remote_snapshot(remote_position, aim_angle_degrees)
 	elif not is_nan(aim_angle_degrees):
 		remote_body.update_remote_angle(aim_angle_degrees)
+
+func _get_health_feedback_source(message: Dictionary) -> String:
+	return "medkit" if NetworkClient.is_medkit_heal(message) else NetworkClient.get_health_source(message)
+
+func _get_health_packet_position(message: Dictionary, fallback_player: Player) -> Vector2:
+	if NetworkClient.has_finite_vector2(message, "x", "y"):
+		return NetworkClient.get_finite_vector2(message, "x", "y")
+
+	return fallback_player.global_position if fallback_player != null else Vector2.ZERO
+
+func _consume_collected_death_medkit(collector_position: Vector2) -> void:
+	var closest_owner: Player = null
+	var closest_distance := INF
+
+	for owner in _get_players_with_death_medkits():
+		var distance := owner.get_death_medkit_distance_to(collector_position)
+		if distance < closest_distance:
+			closest_distance = distance
+			closest_owner = owner
+
+	if closest_owner == null:
+		return
+
+	closest_owner.consume_death_medkit_near(collector_position)
+
+func _get_players_with_death_medkits() -> Array[Player]:
+	var players: Array[Player] = []
+	var local_body := player_body as Player
+	if local_body != null:
+		players.append(local_body)
+
+	for remote_wrapper_variant in remote_players.values():
+		var remote_wrapper := remote_wrapper_variant as Node
+		if remote_wrapper == null or not is_instance_valid(remote_wrapper):
+			continue
+
+		var remote_body := remote_wrapper.get_node_or_null("CharacterBody2D") as Player
+		if remote_body != null:
+			players.append(remote_body)
+
+	return players
 
 func _remove_remote_player(player_id: String) -> void:
 	var remote_wrapper := remote_players.get(player_id) as Node2D

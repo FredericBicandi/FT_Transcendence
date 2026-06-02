@@ -10,7 +10,6 @@ const ACTIVE_PANEL_COLOR := Color(0.12, 0.14, 0.16, 0.95)
 const INACTIVE_BORDER_COLOR := Color(0.35, 0.39, 0.42, 0.95)
 const ACTIVE_BORDER_COLOR := Color(0.88, 0.91, 0.94, 1.0)
 const TEXT_COLOR := Color(0.96, 0.98, 1.0, 1.0)
-const INFINITE_AMMO_ICON := "∞"
 
 @onready var weapon_panel: Control = $CanvasLayer/WeaponHud
 
@@ -143,14 +142,6 @@ func _create_slot_row(weapon: BaseWeapon, index: int) -> PanelContainer:
 	var bottom_spacer: Control = Control.new()
 	bottom_spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	bottom_row.add_child(bottom_spacer)
-
-	var infinite_ammo_icon: Label = Label.new()
-	infinite_ammo_icon.name = "InfiniteAmmoIcon"
-	infinite_ammo_icon.add_theme_color_override("font_color", TEXT_COLOR)
-	infinite_ammo_icon.add_theme_font_size_override("font_size", 15)
-	infinite_ammo_icon.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	infinite_ammo_icon.text = INFINITE_AMMO_ICON
-	bottom_row.add_child(infinite_ammo_icon)
 
 	var ammo_label: Label = Label.new()
 	ammo_label.name = "AmmoLabel"
