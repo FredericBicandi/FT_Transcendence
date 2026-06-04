@@ -9,8 +9,8 @@ const KILL_FEED_SNIPER_TEXTURE: Texture2D = preload("res://Assets/Textures/Guns/
 const KILL_FEED_ROCKET_TEXTURE: Texture2D = preload("res://Assets/Textures/Guns/RocketLuncher/image.png")
 const KILL_FEED_SHOTGUN_TEXTURE: Texture2D = preload("res://Assets/Textures/Guns/Shotgun/image.png")
 const KILL_FEED_DEATH_ICON_SCRIPT: Script = preload("res://src/Scripts/components/kill_feed_death_icon.gd")
-const CHAT_MESSAGE_SOUND: AudioStream = preload("res://Assets/Audio/new message.mp3")
-const MATCH_END_SOUND: AudioStream = preload("res://Assets/Audio/win.ogg")
+const CHAT_MESSAGE_SOUND: AudioStream = preload("res://Assets/Audio/chatMessage.mp3")
+const MATCH_END_SOUND: AudioStream = preload("res://Assets/Audio/endGame.ogg")
 const CHAT_FONT: FontFile = preload("res://Assets/Fonts/pf_ronda_seven.woff2")
 const RESPAWN_LAYER_20_MASK: int = 1 << 19
 const RESPAWN_TILE_SOURCE_ID: int = 10
@@ -541,9 +541,9 @@ func _on_chat_input_text_changed(next_text: String) -> void:
 
 func _send_chat_message(clean_message: String) -> void:
 	var sender_id: String = local_player_id
-	var sender_name: String = network_client.player_name if network_client != null else "Player"
+	var sender_name: String = network_client.player_name if network_client != null else Localization.translate("default_player")
 	if sender_name.strip_edges() == "":
-		sender_name = "Player"
+		sender_name = Localization.translate("default_player")
 
 	if network_client != null:
 		network_client.send_chat_message(clean_message)
@@ -560,9 +560,9 @@ func _on_chat_message_received(message: Dictionary) -> void:
 	if sender_id != "" and sender_id == local_player_id:
 		return
 
-	var sender_name: String = str(message.get("playerName", message.get("player_name", message.get("name", "Player")))).strip_edges()
+	var sender_name: String = str(message.get("playerName", message.get("player_name", message.get("name", Localization.translate("default_player"))))).strip_edges()
 	if sender_name == "":
-		sender_name = "Player"
+		sender_name = Localization.translate("default_player")
 
 	_show_chat_message(sender_id, sender_name, content)
 	_play_chat_message_sound()
@@ -714,8 +714,8 @@ func _is_enter_key(event: InputEventKey) -> bool:
 	return event.keycode == KEY_ENTER or event.keycode == KEY_KP_ENTER
 
 func _on_kill_feed_received(message: Dictionary) -> void:
-	var killer_name: String = _pick_kill_feed_name(message, ["killer", "killerName", "killer_name", "attacker", "attackerName"], "Unknown")
-	var killed_name: String = _pick_kill_feed_name(message, ["killed", "killedName", "killed_name", "victim", "victimName"], "Unknown")
+	var killer_name: String = _pick_kill_feed_name(message, ["killer", "killerName", "killer_name", "attacker", "attackerName"], Localization.translate("unknown_player"))
+	var killed_name: String = _pick_kill_feed_name(message, ["killed", "killedName", "killed_name", "victim", "victimName"], Localization.translate("unknown_player"))
 	if killer_name == "" or killed_name == "":
 		return
 
@@ -784,6 +784,7 @@ func _create_kill_feed_label(text: String, color: Color, alignment: int) -> Labe
 	label.add_theme_font_size_override("font_size", 15)
 	label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	label.custom_minimum_size = Vector2(112.0, 0.0)
+	Localization.apply_readable_text_font(label, label.text)
 	return label
 
 func _create_kill_feed_row_style() -> StyleBoxFlat:

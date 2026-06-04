@@ -4,7 +4,7 @@ extends CharacterBody2D
 const Localization = preload("res://src/Scripts/components/localization.gd")
 const DEATH_SCENE_TEXTURE: Texture2D = preload("res://Assets/Textures/Character/dead.png")
 const DEATH_MEDKIT_TEXTURE: Texture2D = preload("res://Assets/medkit.png")
-const FOOTSTEP_SOUND: AudioStream = preload("res://Assets/Audio/step.ogg")
+const FOOTSTEP_SOUND: AudioStream = preload("res://Assets/Audio/footSteps.ogg")
 const DEATH_MEDKIT_LAYER_NAME := "DeathMedkits"
 const DEATH_MEDKIT_VISUAL_SCALE := Vector2(0.45, 0.45)
 const DEATH_MEDKIT_VISUAL_OFFSET := Vector2(7.0, -5.0)
@@ -1182,7 +1182,7 @@ func _update_player_name_label() -> void:
 		return
 
 	var display_name := network_player_display_name.strip_edges()
-	player_name_label.text = display_name if display_name != "" else DEFAULT_PLAYER_DISPLAY_NAME
+	player_name_label.text = display_name if display_name != "" else Localization.translate("default_player")
 	Localization.apply_readable_text_font(player_name_label, player_name_label.text)
 
 func _update_overhead_ui() -> void:

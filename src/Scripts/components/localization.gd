@@ -3,7 +3,14 @@ extends RefCounted
 
 const DEFAULT_LANGUAGE := "english"
 const SUPPORTED_LANGUAGES := ["english", "french", "arabic"]
+const ARABIC_FONT_RESOURCE := preload("res://Assets/Fonts/PixelAE-Regular.ttf")
 const ARABIC_FONT_NAMES := ["Segoe UI", "Tahoma", "Arial", "Adobe Arabic", "Arial Unicode MS"]
+const WEAPON_TRANSLATION_KEYS := {
+	"Assult rifle": "weapon_assault_rifle",
+	"Sniper": "weapon_sniper",
+	"Rocket Launcher": "weapon_rocket_launcher",
+	"Shotgun": "weapon_shotgun"
+}
 
 const TRANSLATIONS := {
 	"english": {
@@ -24,6 +31,8 @@ const TRANSLATIONS := {
 		"kills": "Kills",
 		"deaths": "Deaths",
 		"score": "Score",
+		"default_player": "Player",
+		"unknown_player": "Unknown",
 		"leaderboard_empty": "No players in the leaderboard yet.",
 		"respawning": "Respawning",
 		"leave_game_title": "Leave game?",
@@ -31,6 +40,11 @@ const TRANSLATIONS := {
 		"chat_prompt": "Press Enter to chat",
 		"chat_placeholder": "type chat",
 		"sniper_rmb_hint": "Hold RMB to aim farther",
+		"weapon_assault_rifle": "Assault Rifle",
+		"weapon_sniper": "Sniper",
+		"weapon_rocket_launcher": "Rocket Launcher",
+		"weapon_shotgun": "Shotgun",
+		"infinite_ammo": "INF",
 		"cancel": "Cancel",
 		"yes": "Yes"
 	},
@@ -52,6 +66,8 @@ const TRANSLATIONS := {
 		"kills": "Eliminations",
 		"deaths": "Morts",
 		"score": "Score",
+		"default_player": "Joueur",
+		"unknown_player": "Inconnu",
 		"leaderboard_empty": "Aucun joueur dans le classement.",
 		"respawning": "Reapparition",
 		"leave_game_title": "Quitter la partie ?",
@@ -59,6 +75,11 @@ const TRANSLATIONS := {
 		"chat_prompt": "Appuyez sur Entree pour discuter",
 		"chat_placeholder": "ecrire un message",
 		"sniper_rmb_hint": "Maintenez clic droit pour viser plus loin",
+		"weapon_assault_rifle": "Fusil d'assaut",
+		"weapon_sniper": "Fusil de precision",
+		"weapon_rocket_launcher": "Lance-roquettes",
+		"weapon_shotgun": "Fusil a pompe",
+		"infinite_ammo": "INF",
 		"cancel": "Annuler",
 		"yes": "Oui"
 	},
@@ -80,6 +101,8 @@ const TRANSLATIONS := {
 		"kills": "القتل",
 		"deaths": "الموت",
 		"score": "النقاط",
+		"default_player": "لاعب",
+		"unknown_player": "غير معروف",
 		"leaderboard_empty": "لا يوجد لاعبون في لوحة الصدارة بعد.",
 		"respawning": "جار الظهور",
 		"leave_game_title": "مغادرة اللعبة؟",
@@ -87,6 +110,11 @@ const TRANSLATIONS := {
 		"chat_prompt": "اضغط Enter للدردشة",
 		"chat_placeholder": "اكتب رسالة",
 		"sniper_rmb_hint": "اضغط الزر الأيمن للتصويب أبعد",
+		"weapon_assault_rifle": "بندقية هجومية",
+		"weapon_sniper": "قناصة",
+		"weapon_rocket_launcher": "قاذف صواريخ",
+		"weapon_shotgun": "بندقية رش",
+		"infinite_ammo": "لا نهائي",
 		"cancel": "إلغاء",
 		"yes": "نعم"
 	}
@@ -105,6 +133,13 @@ static func translate(key: String) -> String:
 	var normalized_language: String = normalize_language(language)
 	var language_table: Dictionary = TRANSLATIONS.get(normalized_language, TRANSLATIONS[DEFAULT_LANGUAGE])
 	return str(language_table.get(key, TRANSLATIONS[DEFAULT_LANGUAGE].get(key, key)))
+
+static func translate_weapon_name(weapon_name: String) -> String:
+	var translation_key: String = str(WEAPON_TRANSLATION_KEYS.get(weapon_name, ""))
+	if translation_key == "":
+		return weapon_name
+
+	return translate(translation_key)
 
 static func is_arabic_language() -> bool:
 	return normalize_language(language) == "arabic"
@@ -125,9 +160,11 @@ static func contains_arabic(text: String) -> bool:
 
 static func get_arabic_font() -> Font:
 	if arabic_font == null:
-		var system_font := SystemFont.new()
-		system_font.font_names = PackedStringArray(ARABIC_FONT_NAMES)
-		arabic_font = system_font
+		arabic_font = ARABIC_FONT_RESOURCE
+		if arabic_font == null:
+			var system_font := SystemFont.new()
+			system_font.font_names = PackedStringArray(ARABIC_FONT_NAMES)
+			arabic_font = system_font
 
 	return arabic_font
 

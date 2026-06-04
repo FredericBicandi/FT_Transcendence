@@ -1,5 +1,6 @@
 extends Node
 
+const Localization = preload("res://src/Scripts/components/localization.gd")
 const SLOT_SIZE := Vector2(190.0, 76.0)
 const ICON_SIZE := Vector2(92.0, 32.0)
 const SLOT_SPACING := 4.0
@@ -117,8 +118,9 @@ func _create_slot_row(weapon: BaseWeapon, index: int) -> PanelContainer:
 	weapon_slot_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	weapon_slot_label.add_theme_color_override("font_color", TEXT_COLOR)
 	weapon_slot_label.add_theme_font_size_override("font_size", 13)
-	weapon_slot_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	weapon_slot_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT if Localization.is_arabic_language() else HORIZONTAL_ALIGNMENT_LEFT
 	weapon_slot_label.text = _format_weapon_slot_text(weapon, index)
+	Localization.apply_readable_text_font(weapon_slot_label, weapon_slot_label.text)
 	top_row.add_child(weapon_slot_label)
 
 	var icon_row: HBoxContainer = HBoxContainer.new()
@@ -149,6 +151,7 @@ func _create_slot_row(weapon: BaseWeapon, index: int) -> PanelContainer:
 	ammo_label.add_theme_font_size_override("font_size", 14)
 	ammo_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	ammo_label.text = _format_ammo(weapon.get_current_ammo(), weapon.get_magazine_size())
+	Localization.apply_readable_text_font(ammo_label, ammo_label.text)
 	bottom_row.add_child(ammo_label)
 
 	return row
@@ -173,6 +176,7 @@ func _update_weapon_ammo(weapon: BaseWeapon, current_ammo: int, max_ammo: int) -
 	var ammo_label: Label = row.find_child("AmmoLabel", true, false) as Label
 	if ammo_label != null:
 		ammo_label.text = _format_ammo(current_ammo, max_ammo)
+		Localization.apply_readable_text_font(ammo_label, ammo_label.text)
 
 func _create_slot_style(is_active: bool) -> StyleBoxFlat:
 	var style: StyleBoxFlat = StyleBoxFlat.new()
@@ -190,12 +194,17 @@ func _create_slot_style(is_active: bool) -> StyleBoxFlat:
 
 func _format_ammo(current_ammo: int, max_ammo: int) -> String:
 	if max_ammo <= 0:
-		return "INF" if current_ammo > 999 else "%d" % current_ammo
+		return Localization.translate("infinite_ammo") if current_ammo > 999 else "%d" % current_ammo
 
 	return "%d/%d" % [current_ammo, max_ammo]
 
 func _format_weapon_slot_text(weapon: BaseWeapon, index: int) -> String:
-	return "%s [%s]" % [weapon.get_weapon_name(), _get_slot_key_text(index)]
+	var weapon_name := Localization.translate_weapon_name(weapon.get_weapon_name())
+	var slot_key := _get_slot_key_text(index)
+	if Localization.is_arabic_language():
+		return "%s %s" % [weapon_name, slot_key]
+
+	return "%s [%s]" % [weapon_name, slot_key]
 
 func _get_slot_key_text(index: int) -> String:
 	if index == 9:
