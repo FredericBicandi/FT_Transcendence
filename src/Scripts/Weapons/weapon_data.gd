@@ -93,7 +93,7 @@ const WEAPON_DATA := {
 		"bullet_speed": 520.0,
 		"bullet_lifetime": 0.95,
 		"bullet_collision_mask": 3,
-		"explosion_radius": 48.0,
+		"explosion_radius": 72.0,
 		"explosion_damages_owner": true,
 		"explosion_min_damage": 1,
 		"explosion_falloff_power": 1.0,
