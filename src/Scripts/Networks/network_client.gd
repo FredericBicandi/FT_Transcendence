@@ -22,6 +22,8 @@ signal chat_message_received(message: Dictionary)
 signal match_ended(message: Dictionary)
 
 const MAX_LOG_PACKET_CHARS := 240
+const MAX_CHAT_MESSAGE_CHARS := 320
+const MAX_ABS_WORLD_COORDINATE := 1_000_000.0
 
 # Keep the server endpoint editable from the inspector
 @export var server_url: String = "wss://pixelfight.live/ws"
@@ -68,12 +70,10 @@ func _process(delta: float) -> void:
 		return
 
 	seconds_since_last_server_activity += delta
+	_read_packets()
 	if connection_timeout_seconds > 0.0 and seconds_since_last_server_activity >= connection_timeout_seconds:
 		# Drop silent sockets so the lobby can reconnect
 		_handle_connection_loss("Connection timed out.")
-		return
-
-	_read_packets()
 
 func connect_to_server() -> Error:
 	_prepare_player_profile()
@@ -362,6 +362,8 @@ func send_chat_message(content: String) -> void:
 	var clean_content: String = content.strip_edges()
 	if clean_content == "":
 		return
+	if clean_content.length() > MAX_CHAT_MESSAGE_CHARS:
+		clean_content = clean_content.substr(0, MAX_CHAT_MESSAGE_CHARS).strip_edges()
 
 	var payload := {
 		"request": "message",
@@ -536,7 +538,17 @@ static func are_finite_numbers(values: Array) -> bool:
 	return true
 
 static func has_finite_vector2(message: Dictionary, x_key: String, y_key: String) -> bool:
-	return message.has(x_key) and message.has(y_key) and is_finite_number(message[x_key]) and is_finite_number(message[y_key])
+	if not message.has(x_key) or not message.has(y_key):
+		return false
+
+	var x := get_finite_float(message[x_key], NAN)
+	var y := get_finite_float(message[y_key], NAN)
+	return (
+		not is_nan(x)
+		and not is_nan(y)
+		and absf(x) <= MAX_ABS_WORLD_COORDINATE
+		and absf(y) <= MAX_ABS_WORLD_COORDINATE
+	)
 
 static func get_finite_vector2(message: Dictionary, x_key: String, y_key: String, fallback: Vector2 = Vector2.ZERO) -> Vector2:
 	if not has_finite_vector2(message, x_key, y_key):
@@ -812,6 +824,9 @@ func _apply_match_left(message: Dictionary) -> void:
 
 func is_in_room() -> bool:
 	return local_room_id.strip_edges() != ""
+
+func is_connection_open() -> bool:
+	return socket != null and socket.get_ready_state() == WebSocketPeer.STATE_OPEN
 
 func clear_match_state() -> void:
 	local_room_id = ""

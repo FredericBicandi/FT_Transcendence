@@ -257,7 +257,7 @@ func _process(delta: float) -> void:
 	update_hit_flash(delta)
 	update_head_direction_from_weapon()
 	_update_overhead_ui()
-	
+
 	camera_focus_enabled = is_sniper_scope_active()
 
 	if camera_focus_enabled:
@@ -799,7 +799,7 @@ func _on_death_medkit_body_entered(body: Node2D, medkit: Area2D) -> void:
 		collector.collect_death_medkit()
 
 func can_collect_death_medkit() -> bool:
-	return (accepts_input or is_remote_proxy) and not is_dead and health < max_health
+	return can_apply_death_medkit_heal()
 
 func can_apply_death_medkit_heal() -> bool:
 	return accepts_input and not is_remote_proxy and not is_dead and health < max_health
@@ -1087,7 +1087,7 @@ func _resolve_respawn_position() -> Vector2:
 
 func _send_full_player_state() -> bool:
 	var active_weapon := weapon.get_active_weapon() if weapon != null else null
-	if active_weapon == null or network_client == null:
+	if active_weapon == null or network_client == null or not network_client.is_connection_open():
 		return false
 
 	last_sent_angle = _get_current_aim_angle()

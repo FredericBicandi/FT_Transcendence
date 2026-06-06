@@ -258,6 +258,7 @@ func _compute_entries_signature(entries: Array[Dictionary]) -> int:
 
 	for entry in entries:
 		signature = signature * 31 + hash(str(entry.get("player_id", "")))
+		signature = signature * 31 + hash(str(entry.get("player_name", "")))
 		signature = signature * 31 + int(entry.get("kills", 0))
 		signature = signature * 31 + int(entry.get("deaths", 0))
 		signature = signature * 31 + int(entry.get("score", 0))

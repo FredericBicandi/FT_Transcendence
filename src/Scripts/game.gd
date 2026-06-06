@@ -6,7 +6,7 @@ const DEFAULT_CURSOR_TEXTURE: Texture2D = null
 const ANIMATED_CHAT_PROMPT_SCRIPT: Script = preload("res://src/Scripts/components/animated_chat_prompt.gd")
 const KILL_FEED_RIFLE_TEXTURE: Texture2D = preload("res://Assets/Textures/Guns/AFRifle/image.png")
 const KILL_FEED_SNIPER_TEXTURE: Texture2D = preload("res://Assets/Textures/Guns/Sniper/image.png")
-const KILL_FEED_ROCKET_TEXTURE: Texture2D = preload("res://Assets/Textures/Guns/RocketLuncher/image.png")
+const KILL_FEED_ROCKET_TEXTURE: Texture2D = preload("res://Assets/Textures/Guns/RocketLauncher/image.png")
 const KILL_FEED_SHOTGUN_TEXTURE: Texture2D = preload("res://Assets/Textures/Guns/Shotgun/image.png")
 const KILL_FEED_DEATH_ICON_SCRIPT: Script = preload("res://src/Scripts/components/kill_feed_death_icon.gd")
 const CHAT_MESSAGE_SOUND: AudioStream = preload("res://Assets/Audio/chatMessage.mp3")
@@ -25,6 +25,9 @@ const KILL_FEED_KILLER_COLOR := Color(0.32, 0.66, 1.0, 1.0)
 const KILL_FEED_KILLED_COLOR := Color(1.0, 0.28, 0.28, 1.0)
 const MATCH_END_LEADERBOARD_SECONDS: float = 8.0
 const CHAT_MAX_MESSAGE_WORDS: int = 50
+const CHAT_MAX_MESSAGE_CHARS: int = 320
+const CHAT_MAX_MESSAGE_SCAN_CHARS: int = 2048
+const CHAT_MAX_NAME_CHARS: int = 32
 const CHAT_REPEATED_CHAR_LIMIT: int = 8
 const CHAT_MESSAGE_LIFETIME: float = 5.0
 const CHAT_INPUT_FONT_SIZE: int = 13
@@ -466,7 +469,7 @@ func _create_chat() -> void:
 	chat_input.name = "ChatInput"
 	chat_input.visible = false
 	chat_input.placeholder_text = Localization.translate("chat_placeholder")
-	chat_input.max_length = 0
+	chat_input.max_length = CHAT_MAX_MESSAGE_CHARS
 	chat_input.custom_minimum_size = Vector2(0.0, 40.0)
 	chat_input.mouse_filter = Control.MOUSE_FILTER_STOP
 	Localization.apply_readable_text_font(chat_input, chat_input.placeholder_text, CHAT_FONT)
@@ -541,7 +544,9 @@ func _on_chat_input_text_changed(next_text: String) -> void:
 
 func _send_chat_message(clean_message: String) -> void:
 	var sender_id: String = local_player_id
-	var sender_name: String = network_client.player_name if network_client != null else Localization.translate("default_player")
+	var sender_name: String = _sanitize_player_name(
+		network_client.player_name if network_client != null else Localization.translate("default_player")
+	)
 	if sender_name.strip_edges() == "":
 		sender_name = Localization.translate("default_player")
 
@@ -560,7 +565,9 @@ func _on_chat_message_received(message: Dictionary) -> void:
 	if sender_id != "" and sender_id == local_player_id:
 		return
 
-	var sender_name: String = str(message.get("playerName", message.get("player_name", message.get("name", Localization.translate("default_player"))))).strip_edges()
+	var sender_name: String = _sanitize_player_name(
+		str(message.get("playerName", message.get("player_name", message.get("name", Localization.translate("default_player")))))
+	)
 	if sender_name == "":
 		sender_name = Localization.translate("default_player")
 
@@ -650,7 +657,10 @@ func _create_chat_message_style() -> StyleBoxFlat:
 	return style
 
 func _sanitize_chat_message(message: String) -> String:
-	var collapsed: String = " ".join(message.strip_edges().split(" ", false))
+	var scan_input := message
+	if scan_input.length() > CHAT_MAX_MESSAGE_SCAN_CHARS:
+		scan_input = scan_input.substr(0, CHAT_MAX_MESSAGE_SCAN_CHARS)
+	var collapsed: String = " ".join(scan_input.strip_edges().split(" ", false))
 	var result: String = ""
 	var previous_code: int = -1
 	var repeat_count: int = 0
@@ -669,6 +679,8 @@ func _sanitize_chat_message(message: String) -> String:
 			repeat_count = 1
 
 		result += String.chr(code)
+		if result.length() >= CHAT_MAX_MESSAGE_CHARS:
+			break
 
 	var words: PackedStringArray = result.strip_edges().split(" ", false)
 	var limited_words: PackedStringArray = PackedStringArray()
@@ -678,6 +690,9 @@ func _sanitize_chat_message(message: String) -> String:
 			break
 
 	return " ".join(limited_words).strip_edges()
+
+func _sanitize_player_name(player_name: String) -> String:
+	return _sanitize_chat_message(player_name).substr(0, CHAT_MAX_NAME_CHARS).strip_edges()
 
 func _is_allowed_chat_codepoint(code: int) -> bool:
 	if code == 32:
@@ -821,9 +836,9 @@ func _pick_kill_feed_name(message: Dictionary, keys: Array[String], fallback: St
 
 		var value := str(message[key]).strip_edges()
 		if value != "":
-			return value
+			return _sanitize_player_name(value)
 
-	return fallback
+	return _sanitize_player_name(fallback)
 
 func _pick_kill_feed_weapon_type(message: Dictionary) -> String:
 	for key in ["weaponType", "weapon", "weapon_type", "weaponId", "weapon_id", "weaponHolding", "sourceWeapon", "sourceWeaponType", "killingWeapon", "cause"]:
@@ -840,12 +855,19 @@ func _is_kill_feed_self_kill(message: Dictionary, killer_name: String, killed_na
 	if bool(message.get("selfKill", message.get("suicide", false))):
 		return true
 
-	var killer_id: String = _pick_kill_feed_name(message, ["killerId", "killer_id", "attackerId", "attacker_id", "sourcePlayerId"], "")
-	var killed_id: String = _pick_kill_feed_name(message, ["killedId", "killed_id", "victimId", "victim_id", "targetPlayerId"], "")
+	var killer_id: String = _pick_kill_feed_id(message, ["killerId", "killer_id", "attackerId", "attacker_id", "sourcePlayerId"])
+	var killed_id: String = _pick_kill_feed_id(message, ["killedId", "killed_id", "victimId", "victim_id", "targetPlayerId"])
 	if killer_id != "" and killed_id != "":
 		return killer_id == killed_id
 
 	return killer_name.strip_edges() != "" and killer_name == killed_name
+
+func _pick_kill_feed_id(message: Dictionary, keys: Array[String]) -> String:
+	for key in keys:
+		if message.has(key):
+			return str(message[key]).strip_edges()
+
+	return ""
 
 func _get_kill_feed_weapon_texture(weapon_type: String) -> Texture2D:
 	var normalized: String = weapon_type.strip_edges().to_lower().replace("_", " ").replace("-", " ")
