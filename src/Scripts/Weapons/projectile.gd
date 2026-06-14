@@ -151,6 +151,7 @@ static func tick(runtime_data: Dictionary, delta: float) -> Dictionary:
 	runtime_data["velocity"] = velocity
 	runtime_data["direction"] = direction
 	runtime_data["age"] = age
+	runtime_data["lifetime"] = maxf(lifetime - delta, 0.0)
 
 	return {
 		"start_position": start_position,

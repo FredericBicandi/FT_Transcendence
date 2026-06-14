@@ -189,7 +189,6 @@ func _create_leaderboard_row(entry: Dictionary) -> Control:
 
 
 func _normalize_leaderboard_entry(entry: Dictionary) -> Dictionary:
-	# Accept both server naming styles so old payloads still work
 	var normalized_player_name := _get_first_non_empty_entry_string(
 		entry,
 		["player_name", "playerName", "display_name", "displayName", "username", "name", "nickname"],
@@ -197,7 +196,7 @@ func _normalize_leaderboard_entry(entry: Dictionary) -> Dictionary:
 	)
 	var normalized_player_id := _get_first_non_empty_entry_string(
 		entry,
-		["player_id", "playerId", "user_id", "userId", "id"],
+		["player_id"],
 		normalized_player_name
 	)
 
@@ -258,7 +257,6 @@ func _compute_entries_signature(entries: Array[Dictionary]) -> int:
 
 	for entry in entries:
 		signature = signature * 31 + hash(str(entry.get("player_id", "")))
-		signature = signature * 31 + hash(str(entry.get("player_name", "")))
 		signature = signature * 31 + int(entry.get("kills", 0))
 		signature = signature * 31 + int(entry.get("deaths", 0))
 		signature = signature * 31 + int(entry.get("score", 0))

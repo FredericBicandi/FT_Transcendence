@@ -77,7 +77,7 @@ const WEAPON_DATA := {
 	},
 	"Rocket Launcher": {
 		# Heavy single-shot weapon with splash damage
-		"image": preload("res://Assets/Textures/Guns/RocketLauncher/image.png"),
+		"image": preload("res://Assets/Textures/Guns/RocketLuncher/image.png"),
 		"fire_sound" : preload("res://Assets/Audio/Weapons/rpgshot.ogg"),
 		"reload_sound" : preload("res://Assets/Audio/Weapons/rpgreload.ogg"),
 		"impact_sound": preload("res://Assets/Audio/Weapons/explo1.ogg"),

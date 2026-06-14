@@ -93,7 +93,7 @@ func _on_room_ready(message: Dictionary) -> void:
 	if network_client.local_player_id != "":
 		local_player_id = network_client.local_player_id
 	else:
-		local_player_id = str(message.get("playerId", message.get("id", "")))
+		local_player_id = str(message.get("player_id", ""))
 
 	_set_status_text(Localization.translate("room_reserved"))
 	_apply_leaderboard_snapshot(message)
@@ -214,7 +214,7 @@ func _apply_leaderboard_snapshot(message: Dictionary) -> void:
 
 	var player_id := network_client.local_player_id
 	if player_id == "":
-		player_id = str(message.get("playerId", message.get("id", "")))
+		player_id = str(message.get("player_id", ""))
 
 	if player_id != "":
 		leaderboard_ui.call("set_local_player_id", player_id)
@@ -290,7 +290,7 @@ func _apply_cached_preview_players() -> void:
 		_apply_preview_remote_player_state(snapshot_variant)
 
 func _apply_preview_remote_player_state(message: Dictionary) -> void:
-	var player_id := str(message.get("playerId", message.get("id", "")))
+	var player_id := str(message.get("player_id", ""))
 	if player_id == "" or player_id == local_player_id:
 		return
 

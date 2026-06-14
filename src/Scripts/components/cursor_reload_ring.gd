@@ -14,7 +14,14 @@ var ring_visible: bool = false
 func _ready() -> void:
 	z_index = 11
 	z_as_relative = false
+
+func _process(_delta: float) -> void:
+	if not ring_visible:
+		return
+
+	# Keep drawing crisp without detaching the ring from the cursor parent.
 	position = Vector2.ZERO
+	queue_redraw()
 
 func set_progress(new_progress: float) -> void:
 	var clamped_progress := clampf(new_progress, 0.0, 1.0)

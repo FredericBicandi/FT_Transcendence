@@ -6,7 +6,7 @@ const DEFAULT_CURSOR_TEXTURE: Texture2D = null
 const ANIMATED_CHAT_PROMPT_SCRIPT: Script = preload("res://src/Scripts/components/animated_chat_prompt.gd")
 const KILL_FEED_RIFLE_TEXTURE: Texture2D = preload("res://Assets/Textures/Guns/AFRifle/image.png")
 const KILL_FEED_SNIPER_TEXTURE: Texture2D = preload("res://Assets/Textures/Guns/Sniper/image.png")
-const KILL_FEED_ROCKET_TEXTURE: Texture2D = preload("res://Assets/Textures/Guns/RocketLauncher/image.png")
+const KILL_FEED_ROCKET_TEXTURE: Texture2D = preload("res://Assets/Textures/Guns/RocketLuncher/image.png")
 const KILL_FEED_SHOTGUN_TEXTURE: Texture2D = preload("res://Assets/Textures/Guns/Shotgun/image.png")
 const KILL_FEED_DEATH_ICON_SCRIPT: Script = preload("res://src/Scripts/components/kill_feed_death_icon.gd")
 const CHAT_MESSAGE_SOUND: AudioStream = preload("res://Assets/Audio/chatMessage.mp3")
@@ -25,9 +25,6 @@ const KILL_FEED_KILLER_COLOR := Color(0.32, 0.66, 1.0, 1.0)
 const KILL_FEED_KILLED_COLOR := Color(1.0, 0.28, 0.28, 1.0)
 const MATCH_END_LEADERBOARD_SECONDS: float = 8.0
 const CHAT_MAX_MESSAGE_WORDS: int = 50
-const CHAT_MAX_MESSAGE_CHARS: int = 320
-const CHAT_MAX_MESSAGE_SCAN_CHARS: int = 2048
-const CHAT_MAX_NAME_CHARS: int = 32
 const CHAT_REPEATED_CHAR_LIMIT: int = 8
 const CHAT_MESSAGE_LIFETIME: float = 5.0
 const CHAT_INPUT_FONT_SIZE: int = 13
@@ -75,6 +72,8 @@ var match_started_msec: int = 0
 var final_match_summary: Dictionary = {}
 var match_end_exit_scheduled: bool = false
 var match_end_sound_played: bool = false
+var processed_match_saved_ids: Dictionary = {}
+var pending_match_ended_messages: Dictionary = {}
 var pending_remote_player_states: Dictionary = {}
 
 func _ready() -> void:
@@ -276,6 +275,8 @@ func _cleanup_match_state() -> void:
 	room_id = ""
 	local_player_id = ""
 	final_match_summary = {}
+	processed_match_saved_ids.clear()
+	pending_match_ended_messages.clear()
 	pending_remote_player_states.clear()
 
 	if player_body != null:
@@ -302,10 +303,8 @@ func _post_exit_game(reason: String = "manual", summary: Dictionary = {}) -> voi
 	}
 	if not summary.is_empty():
 		payload["matchSummary"] = summary
-		payload["roomId"] = str(summary.get("roomId", ""))
-		payload["room_id"] = str(summary.get("room_id", summary.get("roomId", "")))
-		payload["playerId"] = str(summary.get("playerId", ""))
-		payload["player_id"] = str(summary.get("player_id", summary.get("playerId", "")))
+		payload["room_id"] = str(summary.get("room_id", ""))
+		payload["player_id"] = str(summary.get("player_id", ""))
 		payload["kills"] = int(summary.get("kills", 0))
 		payload["deaths"] = int(summary.get("deaths", 0))
 		payload["death"] = int(summary.get("death", summary.get("deaths", 0)))
@@ -469,7 +468,7 @@ func _create_chat() -> void:
 	chat_input.name = "ChatInput"
 	chat_input.visible = false
 	chat_input.placeholder_text = Localization.translate("chat_placeholder")
-	chat_input.max_length = CHAT_MAX_MESSAGE_CHARS
+	chat_input.max_length = 0
 	chat_input.custom_minimum_size = Vector2(0.0, 40.0)
 	chat_input.mouse_filter = Control.MOUSE_FILTER_STOP
 	Localization.apply_readable_text_font(chat_input, chat_input.placeholder_text, CHAT_FONT)
@@ -544,9 +543,7 @@ func _on_chat_input_text_changed(next_text: String) -> void:
 
 func _send_chat_message(clean_message: String) -> void:
 	var sender_id: String = local_player_id
-	var sender_name: String = _sanitize_player_name(
-		network_client.player_name if network_client != null else Localization.translate("default_player")
-	)
+	var sender_name: String = network_client.player_name if network_client != null else Localization.translate("default_player")
 	if sender_name.strip_edges() == "":
 		sender_name = Localization.translate("default_player")
 
@@ -561,13 +558,11 @@ func _on_chat_message_received(message: Dictionary) -> void:
 	if content == "":
 		return
 
-	var sender_id: String = str(message.get("playerId", message.get("player_id", message.get("id", "")))).strip_edges()
+	var sender_id: String = str(message.get("player_id", "")).strip_edges()
 	if sender_id != "" and sender_id == local_player_id:
 		return
 
-	var sender_name: String = _sanitize_player_name(
-		str(message.get("playerName", message.get("player_name", message.get("name", Localization.translate("default_player")))))
-	)
+	var sender_name: String = str(message.get("playerName", message.get("player_name", message.get("name", Localization.translate("default_player"))))).strip_edges()
 	if sender_name == "":
 		sender_name = Localization.translate("default_player")
 
@@ -657,10 +652,7 @@ func _create_chat_message_style() -> StyleBoxFlat:
 	return style
 
 func _sanitize_chat_message(message: String) -> String:
-	var scan_input := message
-	if scan_input.length() > CHAT_MAX_MESSAGE_SCAN_CHARS:
-		scan_input = scan_input.substr(0, CHAT_MAX_MESSAGE_SCAN_CHARS)
-	var collapsed: String = " ".join(scan_input.strip_edges().split(" ", false))
+	var collapsed: String = " ".join(message.strip_edges().split(" ", false))
 	var result: String = ""
 	var previous_code: int = -1
 	var repeat_count: int = 0
@@ -679,8 +671,6 @@ func _sanitize_chat_message(message: String) -> String:
 			repeat_count = 1
 
 		result += String.chr(code)
-		if result.length() >= CHAT_MAX_MESSAGE_CHARS:
-			break
 
 	var words: PackedStringArray = result.strip_edges().split(" ", false)
 	var limited_words: PackedStringArray = PackedStringArray()
@@ -690,9 +680,6 @@ func _sanitize_chat_message(message: String) -> String:
 			break
 
 	return " ".join(limited_words).strip_edges()
-
-func _sanitize_player_name(player_name: String) -> String:
-	return _sanitize_chat_message(player_name).substr(0, CHAT_MAX_NAME_CHARS).strip_edges()
 
 func _is_allowed_chat_codepoint(code: int) -> bool:
 	if code == 32:
@@ -836,9 +823,9 @@ func _pick_kill_feed_name(message: Dictionary, keys: Array[String], fallback: St
 
 		var value := str(message[key]).strip_edges()
 		if value != "":
-			return _sanitize_player_name(value)
+			return value
 
-	return _sanitize_player_name(fallback)
+	return fallback
 
 func _pick_kill_feed_weapon_type(message: Dictionary) -> String:
 	for key in ["weaponType", "weapon", "weapon_type", "weaponId", "weapon_id", "weaponHolding", "sourceWeapon", "sourceWeaponType", "killingWeapon", "cause"]:
@@ -855,19 +842,12 @@ func _is_kill_feed_self_kill(message: Dictionary, killer_name: String, killed_na
 	if bool(message.get("selfKill", message.get("suicide", false))):
 		return true
 
-	var killer_id: String = _pick_kill_feed_id(message, ["killerId", "killer_id", "attackerId", "attacker_id", "sourcePlayerId"])
-	var killed_id: String = _pick_kill_feed_id(message, ["killedId", "killed_id", "victimId", "victim_id", "targetPlayerId"])
+	var killer_id: String = _pick_kill_feed_name(message, ["killer_id", "attacker_id"], "")
+	var killed_id: String = _pick_kill_feed_name(message, ["victim_id", "target_player_id"], "")
 	if killer_id != "" and killed_id != "":
 		return killer_id == killed_id
 
 	return killer_name.strip_edges() != "" and killer_name == killed_name
-
-func _pick_kill_feed_id(message: Dictionary, keys: Array[String]) -> String:
-	for key in keys:
-		if message.has(key):
-			return str(message[key]).strip_edges()
-
-	return ""
 
 func _get_kill_feed_weapon_texture(weapon_type: String) -> Texture2D:
 	var normalized: String = weapon_type.strip_edges().to_lower().replace("_", " ").replace("-", " ")
@@ -944,6 +924,9 @@ func _connect_network_signals() -> void:
 	if not network_client.match_ended.is_connected(_on_match_ended):
 		network_client.match_ended.connect(_on_match_ended)
 
+	if not network_client.match_saved.is_connected(_on_match_saved):
+		network_client.match_saved.connect(_on_match_saved)
+
 func apply_network_snapshot() -> void:
 	if network_client == null:
 		return
@@ -970,9 +953,9 @@ func _on_room_joined(message: Dictionary) -> void:
 	if network_client != null and network_client.local_player_id != "":
 		local_player_id = network_client.local_player_id
 	else:
-		local_player_id = str(message.get("playerId", message.get("id", "")))
+		local_player_id = str(message.get("player_id", ""))
 
-	room_id = str(message.get("roomId", message.get("room_id", "")))
+	room_id = str(message.get("room_id", ""))
 	player_body.set_network_player_id(local_player_id)
 	player_body.set_network_player_display_name(network_client.get_local_player_display_name(message))
 	leaderboard_ui.call("set_local_player_id", local_player_id)
@@ -986,7 +969,7 @@ func _on_room_joined(message: Dictionary) -> void:
 	_apply_initial_remote_players(message)
 
 func _on_time_synced(message: Dictionary) -> void:
-	var synced_room_id := str(message.get("roomId", message.get("room_id", "")))
+	var synced_room_id := str(message.get("room_id", ""))
 	if room_id != "" and synced_room_id != "" and synced_room_id != room_id:
 		# Ignore timer packets from an old room
 		return
@@ -1008,7 +991,7 @@ func _on_player_move_received(message: Dictionary) -> void:
 	if match_has_ended:
 		return
 
-	var player_id := str(message.get("playerId", message.get("id", "")))
+	var player_id := str(message.get("player_id", ""))
 	if player_id == "" or player_id == local_player_id:
 		return
 
@@ -1022,7 +1005,7 @@ func _on_player_angle_received(message: Dictionary) -> void:
 	if match_has_ended:
 		return
 
-	var player_id := str(message.get("playerId", message.get("id", "")))
+	var player_id := str(message.get("player_id", ""))
 	var has_angle := (
 		NetworkClient.is_finite_number(message.get("angle", NAN))
 		or NetworkClient.is_finite_number(message.get("rotation", NAN))
@@ -1037,7 +1020,7 @@ func _on_player_weapon_switch_received(message: Dictionary) -> void:
 	if match_has_ended:
 		return
 
-	var player_id := str(message.get("playerId", message.get("id", "")))
+	var player_id := str(message.get("player_id", ""))
 	if player_id == "" or player_id == local_player_id:
 		return
 
@@ -1047,7 +1030,7 @@ func _on_player_health_received(message: Dictionary) -> void:
 	if match_has_ended:
 		return
 
-	var player_id := str(message.get("playerId", message.get("id", "")))
+	var player_id := str(message.get("player_id", ""))
 	if player_id == "":
 		return
 
@@ -1084,9 +1067,13 @@ func _flush_pending_remote_player_states() -> void:
 	pending_remote_player_states.clear()
 
 func _on_match_ended(message: Dictionary) -> void:
-	var ended_room_id := str(message.get("roomId", message.get("room_id", "")))
+	var ended_room_id := str(message.get("room_id", ""))
 	if room_id != "" and ended_room_id != "" and ended_room_id != room_id:
 		return
+
+	var ended_match_id := str(message.get("match_id", ""))
+	if ended_match_id != "":
+		pending_match_ended_messages[ended_match_id] = message.duplicate(true)
 
 	match_has_ended = true
 	remaining_match_seconds = 0.0
@@ -1099,6 +1086,32 @@ func _on_match_ended(message: Dictionary) -> void:
 	_play_match_end_sound()
 	final_match_summary = _build_match_summary()
 	_schedule_match_end_dashboard_return()
+
+func _on_match_saved(message: Dictionary) -> void:
+	if message.is_empty():
+		return
+
+	var match_id := str(message.get("match_id", "")).strip_edges()
+	var saved_room_id := str(message.get("room_id", "")).strip_edges()
+	if match_id == "" or saved_room_id == "":
+		return
+	if bool(processed_match_saved_ids.get(match_id, false)):
+		return
+
+	var ended_message_variant: Variant = pending_match_ended_messages.get(match_id, {})
+	if typeof(ended_message_variant) != TYPE_DICTIONARY:
+		return
+
+	var ended_message := ended_message_variant as Dictionary
+	if str(ended_message.get("room_id", "")).strip_edges() != saved_room_id:
+		return
+
+	var payload := _build_match_saved_parent_payload(message, ended_message)
+	if payload.is_empty():
+		return
+
+	_post_match_saved_to_parent(payload)
+	processed_match_saved_ids[match_id] = true
 
 func _freeze_match_play() -> void:
 	if exit_dialog_open:
@@ -1154,9 +1167,7 @@ func _build_match_summary() -> Dictionary:
 		resolved_room_id = network_client.local_room_id
 
 	return {
-		"roomId": resolved_room_id,
 		"room_id": resolved_room_id,
-		"playerId": local_player_id,
 		"player_id": local_player_id,
 		"kills": int(stats.get("kills", 0)),
 		"deaths": int(stats.get("deaths", 0)),
@@ -1165,6 +1176,56 @@ func _build_match_summary() -> Dictionary:
 		"playTimeMs": elapsed_ms,
 		"playTimeSeconds": float(elapsed_ms) / 1000.0
 	}
+
+func _build_match_saved_parent_payload(match_saved_message: Dictionary, match_ended_message: Dictionary) -> Dictionary:
+	var match_id := str(match_saved_message.get("match_id", "")).strip_edges()
+	var room_id := str(match_saved_message.get("room_id", "")).strip_edges()
+	if match_id == "" or room_id == "":
+		return {}
+
+	var leaderboard_variant: Variant = match_ended_message.get("leaderboard", [])
+	if not (leaderboard_variant is Array):
+		return {}
+
+	var player_result := _get_local_match_result(leaderboard_variant as Array)
+	if player_result.is_empty():
+		return {}
+
+	return {
+		"type": "match_saved",
+		"match_id": match_id,
+		"score": int(player_result.get("score", 0)),
+		"kills": int(player_result.get("kills", 0)),
+		"deaths": int(player_result.get("deaths", 0)),
+		"duration_seconds": int(NetworkClient.get_finite_int(match_ended_message.get("durationSeconds", 0), 0))
+	}
+
+func _get_local_match_result(leaderboard: Array) -> Dictionary:
+	for entry_variant in leaderboard:
+		if typeof(entry_variant) != TYPE_DICTIONARY:
+			continue
+
+		var entry := entry_variant as Dictionary
+		if str(entry.get("player_id", "")).strip_edges() != local_player_id.strip_edges():
+			continue
+
+		return {
+			"player_id": local_player_id,
+			"score": int(roundf(NetworkClient.get_finite_float(entry.get("score", 0), 0.0))),
+			"kills": int(NetworkClient.get_finite_int(entry.get("kills", 0), 0)),
+			"deaths": int(NetworkClient.get_finite_int(entry.get("deaths", 0), 0))
+		}
+
+	return {}
+
+func _post_match_saved_to_parent(payload: Dictionary) -> void:
+	if payload.is_empty() or not OS.has_feature("web"):
+		return
+
+	JavaScriptBridge.eval(
+		"window.parent.postMessage(%s, window.location.origin);" % JSON.stringify(payload),
+		false
+	)
 
 func _get_local_leaderboard_stats() -> Dictionary:
 	if leaderboard_ui == null:
@@ -1193,7 +1254,7 @@ func _on_bullet_spawn_received(message: Dictionary) -> void:
 	if match_has_ended:
 		return
 
-	var player_id := str(message.get("playerId", message.get("id", "")))
+	var player_id := str(message.get("player_id", ""))
 	if player_id == "" or player_id == local_player_id:
 		return
 
@@ -1338,7 +1399,7 @@ func _apply_cached_remote_players() -> void:
 		_apply_remote_player_state(snapshot_variant)
 
 func _apply_remote_player_state(message: Dictionary) -> void:
-	var player_id := str(message.get("playerId", message.get("id", "")))
+	var player_id := str(message.get("player_id", ""))
 	if player_id == "" or player_id == local_player_id:
 		return
 

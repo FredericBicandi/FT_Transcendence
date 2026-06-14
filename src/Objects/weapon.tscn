@@ -9,15 +9,15 @@
 [ext_resource type="AudioStream" uid="uid://dbfmwnp4csu7b" path="res://Assets/Audio/Weapons/snipershot.ogg" id="5_16nc3"]
 [ext_resource type="Texture2D" uid="uid://dnxc0otdken3e" path="res://Assets/Textures/Guns/Sniper/positions.png" id="5_hh7td"]
 [ext_resource type="AudioStream" uid="uid://1s4gdny6ui8c" path="res://Assets/Audio/Weapons/rpgexplosion.ogg" id="6_7eos3"]
-[ext_resource type="Texture2D" uid="uid://vfyl3pwendds" path="res://Assets/Textures/Guns/RocketLauncher/rocket.png" id="6_bfnx5"]
-[ext_resource type="Texture2D" uid="uid://dxl8uwerta3sl" path="res://Assets/Textures/Guns/RocketLauncher/positions.png" id="6_ssn77"]
-[ext_resource type="Texture2D" uid="uid://y86casayldp4" path="res://Assets/Textures/Guns/RocketLauncher/fire.png" id="10_0u3w3"]
+[ext_resource type="Texture2D" uid="uid://vfyl3pwendds" path="res://Assets/Textures/Guns/RocketLuncher/rocket.png" id="6_bfnx5"]
+[ext_resource type="Texture2D" uid="uid://dxl8uwerta3sl" path="res://Assets/Textures/Guns/RocketLuncher/positions.png" id="6_ssn77"]
+[ext_resource type="Texture2D" uid="uid://y86casayldp4" path="res://Assets/Textures/Guns/RocketLuncher/fire.png" id="10_0u3w3"]
 [ext_resource type="Script" uid="uid://b1obo84xmbm23" path="res://src/Scripts/Weapons/shotgun.gd" id="10_n6rxv"]
-[ext_resource type="Texture2D" uid="uid://chkavaxo7t14u" path="res://Assets/Textures/Guns/RocketLauncher/smoke.png" id="11_dr4xp"]
+[ext_resource type="Texture2D" uid="uid://chkavaxo7t14u" path="res://Assets/Textures/Guns/RocketLuncher/smoke.png" id="11_dr4xp"]
 [ext_resource type="Texture2D" uid="uid://c7ntoov3t655k" path="res://Assets/Textures/Guns/bullet2.png" id="15_dofc0"]
 
 [sub_resource type="GDScript" id="GDScript_ssn77"]
-resource_name = "Assault_Rifle"
+resource_name = "Assult_Riifle"
 script/source = "# assault_rifle.gd
 class_name AssaultRifle
 extends WeaponSprite
@@ -167,7 +167,7 @@ animations = [{
 }]
 
 [sub_resource type="GDScript" id="GDScript_w4ncs"]
-resource_name = "Rocket_Launcher"
+resource_name = "Rocket_Laucnher"
 script/source = "# rocket_launcher.gd
 class_name RocketLauncher
 extends WeaponAnimated
@@ -611,10 +611,10 @@ animations = [{
 
 [node name="Weapons" type="Node2D" unique_id=2015572023]
 script = ExtResource("3_bjwph")
-default_weapon_node = &"Assult_rifle"
-input_enabled = true
-switch_sound_volume_db = -4.0
-switch_sound_enabled = true
+default_weapon_node = null
+input_enabled = null
+switch_sound_volume_db = null
+switch_sound_enabled = null
 
 [node name="Assult_rifle" type="Node2D" parent="." unique_id=993310818]
 script = SubResource("GDScript_ssn77")

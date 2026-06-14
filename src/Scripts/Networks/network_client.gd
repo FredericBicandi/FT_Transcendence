@@ -17,13 +17,12 @@ signal bullet_spawn_received(message: Dictionary)
 signal player_left_received(player_id: String)
 signal leaderboard_updated(message: Dictionary)
 signal match_left(message: Dictionary)
+signal match_saved(message: Dictionary)
 signal kill_feed_received(message: Dictionary)
 signal chat_message_received(message: Dictionary)
 signal match_ended(message: Dictionary)
 
 const MAX_LOG_PACKET_CHARS := 240
-const MAX_CHAT_MESSAGE_CHARS := 320
-const MAX_ABS_WORLD_COORDINATE := 1_000_000.0
 
 # Keep the server endpoint editable from the inspector
 @export var server_url: String = "wss://pixelfight.live/ws"
@@ -70,10 +69,12 @@ func _process(delta: float) -> void:
 		return
 
 	seconds_since_last_server_activity += delta
-	_read_packets()
 	if connection_timeout_seconds > 0.0 and seconds_since_last_server_activity >= connection_timeout_seconds:
 		# Drop silent sockets so the lobby can reconnect
 		_handle_connection_loss("Connection timed out.")
+		return
+
+	_read_packets()
 
 func connect_to_server() -> Error:
 	_prepare_player_profile()
@@ -167,7 +168,7 @@ func send_on_connect() -> void:
 	_send_json(
 		{
 			"type": "on_connect",
-			"playerId": player_id,
+			"player_id": player_id,
 			"playerName": player_name,
 			"level": player_level,
 			"currentXp": current_xp,
@@ -256,12 +257,11 @@ func send_health_update(health: int, is_dead: bool, x: float, y: float, angle: f
 
 func _apply_local_packet_identity(payload: Dictionary) -> void:
 	if local_player_id != "":
-		payload["playerId"] = local_player_id
+		payload["player_id"] = local_player_id
 	elif player_id != "":
-		payload["playerId"] = player_id
+		payload["player_id"] = player_id
 
 	if local_room_id != "":
-		payload["roomId"] = local_room_id
 		payload["room_id"] = local_room_id
 
 func send_hit(target_player_id: String, weapon_type: String, damage: int, shot_id: String, x: float, y: float, angle: float, timestamp: int) -> void:
@@ -275,10 +275,10 @@ func send_hit(target_player_id: String, weapon_type: String, damage: int, shot_i
 	_send_json(
 		{
 			"type": "hit",
-			"targetPlayerId": target_player_id,
+			"target_player_id": target_player_id,
 			"weaponType": weapon_type,
 			"damage": damage,
-			"shotId": shot_id,
+			"shot_id": shot_id,
 			"x": x,
 			"y": y,
 			"angle": angle,
@@ -326,12 +326,11 @@ func send_leave_match() -> void:
 	}
 
 	if local_player_id != "":
-		payload["playerId"] = local_player_id
+		payload["player_id"] = local_player_id
 	elif player_id != "":
-		payload["playerId"] = player_id
+		payload["player_id"] = player_id
 
 	if local_room_id != "":
-		payload["roomId"] = local_room_id
 		payload["room_id"] = local_room_id
 
 	_send_json(payload)
@@ -344,14 +343,13 @@ func request_leaderboard_update() -> void:
 
 	var payload := {
 		"type": "leaderboard_request",
-		"roomId": local_room_id,
 		"room_id": local_room_id
 	}
 
 	if local_player_id != "":
-		payload["playerId"] = local_player_id
+		payload["player_id"] = local_player_id
 	elif player_id != "":
-		payload["playerId"] = player_id
+		payload["player_id"] = player_id
 
 	_send_json(payload)
 
@@ -362,19 +360,16 @@ func send_chat_message(content: String) -> void:
 	var clean_content: String = content.strip_edges()
 	if clean_content == "":
 		return
-	if clean_content.length() > MAX_CHAT_MESSAGE_CHARS:
-		clean_content = clean_content.substr(0, MAX_CHAT_MESSAGE_CHARS).strip_edges()
 
 	var payload := {
 		"request": "message",
-		"playerId": local_player_id if local_player_id != "" else player_id,
+		"player_id": local_player_id if local_player_id != "" else player_id,
 		"playerName": player_name,
 		"content": clean_content,
 		"timestamp": Time.get_ticks_msec()
 	}
 
 	if local_room_id != "":
-		payload["roomId"] = local_room_id
 		payload["room_id"] = local_room_id
 
 	_send_json(payload)
@@ -463,7 +458,7 @@ func _handle_message(message: Dictionary) -> void:
 		"bullet_spawn":
 			bullet_spawn_received.emit(message)
 		"player_left":
-			var left_player_id := str(message.get("playerId", message.get("id", "")))
+			var left_player_id := str(message.get("player_id", ""))
 			remote_player_snapshots.erase(left_player_id)
 			player_left_received.emit(left_player_id)
 			if message.has("leaderboard"):
@@ -473,6 +468,8 @@ func _handle_message(message: Dictionary) -> void:
 		"match_left":
 			_apply_match_left(message)
 			match_left.emit(message)
+		"match_saved":
+			match_saved.emit(message)
 		"kill_feed":
 			kill_feed_received.emit(message)
 		"room_reserved":
@@ -538,17 +535,7 @@ static func are_finite_numbers(values: Array) -> bool:
 	return true
 
 static func has_finite_vector2(message: Dictionary, x_key: String, y_key: String) -> bool:
-	if not message.has(x_key) or not message.has(y_key):
-		return false
-
-	var x := get_finite_float(message[x_key], NAN)
-	var y := get_finite_float(message[y_key], NAN)
-	return (
-		not is_nan(x)
-		and not is_nan(y)
-		and absf(x) <= MAX_ABS_WORLD_COORDINATE
-		and absf(y) <= MAX_ABS_WORLD_COORDINATE
-	)
+	return message.has(x_key) and message.has(y_key) and is_finite_number(message[x_key]) and is_finite_number(message[y_key])
 
 static func get_finite_vector2(message: Dictionary, x_key: String, y_key: String, fallback: Vector2 = Vector2.ZERO) -> Vector2:
 	if not has_finite_vector2(message, x_key, y_key):
@@ -742,15 +729,7 @@ func get_player_display_name(message: Dictionary, target_player_id: String, fall
 	return fallback_name
 
 func _extract_player_id(message: Dictionary) -> String:
-	for key in ["playerId", "player_id", "userId", "user_id", "id"]:
-		if not message.has(key):
-			continue
-
-		var value := str(message[key]).strip_edges()
-		if value != "":
-			return value
-
-	return ""
+	return str(message.get("player_id", "")).strip_edges()
 
 func _extract_player_display_name(message: Dictionary, include_generic_name_fields: bool = true) -> String:
 	var keys: Array[String] = ["playerName", "player_name", "displayName", "display_name"]
@@ -800,7 +779,7 @@ func _generate_fallback_player_id() -> String:
 func _apply_room_assignment(message: Dictionary) -> void:
 	var assigned_player_id := _extract_player_id(message)
 	local_player_id = assigned_player_id if assigned_player_id != "" else player_id
-	local_room_id = str(message.get("roomId", message.get("room_id", local_room_id)))
+	local_room_id = str(message.get("room_id", local_room_id))
 	match_duration_seconds = get_finite_int(message.get("durationSeconds", match_duration_seconds), match_duration_seconds)
 	remaining_seconds = get_finite_float(message.get("remainingSeconds", remaining_seconds if remaining_seconds > 0.0 else match_duration_seconds), remaining_seconds)
 	match_finished = false
@@ -816,7 +795,7 @@ func _apply_match_left(message: Dictionary) -> void:
 	if left_player_id != "" and local_player_id != "" and left_player_id != local_player_id:
 		return
 
-	var left_room_id := str(message.get("roomId", message.get("room_id", "")))
+	var left_room_id := str(message.get("room_id", ""))
 	if left_room_id != "" and local_room_id != "" and left_room_id != local_room_id:
 		return
 
@@ -824,9 +803,6 @@ func _apply_match_left(message: Dictionary) -> void:
 
 func is_in_room() -> bool:
 	return local_room_id.strip_edges() != ""
-
-func is_connection_open() -> bool:
-	return socket != null and socket.get_ready_state() == WebSocketPeer.STATE_OPEN
 
 func clear_match_state() -> void:
 	local_room_id = ""
