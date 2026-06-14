@@ -1,0 +1,514 @@
+diff --git a/src/components/home/GlobalChat.tsx b/src/components/home/GlobalChat.tsx
+index 827e76a..6b55543 100644
+--- a/src/components/home/GlobalChat.tsx
++++ b/src/components/home/GlobalChat.tsx
+@@ -1,19 +1,23 @@
+ import { FormEvent, useMemo, useState } from "react";
+ import type { PlayerProfile } from "@/models/player/playerProfile.model";
+ import type { HomeTranslations } from "@/views/home/homeTranslations";
+ 
+-type ChatMessage = {
+-  id: string;
++type DashboardChatMessage = {
++  content: string;
++  message_id: string;
++  player_id: string;
++  playerName: string;
+   sentAt: string;
+-  username: string;
+-  text: string;
+ };
+ 
+ type GlobalChatProps = {
++  isConnected: boolean;
++  messages: DashboardChatMessage[];
++  onSendMessage: (content: string) => boolean;
+   playerProfile: PlayerProfile | null;
+   translations: HomeTranslations["chat"];
+ };
+@@ -25,42 +29,20 @@ const usernameColors = [
+   "#fde047",
+ ];
+ 
+-const dummyMessages: ChatMessage[] = [
+-  {
+-    id: "dummy-1",
+-    sentAt: "14:19",
+-    username: "MossKnight",
+-    text: "mid bridge is clear",
+-  },
+-  {
+-    id: "dummy-2",
+-    sentAt: "14:21",
+-    username: "Guest4821",
+-    text: "need backup near spawn",
+-  },
+-  {
+-    id: "dummy-3",
+-    sentAt: "14:24",
+-    username: "PixelMage",
+-    text: "holding top wall",
+-  },
+-  {
+-    id: "dummy-4",
+-    sentAt: "14:27",
+-    username: "MossKnight",
+-    text: "two players coming right side",
+-  },
+-  {
+-    id: "dummy-5",
+-    sentAt: "14:28",
+-    username: "StoneRunner",
+-    text: "got it",
+-  },
+-];
+-
+ function getUsernameColor(username: string) {
+   let hash = 0;
+ 
+@@ -72,23 +54,25 @@ function getUsernameColor(username: string) {
+   return usernameColors[hash % usernameColors.length];
+ }
+ 
+-function getCurrentTime() {
+-  return new Intl.DateTimeFormat("en-US", {
++function formatSentAt(sentAt: string) {
++  const date = new Date(sentAt);
++
++  if (Number.isNaN(date.getTime())) {
++    return "--:--";
++  }
++
++  return new Intl.DateTimeFormat(undefined, {
+     hour: "2-digit",
+     minute: "2-digit",
+     hour12: false,
+-  }).format(new Date());
++  }).format(date);
+ }
+ 
+ export function GlobalChat({
++  isConnected,
++  messages,
++  onSendMessage,
+   playerProfile,
+   translations,
+ }: GlobalChatProps) {
+-  const [messages, setMessages] = useState(dummyMessages);
+   const [draftMessage, setDraftMessage] = useState("");
+-  const canSendMessages = playerProfile ? !playerProfile.isGuest : false;
+-  const playerName = playerProfile?.playerName ?? "Player";
++  const canSendMessages =
++    isConnected && playerProfile !== null && !playerProfile.isGuest;
+   const coloredMessages = useMemo(
+     () =>
+       messages.map((message) => ({
+@@ -98,7 +82,7 @@ export function GlobalChat({
+ 
+   function sendMessage(event: FormEvent<HTMLFormElement>) {
+     event.preventDefault();
+ 
+-    if (!canSendMessages) {
++    if (!canSendMessages || !isConnected) {
+       return;
+     }
+ 
+@@ -107,17 +91,9 @@ export function GlobalChat({
+       return;
+     }
+ 
+-    setMessages((currentMessages) => [
+-      ...currentMessages,
+-      {
+-        id: `local-${Date.now()}`,
+-        sentAt: getCurrentTime(),
+-        username: playerName,
+-        text,
+-      },
+-    ]);
+-    setDraftMessage("");
++    if (onSendMessage(text)) {
++      setDraftMessage("");
++    }
+   }
+ 
+   return (
+@@ -125,13 +101,13 @@ export function GlobalChat({
+     <section className="chat-font hidden w-[28rem] flex-col bg-black/55 shadow-[0_0_0_3px_#050302,0_4px_0_3px_rgba(0,0,0,0.55),inset_0_3px_0_rgba(255,255,255,0.08)] backdrop-blur-[2px] lg:flex" style={{ height: "28rem" }}>
+       <div className="flex-1 overflow-y-auto px-4 py-3 text-xs leading-6 [scrollbar-color:#b8893b_rgba(0,0,0,0.35)]">
+         {coloredMessages.map((message) => (
+-          <p key={message.id} className="text-[#f5dfad]/90">
+-            <span className="text-[#d9b46b]/80">{message.sentAt}</span>{" "}
++          <p key={message.message_id} className="text-[#f5dfad]/90">
++            <span className="text-[#d9b46b]/80">{formatSentAt(message.sentAt)}</span>{" "}
+             <span style={{ color: message.usernameColor }}>
+-              {message.username}:
++              {message.playerName}:
+             </span>{" "}
+-            <span>{message.text}</span>
++            <span>{message.content}</span>
+           </p>
+         ))}
+       </div>
+diff --git a/src/controllers/home/useHomeController.ts b/src/controllers/home/useHomeController.ts
+index a9ea291..a29be4a 100644
+--- a/src/controllers/home/useHomeController.ts
++++ b/src/controllers/home/useHomeController.ts
+@@ -7,10 +7,17 @@ import {
+ } from "@/models/player/playerProfile.model";
+ import { createSupabaseClient } from "@/models/supabase/client.model";
+ 
+-const ONLINE_PLAYERS_URL = "https://pixelfight.live/online";
+-const ONLINE_PLAYERS_POLL_INTERVAL_MS = 3_000;
++const DASHBOARD_WEBSOCKET_PATH = "/ws/dashboard";
++const MAX_CHAT_MESSAGES = 100;
++const RECONNECT_DELAY_MS = 1_000;
+ const EXIT_GAME_MESSAGE_TYPE = "EXIT_GAME";
+ 
++export type DashboardChatMessage = {
++  content: string;
++  message_id: string;
++  player_id: string;
++  playerName: string;
++  sentAt: string;
++};
++
+ type HomeControllerOptions = {
+   language: string;
+ };
+ 
+-function readOnlineCount(value: unknown): number | null {
+-  if (typeof value === "number") {
+-    return Number.isFinite(value) && value >= 0 ? Math.floor(value) : null;
+-  }
+-
+-  if (typeof value === "string") {
+-    const numericValue = Number(value);
+-
+-    return Number.isFinite(numericValue) && numericValue >= 0
+-      ? Math.floor(numericValue)
+-      : null;
+-  }
+-
+-  if (typeof value !== "object" || value === null) {
+-    return null;
+-  }
+-
+-  const payload = value as Record<string, unknown>;
+-
+-  return (
+-    readOnlineCount(payload.online) ??
+-    readOnlineCount(payload.count) ??
+-    readOnlineCount(payload.players) ??
+-    readOnlineCount(payload.onlinePlayers)
+-  );
+-}
+-
+-async function fetchOnlinePlayerCount(signal: AbortSignal) {
+-  const response = await fetch(ONLINE_PLAYERS_URL, {
+-    cache: "no-store",
+-    signal,
+-  });
+-
+-  if (!response.ok) {
+-    throw new Error("Online players request failed.");
+-  }
+-
+-  const responseText = await response.text();
+-
+-  if (!responseText.trim()) {
+-    throw new Error("Online players response was empty.");
+-  }
+-
+-  try {
+-    const parsedPayload: unknown = JSON.parse(responseText);
+-    const onlineCount = readOnlineCount(parsedPayload);
+-
+-    if (onlineCount !== null) {
+-      return onlineCount;
+-    }
+-  } catch {
+-    const onlineCount = readOnlineCount(responseText);
+-
+-    if (onlineCount !== null) {
+-      return onlineCount;
+-    }
+-  }
+-
+-  throw new Error("Online players response was not recognized.");
+-}
+-
+ function isExitGameMessage(value: unknown) {
+@@ -83,6 +90,75 @@ function createGameUrl(playerProfile: PlayerProfile, language: string) {
+   return `/Game/index.html?${searchParams.toString()}`;
+ }
+ 
++function createDashboardWebSocketUrl(accessToken?: string) {
++  const configuredUrl =
++    process.env.NEXT_PUBLIC_DASHBOARD_WEBSOCKET_URL?.trim();
++  const url = configuredUrl
++    ? new URL(configuredUrl)
++    : new URL(
++        DASHBOARD_WEBSOCKET_PATH,
++        `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}`,
++      );
++
++  if (accessToken) {
++    url.searchParams.set("access_token", accessToken);
++  }
++
++  return url.toString();
++}
++
++function readDashboardMessage(value: unknown) {
++  if (typeof value !== "object" || value === null) {
++    return null;
++  }
++
++  const message = value as Record<string, unknown>;
++
++  if (message.type === "online_count") {
++    return typeof message.count === "number" &&
++      Number.isFinite(message.count) &&
++      message.count >= 0
++      ? {
++          type: "online_count" as const,
++          count: Math.floor(message.count),
++        }
++      : null;
++  }
++
++  if (message.type === "global_chat") {
++    return typeof message.message_id === "string" &&
++      typeof message.player_id === "string" &&
++      typeof message.playerName === "string" &&
++      typeof message.content === "string" &&
++      typeof message.sentAt === "string"
++      ? {
++          type: "global_chat" as const,
++          message: {
++            message_id: message.message_id,
++            player_id: message.player_id,
++            playerName: message.playerName,
++            content: message.content,
++            sentAt: message.sentAt,
++          },
++        }
++      : null;
++  }
++
++  if (message.type === "ping") {
++    return { type: "ping" as const };
++  }
++
++  return null;
++}
++
+ export function useHomeController({ language }: HomeControllerOptions) {
+   const gameWindowRef = useRef<Window | null>(null);
+   const isMountedRef = useRef(true);
+   const profileRequestIdRef = useRef(0);
++  const dashboardSocketRef = useRef<WebSocket | null>(null);
++  const [chatMessages, setChatMessages] = useState<DashboardChatMessage[]>([]);
++  const [isDashboardConnected, setIsDashboardConnected] = useState(false);
+   const [onlineCount, setOnlineCount] = useState(0);
+@@ -174,44 +250,91 @@ export function useHomeController({ language }: HomeControllerOptions) {
+     };
+   }, [refreshPlayerProfile]);
+ 
+   useEffect(() => {
+-    let mounted = true;
+-    let requestInFlight = false;
+-    let activeController: AbortController | null = null;
+-
+-    async function refreshOnlineCount() {
+-      if (requestInFlight) {
+-        return;
+-      }
+-
+-      requestInFlight = true;
+-      activeController = new AbortController();
+-
+-      try {
+-        const nextOnlineCount = await fetchOnlinePlayerCount(
+-          activeController.signal,
+-        );
+-
+-        if (mounted) {
+-          setOnlineCount(nextOnlineCount);
++    const supabase = createSupabaseClient();
++    let accessToken: string | undefined;
++    let disposed = false;
++    let reconnectTimer: number | null = null;
++
++    function connectDashboard() {
++      if (disposed) {
++        return;
++      }
++
++      if (reconnectTimer !== null) {
++        window.clearTimeout(reconnectTimer);
++        reconnectTimer = null;
++      }
++
++      const previousSocket = dashboardSocketRef.current;
++      const socket = new WebSocket(createDashboardWebSocketUrl(accessToken));
++      dashboardSocketRef.current = socket;
++
++      previousSocket?.close(1000, "Authentication changed");
++
++      socket.addEventListener("open", () => {
++        if (dashboardSocketRef.current === socket) {
++          setIsDashboardConnected(true);
+         }
+-      } catch {
+-        // Keep the last known count when the live endpoint is unavailable.
+-      } finally {
+-        requestInFlight = false;
+-        activeController = null;
+-      }
++      });
++
++      socket.addEventListener("message", (event) => {
++        if (typeof event.data !== "string") {
++          return;
++        }
++
++        try {
++          const message = readDashboardMessage(JSON.parse(event.data));
++
++          if (message?.type === "online_count") {
++            setOnlineCount(message.count);
++          } else if (message?.type === "global_chat") {
++            setChatMessages((currentMessages) => {
++              if (
++                currentMessages.some(
++                  (currentMessage) =>
++                    currentMessage.message_id === message.message.message_id,
++                )
++              ) {
++                return currentMessages;
++              }
++
++              return [...currentMessages, message.message].slice(
++                -MAX_CHAT_MESSAGES,
++              );
++            });
++          } else if (
++            message?.type === "ping" &&
++            socket.readyState === WebSocket.OPEN
++          ) {
++            socket.send(JSON.stringify({ type: "pong" }));
++          }
++        } catch {
++          // Ignore malformed server messages and keep the connection alive.
++        }
++      });
++
++      socket.addEventListener("close", () => {
++        if (dashboardSocketRef.current !== socket) {
++          return;
++        }
++
++        setIsDashboardConnected(false);
++        dashboardSocketRef.current = null;
++
++        if (!disposed) {
++          reconnectTimer = window.setTimeout(
++            connectDashboard,
++            RECONNECT_DELAY_MS,
++          );
++        }
++      });
+     }
+ 
+-    refreshOnlineCount();
+-    const intervalId = window.setInterval(
+-      refreshOnlineCount,
+-      ONLINE_PLAYERS_POLL_INTERVAL_MS,
+-    );
++    supabase.auth.getSession().then(({ data }) => {
++      accessToken = data.session?.access_token;
++      connectDashboard();
++    });
++    const {
++      data: { subscription },
++    } = supabase.auth.onAuthStateChange((_event, session) => {
++      accessToken = session?.access_token;
++      connectDashboard();
++    });
+ 
+     return () => {
+-      mounted = false;
+-      window.clearInterval(intervalId);
+-      activeController?.abort();
++      disposed = true;
++      subscription.unsubscribe();
++      if (reconnectTimer !== null) {
++        window.clearTimeout(reconnectTimer);
++      }
++      dashboardSocketRef.current?.close(1000, "Dashboard unmounted");
++      dashboardSocketRef.current = null;
+     };
+   }, []);
+@@ -239,8 +362,22 @@ export function useHomeController({ language }: HomeControllerOptions) {
+     (playerProfile?.isGuest || !playerProfile?.needsUsername);
+ 
++  const sendGlobalChatMessage = useCallback((content: string) => {
++    const socket = dashboardSocketRef.current;
++    const normalizedContent = content.trim();
++
++    if (
++      socket?.readyState !== WebSocket.OPEN ||
++      normalizedContent.length === 0
++    ) {
++      return false;
++    }
++
++    socket.send(
++      JSON.stringify({ type: "global_chat", content: normalizedContent }),
++    );
++    return true;
++  }, []);
++
+   return {
++    chatMessages,
+     gameUrl,
++    isDashboardConnected,
+     isPlayerProfileLoading,
+     onlineCount,
+@@ -249,6 +386,7 @@ export function useHomeController({ language }: HomeControllerOptions) {
+     refreshPlayerProfile,
+     registerGameWindow,
++    sendGlobalChatMessage,
+     showGame,
+     signOut: async () => {
+diff --git a/src/views/home/HomeView.tsx b/src/views/home/HomeView.tsx
+index 05a318a..4fcd258 100644
+--- a/src/views/home/HomeView.tsx
++++ b/src/views/home/HomeView.tsx
+@@ -28,12 +28,15 @@ export function HomeView() {
+   const translations = homeTranslations[language];
+   const {
++    chatMessages,
+     gameUrl,
++    isDashboardConnected,
+     isPlayerProfileLoading,
+     onlineCount,
+     playerProfile,
+     refreshPlayerProfile,
+     registerGameWindow,
++    sendGlobalChatMessage,
+     signOut,
+     showGame,
+     playGame,
+@@ -147,6 +150,9 @@ export function HomeView() {
+           </div>
+ 
+           <GlobalChat
++            isConnected={isDashboardConnected}
++            messages={chatMessages}
++            onSendMessage={sendGlobalChatMessage}
+             playerProfile={playerProfile}
+             translations={translations.chat}
+           />

@@ -54,7 +54,7 @@ public sealed class Ws
         new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
 
     private readonly ConcurrentDictionary<string, ClientConnection> clients;
-    private int onlinePlayerCount;
+    private readonly IMatchRepository matchRepository;
 
     // Active match rooms keyed by room id. Ended rooms are retained briefly for final client packets.
     private readonly ConcurrentDictionary<string, GameRoom> rooms = new();
@@ -64,12 +64,19 @@ public sealed class Ws
     private readonly object roomsLock = new();
 
     public Ws(ConcurrentDictionary<string, ClientConnection> clients)
+        : this(clients, NullMatchRepository.Instance)
     {
-        this.clients = clients;
-        _ = RunRoomTimersAsync();
     }
 
-    public int OnlinePlayerCount => Volatile.Read(ref onlinePlayerCount);
+    public Ws(
+        ConcurrentDictionary<string, ClientConnection> clients,
+        IMatchRepository matchRepository
+    )
+    {
+        this.clients = clients;
+        this.matchRepository = matchRepository;
+        _ = RunRoomTimersAsync();
+    }
 
     // Handles one upgraded /ws connection from connect to cleanup.
     public async Task RunWebSocketApp(HttpContext context)
@@ -84,7 +91,6 @@ public sealed class Ws
         var socket = await context.WebSockets.AcceptWebSocketAsync();
         var connectionId = Helper.GetConnectionId();
         var client = Helper.AcceptPlayer(connectionId, socket);
-        Interlocked.Increment(ref onlinePlayerCount);
 
         Console.WriteLine($"Socket connected: {connectionId}");
 
@@ -126,7 +132,6 @@ public sealed class Ws
             await CloseSocketAsync(client, WebSocketCloseStatus.NormalClosure, "Closing");
 
             socket.Dispose();
-            Interlocked.Decrement(ref onlinePlayerCount);
             Console.WriteLine($"Client disconnected: {client.LogId}");
 
             if (disconnectedRoom is not null && client.HasJoinedGame)
@@ -194,8 +199,8 @@ public sealed class Ws
         await SendJsonAsync(client, new
         {
             type = "match_left",
-            playerId,
-            roomId
+            player_id = playerId,
+            room_id = roomId
         });
 
         if (leftRoom is not null)
@@ -210,14 +215,14 @@ public sealed class Ws
         await BroadcastToRoomAsync(room, new
         {
             type = "player_left",
-            playerId,
+            player_id = playerId,
             leaderboard
         });
 
         await BroadcastToRoomAsync(room, new
         {
             type = "leaderboard_update",
-            roomId = room.RoomId,
+            room_id = room.RoomId,
             leaderboard
         });
     }
@@ -255,7 +260,7 @@ public sealed class Ws
                     await BroadcastToRoomAsync(room, new
                     {
                         type = "time_sync",
-                        roomId = room.RoomId,
+                        room_id = room.RoomId,
                         remainingSeconds,
                         leaderboard = room.LeaderboardSnapshot()
                     });
@@ -277,6 +282,7 @@ public sealed class Ws
         Console.WriteLine($"Room ended by time limit: {room.RoomId}");
 
         await BroadcastMatchEndedAsync(room);
+        _ = SaveMatchAsync(room);
     }
 
     private void CleanupEndedRoomIfExpired(GameRoom room)
@@ -318,12 +324,73 @@ public sealed class Ws
     private static object MatchEndedPayload(GameRoom room) => new
     {
         type = "match_ended",
-        roomId = room.RoomId,
+        match_id = room.MatchId,
         room_id = room.RoomId,
         remainingSeconds = 0,
         durationSeconds = room.DurationSeconds,
         leaderboard = room.LeaderboardSnapshot()
     };
+
+    private async Task SaveMatchAsync(GameRoom room)
+    {
+        const int maxAttempts = 3;
+
+        try
+        {
+            var match = room.MatchRecordSnapshot();
+            var playerIds = room.LeaderboardSnapshot()
+                .Select(entry => entry.PlayerId)
+                .ToArray();
+
+            for (var attempt = 1; ; attempt += 1)
+            {
+                try
+                {
+                    await matchRepository.SaveAsync(match);
+                    break;
+                }
+                catch when (attempt < maxAttempts)
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(attempt));
+                }
+            }
+
+            var payload = new
+            {
+                type = "match_saved",
+                match_id = match.Id,
+                room_id = room.RoomId
+            };
+
+            await SendToPlayersAsync(playerIds, payload);
+            Console.WriteLine(
+                $"Saved match {match.Id} for room {room.RoomId}"
+            );
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine(
+                $"Failed to save match {room.MatchId} for room {room.RoomId} after {maxAttempts} attempts: {ex.Message}"
+            );
+        }
+    }
+
+    private async Task SendToPlayersAsync(
+        IEnumerable<string> playerIds,
+        object payload
+    )
+    {
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(payload);
+        var sendTasks = playerIds
+            .Distinct(StringComparer.Ordinal)
+            .Select(playerId =>
+                clients.TryGetValue(playerId, out var client)
+                    ? SendBytesAsync(client, bytes)
+                    : Task.CompletedTask
+            );
+
+        await Task.WhenAll(sendTasks);
+    }
 
     // Closes stale sockets when the client stops sending gameplay messages.
     private async Task MonitorHeartbeatAsync(ClientConnection client, CancellationToken cancellationToken)
@@ -531,7 +598,7 @@ public sealed class Ws
                         {
                             type = "connect_rejected",
                             reason = "duplicate_player_id",
-                            playerId
+                            player_id = playerId
                         });
                         return;
                     }
@@ -564,10 +631,10 @@ public sealed class Ws
                 await SendJsonAsync(client, new
                 {
                     type = "room_reserved",
-                    playerId = client.PlayerId,
+                    player_id = client.PlayerId,
                     playerName = client.PlayerName,
                     level = client.Level,
-                    roomId = room.RoomId,
+                    room_id = room.RoomId,
                     durationSeconds = room.DurationSeconds,
                     remainingSeconds = room.RemainingSeconds,
                     leaderboard = room.LeaderboardSnapshot()
@@ -614,10 +681,10 @@ public sealed class Ws
                 await SendJsonAsync(client, new
                 {
                     type = "room_joined",
-                    playerId = client.PlayerId,
+                    player_id = client.PlayerId,
                     playerName = client.PlayerName,
                     level = client.Level,
-                    roomId = room.RoomId,
+                    room_id = room.RoomId,
                     durationSeconds = room.DurationSeconds,
                     remainingSeconds = room.RemainingSeconds,
                     leaderboard = room.LeaderboardSnapshot()
@@ -628,7 +695,7 @@ public sealed class Ws
                 await BroadcastToRoomAsync(client.RoomId, new
                 {
                     type = "player_connected",
-                    playerId = client.PlayerId,
+                    player_id = client.PlayerId,
                     playerName = client.PlayerName,
                     level = client.Level,
                     x,
@@ -642,7 +709,7 @@ public sealed class Ws
                 await BroadcastToRoomAsync(client.RoomId, new
                 {
                     type = "leaderboard_update",
-                    roomId = client.RoomId,
+                    room_id = client.RoomId,
                     leaderboard = room.LeaderboardSnapshot()
                 });
 
@@ -692,7 +759,6 @@ public sealed class Ws
                 await SendJsonAsync(client, new
                 {
                     type = "leaderboard_update",
-                    roomId = room.RoomId,
                     room_id = room.RoomId,
                     leaderboard = room.LeaderboardSnapshot()
                 });
@@ -730,7 +796,7 @@ public sealed class Ws
                 await BroadcastToRoomAsync(client.RoomId, new
                 {
                     type = "player_move",
-                    playerId = client.PlayerId,
+                    player_id = client.PlayerId,
                     x,
                     y,
                     angle
@@ -756,7 +822,7 @@ public sealed class Ws
                 await BroadcastToRoomAsync(room, new
                 {
                     type = "player_heartbeat",
-                    playerId = client.PlayerId,
+                    player_id = client.PlayerId,
                     health = snapshot.Health,
                     isDead = snapshot.IsDead
                 });
@@ -777,7 +843,7 @@ public sealed class Ws
                 await BroadcastToRoomAsync(client.RoomId, new
                 {
                     type = "player_angle",
-                    playerId = client.PlayerId,
+                    player_id = client.PlayerId,
                     angle
                 });
 
@@ -816,7 +882,7 @@ public sealed class Ws
                 {
                     type = "player_health",
                     request = heal.Request,
-                    playerId = client.PlayerId,
+                    player_id = client.PlayerId,
                     health = result.Health,
                     newHealth = result.Health,
                     currentHealth = result.Health,
@@ -862,7 +928,7 @@ public sealed class Ws
                 await BroadcastToRoomAsync(client.RoomId, new
                 {
                     type = "player_health",
-                    playerId = client.PlayerId,
+                    player_id = client.PlayerId,
                     health = result.Health,
                     isDead = result.IsDead,
                     reason = "respawn",
@@ -887,7 +953,7 @@ public sealed class Ws
                 await BroadcastToRoomAsync(client.RoomId, new
                 {
                     type = "player_idle",
-                    playerId = client.PlayerId,
+                    player_id = client.PlayerId,
                     x,
                     y,
                     angle
@@ -910,7 +976,7 @@ public sealed class Ws
                 await BroadcastToRoomAsync(client.RoomId, new
                 {
                     type = "player_weapon_switch",
-                    playerId = client.PlayerId,
+                    player_id = client.PlayerId,
                     weaponType = weapon
                 });
 
@@ -940,7 +1006,7 @@ public sealed class Ws
                 var bulletSpawn = new Dictionary<string, object>
                 {
                     ["type"] = "bullet_spawn",
-                    ["playerId"] = client.PlayerId,
+                    ["player_id"] = client.PlayerId,
                     ["weaponType"] = shoot.WeaponType ?? state.Weapon,
                     ["angle"] = shoot.Angle,
                     ["x"] = shoot.X ?? state.X,
@@ -988,7 +1054,7 @@ public sealed class Ws
             await SendJsonAsync(client, new
             {
                 type = "player_connected",
-                playerId = roomClient.PlayerId,
+                player_id = roomClient.PlayerId,
                 playerName = roomClient.PlayerName,
                 level = roomClient.Level,
                 x = state.X,
@@ -1100,11 +1166,11 @@ public sealed class Ws
         await BroadcastToRoomAsync(shooter.RoomId, new
         {
             type = "player_health",
-            playerId = target.PlayerId,
+            player_id = target.PlayerId,
             health = result.Health,
             damage = result.Damage,
             isDead = result.IsDead,
-            attackerId = shooter.PlayerId,
+            attacker_id = shooter.PlayerId,
             attackerWeaponType = hit.WeaponType
         });
 
@@ -1113,9 +1179,9 @@ public sealed class Ws
             await BroadcastToRoomAsync(room, new
             {
                 type = "kill_feed",
-                killerId = shooter.PlayerId,
+                killer_id = shooter.PlayerId,
                 killerName = shooter.PlayerName,
-                victimId = target.PlayerId,
+                victim_id = target.PlayerId,
                 victimName = target.PlayerName,
                 weaponType = hit.WeaponType,
                 selfKill = isSelfKill,
@@ -1129,7 +1195,7 @@ public sealed class Ws
             await BroadcastToRoomAsync(room, new
             {
                 type = "leaderboard_update",
-                roomId = room.RoomId,
+                room_id = room.RoomId,
                 leaderboard = room.LeaderboardSnapshot()
             });
         }
@@ -1318,8 +1384,7 @@ public sealed class Ws
     {
         level = default;
 
-        if (!Helper.TryGetString(root, "playerId", out playerId) &&
-            !Helper.TryGetString(root, "id", out playerId))
+        if (!Helper.TryGetString(root, "player_id", out playerId))
         {
             Console.WriteLine($"Invalid on_connect player id from {logId}: {message}");
             playerName = string.Empty;
@@ -1371,7 +1436,7 @@ public sealed class Ws
             return false;
         }
 
-        if (!Helper.TryGetString(root, "playerId", out var playerId) ||
+        if (!Helper.TryGetString(root, "player_id", out var playerId) ||
             playerId.Length > MaxPlayerIdLength ||
             playerId != client.PlayerId)
         {
@@ -1403,7 +1468,7 @@ public sealed class Ws
             return false;
         }
 
-        if (!Helper.TryGetString(root, "playerId", out var playerId) ||
+        if (!Helper.TryGetString(root, "player_id", out var playerId) ||
             playerId.Length > MaxPlayerIdLength ||
             playerId != client.PlayerId)
         {
@@ -1422,7 +1487,6 @@ public sealed class Ws
     }
 
     private static bool TryReadRoomId(JsonElement root, out string roomId) =>
-        Helper.TryGetString(root, "roomId", out roomId) ||
         Helper.TryGetString(root, "room_id", out roomId);
 
     private static bool TryReadMessageKind(JsonElement root, out string type) =>
@@ -1437,7 +1501,7 @@ public sealed class Ws
     {
         chat = default;
 
-        if (!Helper.TryGetString(root, "playerId", out var playerId) ||
+        if (!Helper.TryGetString(root, "player_id", out var playerId) ||
             playerId.Length > MaxPlayerIdLength ||
             playerId != client.PlayerId)
         {
@@ -1514,7 +1578,7 @@ public sealed class Ws
     {
         hit = default;
 
-        if (!Helper.TryGetString(root, "targetPlayerId", out var targetPlayerId))
+        if (!Helper.TryGetString(root, "target_player_id", out var targetPlayerId))
         {
             Console.WriteLine($"Invalid hit target from {playerId}: {message}");
             return false;
@@ -1538,7 +1602,7 @@ public sealed class Ws
         }
 
         string? shotId = null;
-        if (root.TryGetProperty("shotId", out var shotIdElement))
+        if (root.TryGetProperty("shot_id", out var shotIdElement))
         {
             if (shotIdElement.ValueKind != JsonValueKind.String)
             {
@@ -1771,9 +1835,11 @@ public sealed class GameRoom
     private GameRoom(string roomId)
     {
         RoomId = roomId;
+        MatchId = Guid.NewGuid();
     }
 
     public string RoomId { get; }
+    public Guid MatchId { get; }
     public int MaxPlayers { get; } = 8;
     public DateTime? StartTimeUtc { get; private set; }
     public DateTime? EndTimeUtc { get; private set; }
@@ -1910,6 +1976,33 @@ public sealed class GameRoom
             return true;
         }
     }
+
+    public MatchRecord MatchRecordSnapshot()
+    {
+        lock (syncRoot)
+        {
+            if (StartTimeUtc is null || EndedAtUtc is null)
+            {
+                throw new InvalidOperationException(
+                    "Only ended matches can be persisted."
+                );
+            }
+
+            var durationSeconds = Math.Max(
+                0,
+                (int)Math.Round(
+                    (EndedAtUtc.Value - StartTimeUtc.Value).TotalSeconds
+                )
+            );
+
+            return new MatchRecord(
+                MatchId,
+                new DateTimeOffset(StartTimeUtc.Value, TimeSpan.Zero),
+                new DateTimeOffset(EndedAtUtc.Value, TimeSpan.Zero),
+                durationSeconds
+            );
+        }
+    }
 }
 
 public enum GameRoomState
@@ -1952,10 +2045,9 @@ public readonly record struct ChatMessage(
         {
             ["request"] = "message",
             ["type"] = "chat_message",
-            ["playerId"] = PlayerId,
+            ["player_id"] = PlayerId,
             ["playerName"] = PlayerName,
             ["content"] = Content,
-            ["roomId"] = roomId,
             ["room_id"] = roomId
         };
 
@@ -1979,7 +2071,7 @@ public readonly record struct HealResult(double Health, double Heal, double Prev
 public readonly record struct PlayerState(double X, double Y, double Angle, string Weapon, double Health, bool IsDead);
 
 public readonly record struct LeaderboardEntry(
-    [property: JsonPropertyName("playerId")]
+    [property: JsonPropertyName("player_id")]
     string PlayerId,
     [property: JsonPropertyName("playerName")]
     string PlayerName,
