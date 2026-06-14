@@ -89,19 +89,19 @@ function parseServerMessage(value: string): DashboardServerMessage | null {
 
   if (
     parsedValue.type === "global_chat" &&
-    typeof parsedValue.messageId === "string" &&
-    typeof parsedValue.playerId === "string" &&
-    typeof parsedValue.playerName === "string" &&
+    typeof parsedValue.message_id === "string" &&
+    typeof parsedValue.player_id === "string" &&
+    typeof parsedValue.player_name === "string" &&
     typeof parsedValue.content === "string" &&
-    typeof parsedValue.sentAt === "string"
+    typeof parsedValue.sent_at === "string"
   ) {
     return {
       type: "global_chat",
-      messageId: parsedValue.messageId,
-      playerId: parsedValue.playerId,
-      playerName: parsedValue.playerName,
+      messageId: parsedValue.message_id,
+      playerId: parsedValue.player_id,
+      playerName: parsedValue.player_name,
       content: parsedValue.content,
-      sentAt: parsedValue.sentAt,
+      sentAt: parsedValue.sent_at,
     };
   }
 
@@ -275,8 +275,8 @@ export function useDashboardSocket() {
     socket.send(
       JSON.stringify({
         type: "global_chat",
-        playerId: playerProfile.playerId,
-        playerName: playerProfile.playerName,
+        player_id: playerProfile.playerId,
+        player_name: playerProfile.playerName,
         content: normalizedContent,
       }),
     );

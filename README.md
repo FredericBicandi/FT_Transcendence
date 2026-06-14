@@ -31,8 +31,8 @@ Grade: -%.
    `Supabase Dashboard > Project Settings > API`. Set
    `NEXT_PUBLIC_DASHBOARD_WS_URL` to the dedicated dashboard WebSocket endpoint,
    for example `wss://example.com/ws/dashboard`. Dashboard WebSocket connections
-   do not use Supabase authentication. Global chat messages send `playerId`,
-   `playerName`, and `content` in the message payload.
+   do not use Supabase authentication. Global chat messages send `player_id`,
+   `player_name`, and `content` in the message payload.
 
 4. Start the dashboard:
 
