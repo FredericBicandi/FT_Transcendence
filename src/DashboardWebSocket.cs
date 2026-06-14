@@ -274,7 +274,7 @@ public sealed class DashboardWebSocketHub
 
         var playerName = ReadChatField(
             root,
-            "playerName",
+            "player_name",
             options.MaxPlayerNameLength
         );
         if (!playerName.IsValid)
@@ -315,9 +315,9 @@ public sealed class DashboardWebSocketHub
                 type: "global_chat",
                 message_id: Guid.NewGuid().ToString(),
                 player_id: playerId.Value!,
-                playerName: playerName.Value!,
+                player_name: playerName.Value!,
                 content: content.Value!,
-                sentAt: timeProvider.GetUtcNow().UtcDateTime.ToString("O")
+                sent_at: timeProvider.GetUtcNow().UtcDateTime.ToString("O")
             );
 
             chatHistory.Enqueue(payload);
@@ -648,9 +648,9 @@ internal sealed record DashboardChatMessage(
     string type,
     string message_id,
     string player_id,
-    string playerName,
+    string player_name,
     string content,
-    string sentAt
+    string sent_at
 );
 
 internal sealed record DashboardReceiveResult(

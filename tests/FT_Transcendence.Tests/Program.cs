@@ -57,7 +57,7 @@ static async Task ClientIdentityAndSending()
         {
           "type":"global_chat",
           "player_id":"  user-1  ",
-          "playerName":"  Alice  ",
+          "player_name":"  Alice  ",
           "content":"  hello dashboard  "
         }
         """
@@ -65,16 +65,16 @@ static async Task ClientIdentityAndSending()
 
     using var message = await WaitForTypeAsync(receiver, "global_chat");
     AssertEqual("user-1", ReadString(message.RootElement, "player_id"));
-    AssertEqual("Alice", ReadString(message.RootElement, "playerName"));
+    AssertEqual("Alice", ReadString(message.RootElement, "player_name"));
     AssertEqual("hello dashboard", ReadString(message.RootElement, "content"));
     AssertTrue(
         Guid.TryParse(ReadString(message.RootElement, "message_id"), out _),
         "message_id should be a UUID"
     );
-    var sentAt = ReadString(message.RootElement, "sentAt");
+    var sentAt = ReadString(message.RootElement, "sent_at");
     AssertTrue(
         DateTimeOffset.TryParse(sentAt, out _) && sentAt.EndsWith('Z'),
-        "sentAt should be ISO-8601 UTC"
+        "sent_at should be ISO-8601 UTC"
     );
 
     await CloseAllAsync(
@@ -97,7 +97,7 @@ static async Task MultipleClientsBroadcast()
         {
           "type":"global_chat",
           "player_id":"user-2",
-          "playerName":"Bob",
+          "player_name":"Bob",
           "content":"visible to all clients"
         }
         """
@@ -240,22 +240,22 @@ static async Task InvalidJsonAndMalformedPayloads()
     await AssertErrorAsync(socket, "UNSUPPORTED_MESSAGE_TYPE");
 
     socket.SendTextFromClient(
-        """{"type":"global_chat","playerName":"Carol","content":"hello"}"""
+        """{"type":"global_chat","player_name":"Carol","content":"hello"}"""
     );
     await AssertErrorAsync(socket, "INVALID_PLAYER_ID");
 
     socket.SendTextFromClient(
-        """{"type":"global_chat","playerId":"user-3","playerName":"Carol","content":"hello"}"""
+        """{"type":"global_chat","playerId":"user-3","player_name":"Carol","content":"hello"}"""
     );
     await AssertErrorAsync(socket, "INVALID_PLAYER_ID");
 
     socket.SendTextFromClient(
-        """{"type":"global_chat","player_id":"user-3","content":"hello"}"""
+        """{"type":"global_chat","player_id":"user-3","playerName":"Carol","content":"hello"}"""
     );
     await AssertErrorAsync(socket, "INVALID_PLAYER_NAME");
 
     socket.SendTextFromClient(
-        """{"type":"global_chat","player_id":"user-3","playerName":"Carol","content":42}"""
+        """{"type":"global_chat","player_id":"user-3","player_name":"Carol","content":42}"""
     );
     await AssertErrorAsync(socket, "INVALID_CONTENT");
 
@@ -271,17 +271,17 @@ static async Task EmptyAndOversizedFields()
     await WaitForCountAsync(hub, 1);
 
     socket.SendTextFromClient(
-        """{"type":"global_chat","player_id":" ","playerName":"Dan","content":"hello"}"""
+        """{"type":"global_chat","player_id":" ","player_name":"Dan","content":"hello"}"""
     );
     await AssertErrorAsync(socket, "INVALID_PLAYER_ID");
 
     socket.SendTextFromClient(
-        """{"type":"global_chat","player_id":"user-4","playerName":" ","content":"hello"}"""
+        """{"type":"global_chat","player_id":"user-4","player_name":" ","content":"hello"}"""
     );
     await AssertErrorAsync(socket, "INVALID_PLAYER_NAME");
 
     socket.SendTextFromClient(
-        """{"type":"global_chat","player_id":"user-4","playerName":"Dan","content":"   "}"""
+        """{"type":"global_chat","player_id":"user-4","player_name":"Dan","content":"   "}"""
     );
     await AssertErrorAsync(socket, "INVALID_CONTENT");
 
@@ -290,7 +290,7 @@ static async Task EmptyAndOversizedFields()
         {
             type = "global_chat",
             player_id = new string('x', 129),
-            playerName = "Dan",
+            player_name = "Dan",
             content = "hello"
         })
     );
@@ -301,7 +301,7 @@ static async Task EmptyAndOversizedFields()
         {
             type = "global_chat",
             player_id = "user-4",
-            playerName = new string('x', 65),
+            player_name = new string('x', 65),
             content = "hello"
         })
     );
@@ -312,7 +312,7 @@ static async Task EmptyAndOversizedFields()
         {
             type = "global_chat",
             player_id = "user-4",
-            playerName = "Dan",
+            player_name = "Dan",
             content = new string('x', 141)
         })
     );
@@ -358,7 +358,7 @@ static async Task ArabicChatContent()
 
     using var message = await WaitForTypeAsync(socket, "global_chat");
     AssertEqual(content, ReadString(message.RootElement, "content"));
-    AssertEqual("لاعب", ReadString(message.RootElement, "playerName"));
+    AssertEqual("لاعب", ReadString(message.RootElement, "player_name"));
 
     await CloseAllAsync((socket, task));
 }
@@ -501,7 +501,7 @@ static string ChatMessage(
     {
         type = "global_chat",
         player_id = playerId,
-        playerName,
+        player_name = playerName,
         content
     });
 

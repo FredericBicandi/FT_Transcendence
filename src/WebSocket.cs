@@ -326,8 +326,8 @@ public sealed class Ws
         type = "match_ended",
         match_id = room.MatchId,
         room_id = room.RoomId,
-        remainingSeconds = 0,
-        durationSeconds = room.DurationSeconds,
+        remaining_seconds = 0,
+        duration_seconds = room.DurationSeconds,
         leaderboard = room.LeaderboardSnapshot()
     };
 
@@ -632,11 +632,11 @@ public sealed class Ws
                 {
                     type = "room_reserved",
                     player_id = client.PlayerId,
-                    playerName = client.PlayerName,
+                    player_name = client.PlayerName,
                     level = client.Level,
                     room_id = room.RoomId,
-                    durationSeconds = room.DurationSeconds,
-                    remainingSeconds = room.RemainingSeconds,
+                    duration_seconds = room.DurationSeconds,
+                    remaining_seconds = room.RemainingSeconds,
                     leaderboard = room.LeaderboardSnapshot()
                 });
 
@@ -682,11 +682,11 @@ public sealed class Ws
                 {
                     type = "room_joined",
                     player_id = client.PlayerId,
-                    playerName = client.PlayerName,
+                    player_name = client.PlayerName,
                     level = client.Level,
                     room_id = room.RoomId,
-                    durationSeconds = room.DurationSeconds,
-                    remainingSeconds = room.RemainingSeconds,
+                    duration_seconds = room.DurationSeconds,
+                    remaining_seconds = room.RemainingSeconds,
                     leaderboard = room.LeaderboardSnapshot()
                 });
 
@@ -696,14 +696,14 @@ public sealed class Ws
                 {
                     type = "player_connected",
                     player_id = client.PlayerId,
-                    playerName = client.PlayerName,
+                    player_name = client.PlayerName,
                     level = client.Level,
                     x,
                     y,
                     angle,
-                    weaponType = weapon,
+                    weapon_type = weapon,
                     health,
-                    isDead = false
+                    is_dead = false
                 });
 
                 await BroadcastToRoomAsync(client.RoomId, new
@@ -824,7 +824,7 @@ public sealed class Ws
                     type = "player_heartbeat",
                     player_id = client.PlayerId,
                     health = snapshot.Health,
-                    isDead = snapshot.IsDead
+                    is_dead = snapshot.IsDead
                 });
 
                 return;
@@ -884,16 +884,16 @@ public sealed class Ws
                     request = heal.Request,
                     player_id = client.PlayerId,
                     health = result.Health,
-                    newHealth = result.Health,
-                    currentHealth = result.Health,
-                    playerHealth = result.Health,
-                    previousHealth = result.PreviousHealth,
+                    new_health = result.Health,
+                    current_health = result.Health,
+                    player_health = result.Health,
+                    previous_health = result.PreviousHealth,
                     heal = result.Heal,
-                    healAmount = result.Heal,
+                    heal_amount = result.Heal,
                     amount = result.Heal,
-                    requestedAmount = heal.Amount,
+                    requested_amount = heal.Amount,
                     source = heal.Source,
-                    isDead = result.IsDead,
+                    is_dead = result.IsDead,
                     reason = heal.Request
                 });
 
@@ -930,7 +930,7 @@ public sealed class Ws
                     type = "player_health",
                     player_id = client.PlayerId,
                     health = result.Health,
-                    isDead = result.IsDead,
+                    is_dead = result.IsDead,
                     reason = "respawn",
                     x = result.X,
                     y = result.Y,
@@ -977,7 +977,7 @@ public sealed class Ws
                 {
                     type = "player_weapon_switch",
                     player_id = client.PlayerId,
-                    weaponType = weapon
+                    weapon_type = weapon
                 });
 
                 return;
@@ -1007,23 +1007,23 @@ public sealed class Ws
                 {
                     ["type"] = "bullet_spawn",
                     ["player_id"] = client.PlayerId,
-                    ["weaponType"] = shoot.WeaponType ?? state.Weapon,
+                    ["weapon_type"] = shoot.WeaponType ?? state.Weapon,
                     ["angle"] = shoot.Angle,
                     ["x"] = shoot.X ?? state.X,
                     ["y"] = shoot.Y ?? state.Y
                 };
 
                 if (shoot.StartX is not null)
-                    bulletSpawn["startX"] = shoot.StartX.Value;
+                    bulletSpawn["start_x"] = shoot.StartX.Value;
 
                 if (shoot.StartY is not null)
-                    bulletSpawn["startY"] = shoot.StartY.Value;
+                    bulletSpawn["start_y"] = shoot.StartY.Value;
 
                 if (shoot.TargetX is not null)
-                    bulletSpawn["targetX"] = shoot.TargetX.Value;
+                    bulletSpawn["target_x"] = shoot.TargetX.Value;
 
                 if (shoot.TargetY is not null)
-                    bulletSpawn["targetY"] = shoot.TargetY.Value;
+                    bulletSpawn["target_y"] = shoot.TargetY.Value;
 
                 await BroadcastToRoomAsync(client.RoomId, bulletSpawn);
 
@@ -1055,14 +1055,14 @@ public sealed class Ws
             {
                 type = "player_connected",
                 player_id = roomClient.PlayerId,
-                playerName = roomClient.PlayerName,
+                player_name = roomClient.PlayerName,
                 level = roomClient.Level,
                 x = state.X,
                 y = state.Y,
                 angle = state.Angle,
-                weaponType = state.Weapon,
+                weapon_type = state.Weapon,
                 health = state.Health,
-                isDead = state.IsDead
+                is_dead = state.IsDead
             });
         }
     }
@@ -1169,9 +1169,9 @@ public sealed class Ws
             player_id = target.PlayerId,
             health = result.Health,
             damage = result.Damage,
-            isDead = result.IsDead,
+            is_dead = result.IsDead,
             attacker_id = shooter.PlayerId,
-            attackerWeaponType = hit.WeaponType
+            attacker_weapon_type = hit.WeaponType
         });
 
         if (result.IsDead)
@@ -1180,11 +1180,11 @@ public sealed class Ws
             {
                 type = "kill_feed",
                 killer_id = shooter.PlayerId,
-                killerName = shooter.PlayerName,
+                killer_name = shooter.PlayerName,
                 victim_id = target.PlayerId,
-                victimName = target.PlayerName,
-                weaponType = hit.WeaponType,
-                selfKill = isSelfKill,
+                victim_name = target.PlayerName,
+                weapon_type = hit.WeaponType,
+                self_kill = isSelfKill,
                 killer = shooter.PlayerName,
                 killed = target.PlayerName
             });
@@ -1244,9 +1244,9 @@ public sealed class Ws
         }
 
         var amount = DefaultMedkitHealAmount;
-        if (root.TryGetProperty("healAmount", out _) || root.TryGetProperty("amount", out _))
+        if (root.TryGetProperty("heal_amount", out _) || root.TryGetProperty("amount", out _))
         {
-            if (!Helper.TryGetNumber(root, "healAmount", out amount) &&
+            if (!Helper.TryGetNumber(root, "heal_amount", out amount) &&
                 !Helper.TryGetNumber(root, "amount", out amount))
             {
                 Console.WriteLine($"Invalid heal amount from {playerId}: {message}");
@@ -1398,8 +1398,7 @@ public sealed class Ws
             return false;
         }
 
-        if (!Helper.TryGetString(root, "playerName", out playerName) &&
-            !Helper.TryGetString(root, "name", out playerName))
+        if (!Helper.TryGetString(root, "player_name", out playerName))
         {
             Console.WriteLine($"Invalid on_connect player name from {logId}: {message}");
             return false;
@@ -1660,7 +1659,7 @@ public sealed class Ws
         string messageType,
         out string weapon)
     {
-        if (!Helper.TryGetString(root, "weaponType", out weapon) &&
+        if (!Helper.TryGetString(root, "weapon_type", out weapon) &&
             !Helper.TryGetString(root, "weapon", out weapon))
         {
             Console.WriteLine($"Invalid {messageType} weapon from {playerId}: {message}");
@@ -1700,7 +1699,7 @@ public sealed class Ws
         }
 
         string? weaponType = null;
-        if (root.TryGetProperty("weaponType", out _) || root.TryGetProperty("weapon", out _))
+        if (root.TryGetProperty("weapon_type", out _) || root.TryGetProperty("weapon", out _))
         {
             if (!TryReadWeapon(root, message, playerId, "shoot", out var weapon))
                 return false;
@@ -1710,10 +1709,10 @@ public sealed class Ws
 
         if (!TryReadOptionalNumber(root, "x", message, playerId, "shoot", out var x) ||
             !TryReadOptionalNumber(root, "y", message, playerId, "shoot", out var y) ||
-            !TryReadOptionalNumber(root, "startX", message, playerId, "shoot", out var startX) ||
-            !TryReadOptionalNumber(root, "startY", message, playerId, "shoot", out var startY) ||
-            !TryReadOptionalNumber(root, "targetX", message, playerId, "shoot", out var targetX) ||
-            !TryReadOptionalNumber(root, "targetY", message, playerId, "shoot", out var targetY))
+            !TryReadOptionalNumber(root, "start_x", message, playerId, "shoot", out var startX) ||
+            !TryReadOptionalNumber(root, "start_y", message, playerId, "shoot", out var startY) ||
+            !TryReadOptionalNumber(root, "target_x", message, playerId, "shoot", out var targetX) ||
+            !TryReadOptionalNumber(root, "target_y", message, playerId, "shoot", out var targetY))
         {
             return false;
         }
@@ -2046,7 +2045,7 @@ public readonly record struct ChatMessage(
             ["request"] = "message",
             ["type"] = "chat_message",
             ["player_id"] = PlayerId,
-            ["playerName"] = PlayerName,
+            ["player_name"] = PlayerName,
             ["content"] = Content,
             ["room_id"] = roomId
         };
@@ -2073,7 +2072,7 @@ public readonly record struct PlayerState(double X, double Y, double Angle, stri
 public readonly record struct LeaderboardEntry(
     [property: JsonPropertyName("player_id")]
     string PlayerId,
-    [property: JsonPropertyName("playerName")]
+    [property: JsonPropertyName("player_name")]
     string PlayerName,
     [property: JsonPropertyName("level")]
     int Level,
@@ -2083,7 +2082,7 @@ public readonly record struct LeaderboardEntry(
     int Kills,
     [property: JsonPropertyName("deaths")]
     int Deaths,
-    [property: JsonPropertyName("damageDealt")]
+    [property: JsonPropertyName("damage_dealt")]
     double DamageDealt)
 {
     public static LeaderboardEntry Empty(string playerId) =>
