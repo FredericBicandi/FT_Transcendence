@@ -4,78 +4,20 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   createPlayerProfileSearchParams,
   loadPlayerProfile,
+  saveAuthenticatedMatchLog,
   type PlayerProfile,
 } from "@/models/player/playerProfile.model";
 import { createSupabaseClient } from "@/models/supabase/client.model";
+import { useDashboardSocket } from "@/controllers/home/useDashboardSocket";
 
-const ONLINE_PLAYERS_URL = "https://pixelfight.live/online";
-const ONLINE_PLAYERS_POLL_INTERVAL_MS = 3_000;
 const EXIT_GAME_MESSAGE_TYPE = "EXIT_GAME";
+const MATCH_SAVED_MESSAGE_TYPE = "match_saved";
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 type HomeControllerOptions = {
   language: string;
 };
-
-function readOnlineCount(value: unknown): number | null {
-  if (typeof value === "number") {
-    return Number.isFinite(value) && value >= 0 ? Math.floor(value) : null;
-  }
-
-  if (typeof value === "string") {
-    const numericValue = Number(value);
-
-    return Number.isFinite(numericValue) && numericValue >= 0
-      ? Math.floor(numericValue)
-      : null;
-  }
-
-  if (typeof value !== "object" || value === null) {
-    return null;
-  }
-
-  const payload = value as Record<string, unknown>;
-
-  return (
-    readOnlineCount(payload.online) ??
-    readOnlineCount(payload.count) ??
-    readOnlineCount(payload.players) ??
-    readOnlineCount(payload.onlinePlayers)
-  );
-}
-
-async function fetchOnlinePlayerCount(signal: AbortSignal) {
-  const response = await fetch(ONLINE_PLAYERS_URL, {
-    cache: "no-store",
-    signal,
-  });
-
-  if (!response.ok) {
-    throw new Error("Online players request failed.");
-  }
-
-  const responseText = await response.text();
-
-  if (!responseText.trim()) {
-    throw new Error("Online players response was empty.");
-  }
-
-  try {
-    const parsedPayload: unknown = JSON.parse(responseText);
-    const onlineCount = readOnlineCount(parsedPayload);
-
-    if (onlineCount !== null) {
-      return onlineCount;
-    }
-  } catch {
-    const onlineCount = readOnlineCount(responseText);
-
-    if (onlineCount !== null) {
-      return onlineCount;
-    }
-  }
-
-  throw new Error("Online players response was not recognized.");
-}
 
 function isExitGameMessage(value: unknown) {
   return (
@@ -83,6 +25,36 @@ function isExitGameMessage(value: unknown) {
     value !== null &&
     "type" in value &&
     value.type === EXIT_GAME_MESSAGE_TYPE
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+type MatchSavedMessage = {
+  deaths: number;
+  duration_seconds: number;
+  kills: number;
+  match_id: string;
+  score: number;
+  type: typeof MATCH_SAVED_MESSAGE_TYPE;
+};
+
+function isMatchSavedMessage(value: unknown): value is MatchSavedMessage {
+  return (
+    isRecord(value) &&
+    value.type === MATCH_SAVED_MESSAGE_TYPE &&
+    typeof value.match_id === "string" &&
+    UUID_PATTERN.test(value.match_id) &&
+    typeof value.score === "number" &&
+    Number.isFinite(value.score) &&
+    typeof value.kills === "number" &&
+    Number.isFinite(value.kills) &&
+    typeof value.deaths === "number" &&
+    Number.isFinite(value.deaths) &&
+    typeof value.duration_seconds === "number" &&
+    Number.isFinite(value.duration_seconds)
   );
 }
 
@@ -94,10 +66,10 @@ function createGameUrl(playerProfile: PlayerProfile, language: string) {
 }
 
 export function useHomeController({ language }: HomeControllerOptions) {
+  const dashboardSocket = useDashboardSocket();
   const gameWindowRef = useRef<Window | null>(null);
   const isMountedRef = useRef(true);
   const profileRequestIdRef = useRef(0);
-  const [onlineCount, setOnlineCount] = useState(0);
   const [showGame, setShowGame] = useState(false);
   const [isPlayerProfileLoading, setIsPlayerProfileLoading] = useState(true);
   const [playerProfile, setPlayerProfile] = useState<PlayerProfile | null>(
@@ -175,55 +147,51 @@ export function useHomeController({ language }: HomeControllerOptions) {
   }, [refreshPlayerProfile]);
 
   useEffect(() => {
-    let mounted = true;
-    let requestInFlight = false;
-    let activeController: AbortController | null = null;
-
-    async function refreshOnlineCount() {
-      if (requestInFlight) {
+    function handleGameMessage(event: MessageEvent<unknown>) {
+      if (
+        event.origin !== window.location.origin ||
+        event.source !== gameWindowRef.current
+      ) {
         return;
       }
 
-      requestInFlight = true;
-      activeController = new AbortController();
-
-      try {
-        const nextOnlineCount = await fetchOnlinePlayerCount(
-          activeController.signal,
-        );
-
-        if (mounted) {
-          setOnlineCount(nextOnlineCount);
-        }
-      } catch {
-        // Keep the last known count when the live endpoint is unavailable.
-      } finally {
-        requestInFlight = false;
-        activeController = null;
-      }
-    }
-
-    refreshOnlineCount();
-    const intervalId = window.setInterval(
-      refreshOnlineCount,
-      ONLINE_PLAYERS_POLL_INTERVAL_MS,
-    );
-
-    return () => {
-      mounted = false;
-      window.clearInterval(intervalId);
-      activeController?.abort();
-    };
-  }, []);
-
-  useEffect(() => {
-    function handleGameMessage(event: MessageEvent<unknown>) {
-      if (
-        event.origin === window.location.origin &&
-        event.source === gameWindowRef.current &&
-        isExitGameMessage(event.data)
-      ) {
+      if (isExitGameMessage(event.data)) {
         setShowGame(false);
+        return;
+      }
+
+      if (isMatchSavedMessage(event.data)) {
+        void saveAuthenticatedMatchLog({
+          deaths: Math.max(0, Math.floor(event.data.deaths)),
+          durationSeconds: Math.max(0, Math.floor(event.data.duration_seconds)),
+          kills: Math.max(0, Math.floor(event.data.kills)),
+          matchId: event.data.match_id,
+          score: Math.max(0, Math.floor(event.data.score)),
+        })
+          .then((savedMatch) => {
+            if (!savedMatch || !isMountedRef.current) {
+              return;
+            }
+
+            setPlayerProfile((currentProfile) => {
+              if (!currentProfile || currentProfile.isGuest) {
+                return currentProfile;
+              }
+
+              return {
+                ...currentProfile,
+                matchLogs: [
+                  savedMatch,
+                  ...currentProfile.matchLogs.filter(
+                    (match) => match.id !== savedMatch.id,
+                  ),
+                ],
+              };
+            });
+          })
+          .catch(() => {
+            // Ignore save failures; the modal still reflects the loaded profile state.
+          });
       }
     }
 
@@ -246,12 +214,16 @@ export function useHomeController({ language }: HomeControllerOptions) {
 
   return {
     gameUrl,
+    chatMessages: dashboardSocket.chatMessages,
+    chatError: dashboardSocket.error,
+    isChatConnected: dashboardSocket.isConnected,
     isPlayerProfileLoading,
-    onlineCount,
+    onlineCount: dashboardSocket.onlineCount,
     playerProfile,
     refreshPlayerProfile,
     registerGameWindow,
     showGame,
+    sendChatMessage: dashboardSocket.sendChatMessage,
     signOut: async () => {
       const supabase = createSupabaseClient();
       await supabase.auth.signOut();

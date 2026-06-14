@@ -14,16 +14,6 @@ type ProfileModalProps = {
   translations: HomeTranslations["profile"];
 };
 
-type MatchLog = {
-  deaths: number;
-  kills: number;
-  playedAt: string;
-  playTime: string;
-  score: number;
-};
-
-const matchLogs: MatchLog[] = [];
-
 const brickWallStyle = {
   backgroundColor: "rgba(33, 38, 39, 0.68)",
   backgroundImage:
@@ -163,8 +153,14 @@ export function ProfileModal({
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const isAuthenticatedPlayer = playerProfile ? !playerProfile.isGuest : false;
+  const normalizedPlayerName = playerName.trim();
+  const hasPlayerNameChanged =
+    normalizedPlayerName !== (playerProfile?.playerName.trim() ?? "");
+  const hasAvatarChanged = avatarDataUrl !== undefined;
+  const hasProfileChanges = hasPlayerNameChanged || hasAvatarChanged;
   const level = playerProfile?.level ?? 0;
   const expPercent = Math.min(playerProfile?.currentXp ?? 0, 100);
+  const matchLogs = playerProfile?.matchLogs ?? [];
 
   useEffect(() => {
     return () => {
@@ -205,9 +201,13 @@ export function ProfileModal({
   }
 
   async function applyProfileChanges() {
-    const normalizedPlayerName = playerName.trim();
-
-    if (!playerProfile || !isAuthenticatedPlayer || !normalizedPlayerName) {
+    if (
+      !playerProfile ||
+      !isAuthenticatedPlayer ||
+      !normalizedPlayerName ||
+      !hasProfileChanges ||
+      isSaving
+    ) {
       return;
     }
 
@@ -222,6 +222,7 @@ export function ProfileModal({
       });
 
       await onProfileUpdated();
+      setAvatarDataUrl(undefined);
       setSaveStatus(translations.saveSuccess);
     } catch (error) {
       setSaveStatus(
@@ -323,7 +324,12 @@ export function ProfileModal({
 
           <button
             className="h-12 w-full max-w-sm bg-[#344326] text-lg uppercase text-[#d9b46b] shadow-[0_0_0_3px_#050302,0_4px_0_3px_#172111,inset_0_3px_0_#53663a,inset_0_-3px_0_#202b17] hover:bg-[#40522d] hover:text-[#ead08a] active:translate-y-1 active:shadow-[0_0_0_3px_#050302,0_1px_0_3px_#172111,inset_0_2px_0_#53663a,inset_0_-2px_0_#202b17] disabled:cursor-not-allowed disabled:bg-[#303536] disabled:text-[#8a8170] disabled:shadow-[0_0_0_3px_#050302,0_4px_0_3px_#151819,inset_0_3px_0_#4a5051,inset_0_-3px_0_#202425] disabled:hover:bg-[#303536] disabled:hover:text-[#8a8170] disabled:active:translate-y-0"
-            disabled={!isAuthenticatedPlayer || isSaving}
+            disabled={
+              !isAuthenticatedPlayer ||
+              !normalizedPlayerName ||
+              !hasProfileChanges ||
+              isSaving
+            }
             onClick={applyProfileChanges}
             type="button"
           >
@@ -368,7 +374,7 @@ export function ProfileModal({
                 matchLogs.map((matchLog) => (
                   <div
                     className="grid min-h-16 grid-cols-[1.35fr_0.85fr_0.65fr_0.65fr_0.75fr] items-center px-5 py-4 text-base text-[#f5dfad] odd:bg-[#212627]/55 even:bg-[#1b2021]/55"
-                    key={matchLog.playedAt}
+                    key={matchLog.id}
                   >
                     <span>{matchLog.playedAt}</span>
                     <span>{matchLog.playTime}</span>

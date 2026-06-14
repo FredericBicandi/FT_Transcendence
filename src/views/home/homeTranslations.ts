@@ -11,6 +11,11 @@ export type HomeTranslations = {
     inputLabel: string;
     placeholder: string;
     signInToSend: string;
+    unavailable: string;
+  };
+  fullscreen: {
+    enter: string;
+    exit: string;
   };
   home: {
     loginSignup: string;
@@ -61,6 +66,11 @@ export const homeTranslations: Record<HomeLanguage, HomeTranslations> = {
       inputLabel: "Global chat message",
       placeholder: "Type message...",
       signInToSend: "Sign in to chat",
+      unavailable: "Chat unavailable",
+    },
+    fullscreen: {
+      enter: "Enter fullscreen",
+      exit: "Exit fullscreen",
     },
     home: {
       loginSignup: "Login / Sign Up",
@@ -113,6 +123,11 @@ export const homeTranslations: Record<HomeLanguage, HomeTranslations> = {
       inputLabel: "Message du chat global",
       placeholder: "Ecrire un message...",
       signInToSend: "Connectez-vous pour chatter",
+      unavailable: "Chat indisponible",
+    },
+    fullscreen: {
+      enter: "Plein ecran",
+      exit: "Quitter le plein ecran",
     },
     home: {
       loginSignup: "Connexion / Inscription",
@@ -165,6 +180,11 @@ export const homeTranslations: Record<HomeLanguage, HomeTranslations> = {
       inputLabel: "رسالة الدردشة العامة",
       placeholder: "اكتب رسالة...",
       signInToSend: "سجل للدردشة",
+      unavailable: "الدردشة غير متاحة",
+    },
+    fullscreen: {
+      enter: "ملء الشاشة",
+      exit: "الخروج من ملء الشاشة",
     },
     home: {
       loginSignup: "دخول / تسجيل",

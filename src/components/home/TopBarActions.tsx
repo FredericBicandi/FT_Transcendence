@@ -10,9 +10,10 @@ type TopBarActionsProps = {
   onProfileClick: () => void;
   onLanguageChange: (language: HomeLanguage) => void;
   playerProfile: PlayerProfile | null;
-  translations: HomeTranslations["language"] & {
-    profile: string;
-  };
+  translations: HomeTranslations["language"] &
+    HomeTranslations["fullscreen"] & {
+      profile: string;
+    };
 };
 
 const brickWallStyle = {
@@ -72,6 +73,35 @@ function LanguageIcon() {
   );
 }
 
+function FullscreenIcon({ isFullscreen }: { isFullscreen: boolean }) {
+  return (
+    <svg
+      aria-hidden="true"
+      className="h-7 w-7 text-[#f5dfad]"
+      fill="none"
+      viewBox="0 0 24 24"
+    >
+      {isFullscreen ? (
+        <path
+          d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"
+          stroke="currentColor"
+          strokeLinecap="square"
+          strokeLinejoin="round"
+          strokeWidth="2.2"
+        />
+      ) : (
+        <path
+          d="M9 4H4v5M15 4h5v5M9 20H4v-5M15 20h5v-5"
+          stroke="currentColor"
+          strokeLinecap="square"
+          strokeLinejoin="round"
+          strokeWidth="2.2"
+        />
+      )}
+    </svg>
+  );
+}
+
 export function TopBarActions({
   language,
   onLanguageChange,
@@ -79,11 +109,25 @@ export function TopBarActions({
   playerProfile,
   translations,
 }: TopBarActionsProps) {
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [showLanguageMenu, setShowLanguageMenu] = useState(false);
   const languageMenuRef = useRef<HTMLDivElement>(null);
   const playerName = playerProfile?.playerName ?? "Player";
   const avatarUrl = playerProfile?.isGuest ? undefined : playerProfile?.avatarUrl;
   const languageOptions: HomeLanguage[] = ["english", "french", "arabic"];
+
+  useEffect(() => {
+    function updateFullscreenState() {
+      setIsFullscreen(document.fullscreenElement !== null);
+    }
+
+    updateFullscreenState();
+    document.addEventListener("fullscreenchange", updateFullscreenState);
+
+    return () => {
+      document.removeEventListener("fullscreenchange", updateFullscreenState);
+    };
+  }, []);
 
   useEffect(() => {
     if (!showLanguageMenu) {
@@ -108,8 +152,35 @@ export function TopBarActions({
     };
   }, [showLanguageMenu]);
 
+  async function toggleFullscreen() {
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+      } else {
+        await document.documentElement.requestFullscreen();
+      }
+    } catch {
+      // Fullscreen can be unavailable or blocked by browser policy.
+    }
+  }
+
   return (
-    <div className="absolute right-4 top-4 z-30 flex items-start gap-3 sm:right-6 sm:top-6">
+    <div
+      className="absolute right-4 top-4 z-30 flex items-start gap-3 sm:right-6 sm:top-6"
+      dir="ltr"
+    >
+      <button
+        aria-label={isFullscreen ? translations.exit : translations.enter}
+        aria-pressed={isFullscreen}
+        className="flex h-16 w-16 items-center justify-center shadow-[0_0_0_3px_#050302,0_4px_0_3px_#111515,inset_0_3px_0_#374041,inset_0_-3px_0_#151819] hover:brightness-110 hover:shadow-[0_0_0_3px_#050302,0_4px_0_3px_#111515,inset_0_3px_0_#465253,inset_0_-3px_0_#151819] active:translate-y-1 active:shadow-[0_0_0_3px_#050302,0_1px_0_3px_#111515,inset_0_2px_0_#374041,inset_0_-2px_0_#151819]"
+        onClick={toggleFullscreen}
+        style={brickWallStyle}
+        title={isFullscreen ? translations.exit : translations.enter}
+        type="button"
+      >
+        <FullscreenIcon isFullscreen={isFullscreen} />
+      </button>
+
       <button
         className="grid min-h-16 min-w-44 grid-cols-[48px_minmax(0,1fr)] grid-rows-2 items-center px-3 py-2 text-left shadow-[0_0_0_3px_#050302,0_4px_0_3px_#111515,inset_0_3px_0_#374041,inset_0_-3px_0_#151819] hover:brightness-110 hover:shadow-[0_0_0_3px_#050302,0_4px_0_3px_#111515,inset_0_3px_0_#465253,inset_0_-3px_0_#151819] active:translate-y-1 active:shadow-[0_0_0_3px_#050302,0_1px_0_3px_#111515,inset_0_2px_0_#374041,inset_0_-2px_0_#151819]"
         onClick={onProfileClick}

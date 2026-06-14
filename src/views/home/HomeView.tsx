@@ -28,12 +28,16 @@ export function HomeView() {
   const [language, setLanguage] = useState<HomeLanguage>("english");
   const translations = homeTranslations[language];
   const {
+    chatError,
+    chatMessages,
     gameUrl,
+    isChatConnected,
     isPlayerProfileLoading,
     onlineCount,
     playerProfile,
     refreshPlayerProfile,
     registerGameWindow,
+    sendChatMessage,
     signOut,
     showGame,
     playGame,
@@ -87,6 +91,7 @@ export function HomeView() {
           }}
           playerProfile={playerProfile}
           translations={{
+            ...translations.fullscreen,
             ...translations.language,
             profile: translations.profile.profile,
           }}
@@ -147,6 +152,10 @@ export function HomeView() {
           </div>
 
           <GlobalChat
+            errorMessage={chatError?.message ?? null}
+            isConnected={isChatConnected}
+            messages={chatMessages}
+            onSendMessage={sendChatMessage}
             playerProfile={playerProfile}
             translations={translations.chat}
           />
@@ -161,6 +170,7 @@ export function HomeView() {
       )}
       {showProfileModal && !showGame && (
         <ProfileModal
+          key={playerProfile?.playerId ?? "loading"}
           onClose={() => setShowProfileModal(false)}
           onLogout={signOut}
           onProfileUpdated={refreshPlayerProfile}
