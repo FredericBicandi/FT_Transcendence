@@ -191,7 +191,7 @@ func _create_leaderboard_row(entry: Dictionary) -> Control:
 func _normalize_leaderboard_entry(entry: Dictionary) -> Dictionary:
 	var normalized_player_name := _get_first_non_empty_entry_string(
 		entry,
-		["player_name", "playerName", "display_name", "displayName", "username", "name", "nickname"],
+		["player_name", "display_name", "username", "name", "nickname"],
 		Localization.translate("unknown_player")
 	)
 	var normalized_player_id := _get_first_non_empty_entry_string(

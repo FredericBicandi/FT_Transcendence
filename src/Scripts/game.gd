@@ -25,6 +25,7 @@ const KILL_FEED_KILLER_COLOR := Color(0.32, 0.66, 1.0, 1.0)
 const KILL_FEED_KILLED_COLOR := Color(1.0, 0.28, 0.28, 1.0)
 const MATCH_END_LEADERBOARD_SECONDS: float = 8.0
 const CHAT_MAX_MESSAGE_WORDS: int = 50
+const CHAT_MAX_MESSAGE_LENGTH: int = 300
 const CHAT_REPEATED_CHAR_LIMIT: int = 8
 const CHAT_MESSAGE_LIFETIME: float = 5.0
 const CHAT_INPUT_FONT_SIZE: int = 13
@@ -302,15 +303,15 @@ func _post_exit_game(reason: String = "manual", summary: Dictionary = {}) -> voi
 		"reason": reason
 	}
 	if not summary.is_empty():
-		payload["matchSummary"] = summary
+		payload["match_summary"] = summary
 		payload["room_id"] = str(summary.get("room_id", ""))
 		payload["player_id"] = str(summary.get("player_id", ""))
 		payload["kills"] = int(summary.get("kills", 0))
 		payload["deaths"] = int(summary.get("deaths", 0))
 		payload["death"] = int(summary.get("death", summary.get("deaths", 0)))
 		payload["score"] = int(summary.get("score", 0))
-		payload["playTimeMs"] = int(summary.get("playTimeMs", 0))
-		payload["playTimeSeconds"] = float(summary.get("playTimeSeconds", 0.0))
+		payload["play_time_ms"] = int(summary.get("play_time_ms", 0))
+		payload["play_time_seconds"] = float(summary.get("play_time_seconds", 0.0))
 
 	JavaScriptBridge.eval(
 		"window.parent.postMessage(%s, window.location.origin); if (window.parent === window) { window.location.href = '%s'; }" % [JSON.stringify(payload), LOBBY_URL],
@@ -562,7 +563,7 @@ func _on_chat_message_received(message: Dictionary) -> void:
 	if sender_id != "" and sender_id == local_player_id:
 		return
 
-	var sender_name: String = str(message.get("playerName", message.get("player_name", message.get("name", Localization.translate("default_player"))))).strip_edges()
+	var sender_name: String = str(message.get("player_name", message.get("name", Localization.translate("default_player")))).strip_edges()
 	if sender_name == "":
 		sender_name = Localization.translate("default_player")
 
@@ -679,7 +680,7 @@ func _sanitize_chat_message(message: String) -> String:
 		if limited_words.size() >= CHAT_MAX_MESSAGE_WORDS:
 			break
 
-	return " ".join(limited_words).strip_edges()
+	return " ".join(limited_words).strip_edges().left(CHAT_MAX_MESSAGE_LENGTH)
 
 func _is_allowed_chat_codepoint(code: int) -> bool:
 	if code == 32:
@@ -716,8 +717,8 @@ func _is_enter_key(event: InputEventKey) -> bool:
 	return event.keycode == KEY_ENTER or event.keycode == KEY_KP_ENTER
 
 func _on_kill_feed_received(message: Dictionary) -> void:
-	var killer_name: String = _pick_kill_feed_name(message, ["killer", "killerName", "killer_name", "attacker", "attackerName"], Localization.translate("unknown_player"))
-	var killed_name: String = _pick_kill_feed_name(message, ["killed", "killedName", "killed_name", "victim", "victimName"], Localization.translate("unknown_player"))
+	var killer_name: String = _pick_kill_feed_name(message, ["killer", "killer_name", "attacker", "attacker_name"], Localization.translate("unknown_player"))
+	var killed_name: String = _pick_kill_feed_name(message, ["killed", "killed_name", "victim", "victim_name"], Localization.translate("unknown_player"))
 	if killer_name == "" or killed_name == "":
 		return
 
@@ -828,7 +829,7 @@ func _pick_kill_feed_name(message: Dictionary, keys: Array[String], fallback: St
 	return fallback
 
 func _pick_kill_feed_weapon_type(message: Dictionary) -> String:
-	for key in ["weaponType", "weapon", "weapon_type", "weaponId", "weapon_id", "weaponHolding", "sourceWeapon", "sourceWeaponType", "killingWeapon", "cause"]:
+	for key in ["weapon", "weapon_type", "weapon_id", "weapon_holding", "source_weapon", "source_weapon_type", "killing_weapon", "cause"]:
 		if not message.has(key):
 			continue
 
@@ -839,7 +840,7 @@ func _pick_kill_feed_weapon_type(message: Dictionary) -> String:
 	return ""
 
 func _is_kill_feed_self_kill(message: Dictionary, killer_name: String, killed_name: String) -> bool:
-	if bool(message.get("selfKill", message.get("suicide", false))):
+	if bool(message.get("self_kill", message.get("suicide", false))):
 		return true
 
 	var killer_id: String = _pick_kill_feed_name(message, ["killer_id", "attacker_id"], "")
@@ -959,7 +960,7 @@ func _on_room_joined(message: Dictionary) -> void:
 	player_body.set_network_player_id(local_player_id)
 	player_body.set_network_player_display_name(network_client.get_local_player_display_name(message))
 	leaderboard_ui.call("set_local_player_id", local_player_id)
-	remaining_match_seconds = maxf(NetworkClient.get_finite_float(message.get("remainingSeconds", 0.0), 0.0), 0.0)
+	remaining_match_seconds = maxf(NetworkClient.get_finite_float(message.get("remaining_seconds", 0.0), 0.0), 0.0)
 	match_has_ended = false
 	match_end_sound_played = false
 	player_body.set_match_controls_enabled(true)
@@ -979,7 +980,7 @@ func _on_time_synced(message: Dictionary) -> void:
 		final_match_summary = _build_match_summary()
 		return
 
-	remaining_match_seconds = maxf(NetworkClient.get_finite_float(message.get("remainingSeconds", remaining_match_seconds), remaining_match_seconds), 0.0)
+	remaining_match_seconds = maxf(NetworkClient.get_finite_float(message.get("remaining_seconds", remaining_match_seconds), remaining_match_seconds), 0.0)
 	_apply_leaderboard_snapshot(message)
 
 func _on_leaderboard_updated(message: Dictionary) -> void:
@@ -1009,7 +1010,7 @@ func _on_player_angle_received(message: Dictionary) -> void:
 	var has_angle := (
 		NetworkClient.is_finite_number(message.get("angle", NAN))
 		or NetworkClient.is_finite_number(message.get("rotation", NAN))
-		or NetworkClient.is_finite_number(message.get("aimAngle", NAN))
+		or NetworkClient.is_finite_number(message.get("aim_angle", NAN))
 	)
 	if player_id == "" or player_id == local_player_id or not has_angle:
 		return
@@ -1173,8 +1174,8 @@ func _build_match_summary() -> Dictionary:
 		"deaths": int(stats.get("deaths", 0)),
 		"death": int(stats.get("deaths", 0)),
 		"score": int(stats.get("score", 0)),
-		"playTimeMs": elapsed_ms,
-		"playTimeSeconds": float(elapsed_ms) / 1000.0
+		"play_time_ms": elapsed_ms,
+		"play_time_seconds": float(elapsed_ms) / 1000.0
 	}
 
 func _build_match_saved_parent_payload(match_saved_message: Dictionary, match_ended_message: Dictionary) -> Dictionary:
@@ -1197,7 +1198,7 @@ func _build_match_saved_parent_payload(match_saved_message: Dictionary, match_en
 		"score": int(player_result.get("score", 0)),
 		"kills": int(player_result.get("kills", 0)),
 		"deaths": int(player_result.get("deaths", 0)),
-		"duration_seconds": int(NetworkClient.get_finite_int(match_ended_message.get("durationSeconds", 0), 0))
+		"duration_seconds": int(NetworkClient.get_finite_int(match_ended_message.get("duration_seconds", 0), 0))
 	}
 
 func _get_local_match_result(leaderboard: Array) -> Dictionary:
@@ -1276,7 +1277,7 @@ func _on_bullet_spawn_received(message: Dictionary) -> void:
 	)
 
 func _get_bullet_weapon_type(message: Dictionary, remote_body: Player) -> String:
-	for key in ["weaponType", "weapon", "weapon_type", "weaponId", "weapon_id", "weaponHolding"]:
+	for key in ["weapon", "weapon_type", "weapon_id", "weapon_holding"]:
 		if not message.has(key):
 			continue
 
@@ -1288,14 +1289,14 @@ func _get_bullet_weapon_type(message: Dictionary, remote_body: Player) -> String
 
 func _get_bullet_start_position(message: Dictionary) -> Variant:
 	# Support old and new server field names
-	if NetworkClient.has_finite_vector2(message, "startX", "startY"):
-		return NetworkClient.get_finite_vector2(message, "startX", "startY")
+	if NetworkClient.has_finite_vector2(message, "start_x", "start_y"):
+		return NetworkClient.get_finite_vector2(message, "start_x", "start_y")
 
-	if NetworkClient.has_finite_vector2(message, "muzzleX", "muzzleY"):
-		return NetworkClient.get_finite_vector2(message, "muzzleX", "muzzleY")
+	if NetworkClient.has_finite_vector2(message, "muzzle_x", "muzzle_y"):
+		return NetworkClient.get_finite_vector2(message, "muzzle_x", "muzzle_y")
 
-	if NetworkClient.has_finite_vector2(message, "bulletX", "bulletY"):
-		return NetworkClient.get_finite_vector2(message, "bulletX", "bulletY")
+	if NetworkClient.has_finite_vector2(message, "bullet_x", "bullet_y"):
+		return NetworkClient.get_finite_vector2(message, "bullet_x", "bullet_y")
 
 	var start_variant: Variant = message.get("start", message.get("muzzle", null))
 	if typeof(start_variant) == TYPE_DICTIONARY:
@@ -1306,9 +1307,6 @@ func _get_bullet_start_position(message: Dictionary) -> Variant:
 	return null
 
 func _get_bullet_target_position(message: Dictionary) -> Variant:
-	if NetworkClient.has_finite_vector2(message, "targetX", "targetY"):
-		return NetworkClient.get_finite_vector2(message, "targetX", "targetY")
-
 	if NetworkClient.has_finite_vector2(message, "target_x", "target_y"):
 		return NetworkClient.get_finite_vector2(message, "target_x", "target_y")
 
@@ -1354,11 +1352,11 @@ func _apply_local_player_state(message: Dictionary, should_apply_position: bool 
 		player_body.set_spawn_position(authoritative_position)
 
 	var has_health := NetworkClient.has_authoritative_health(message)
-	if has_health or message.has("isDead"):
+	if has_health or message.has("is_dead"):
 		var new_health := NetworkClient.get_authoritative_health(message, player_body.health)
 		player_body.apply_authoritative_health_state(
 			new_health,
-			bool(message.get("isDead", player_body.is_dead)),
+			bool(message.get("is_dead", player_body.is_dead)),
 			NetworkClient.get_finite_int(message.get("damage", 0), 0),
 			NetworkClient.get_health_heal_amount(message, player_body.health, new_health),
 			_get_health_feedback_source(message)
@@ -1377,7 +1375,7 @@ func _apply_initial_remote_players(message: Dictionary) -> void:
 	if message.is_empty():
 		return
 
-	var players_variant: Variant = message.get("players", message.get("remotePlayers", []))
+	var players_variant: Variant = message.get("players", message.get("remote_players", []))
 	if not (players_variant is Array):
 		return
 
@@ -1424,12 +1422,12 @@ func _apply_remote_player_state(message: Dictionary) -> void:
 
 	var has_health := NetworkClient.has_authoritative_health(message)
 	var new_health := remote_body.health
-	var authoritative_is_dead := bool(message.get("isDead", remote_body.is_dead))
+	var authoritative_is_dead := bool(message.get("is_dead", remote_body.is_dead))
 	if has_health:
 		new_health = NetworkClient.get_authoritative_health(message, remote_body.health)
-	if has_health and not message.has("isDead"):
+	if has_health and not message.has("is_dead"):
 		authoritative_is_dead = new_health <= 0
-	if has_health or message.has("isDead"):
+	if has_health or message.has("is_dead"):
 		remote_body.apply_authoritative_health_state(
 			new_health,
 			authoritative_is_dead,
@@ -1445,8 +1443,8 @@ func _apply_remote_player_state(message: Dictionary) -> void:
 		aim_angle_degrees = NetworkClient.get_finite_float(message["angle"], NAN)
 	elif message.has("rotation"):
 		aim_angle_degrees = rad_to_deg(NetworkClient.get_finite_float(message["rotation"], 0.0))
-	elif message.has("aimAngle"):
-		aim_angle_degrees = NetworkClient.get_finite_float(message["aimAngle"], NAN)
+	elif message.has("aim_angle"):
+		aim_angle_degrees = NetworkClient.get_finite_float(message["aim_angle"], NAN)
 
 	if has_position:
 		var remote_position := NetworkClient.get_finite_vector2(message, "x", "y")

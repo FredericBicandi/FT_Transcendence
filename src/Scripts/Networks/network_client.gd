@@ -23,6 +23,17 @@ signal chat_message_received(message: Dictionary)
 signal match_ended(message: Dictionary)
 
 const MAX_LOG_PACKET_CHARS := 240
+const MAX_PLAYER_ID_LENGTH := 128
+const MAX_PLAYER_NAME_LENGTH := 64
+const MAX_GAME_CHAT_LENGTH := 300
+const MIN_PLAYER_LEVEL := 0
+const MAX_PLAYER_LEVEL := 1000
+const VALID_WEAPON_TYPES: Array[String] = [
+	"Assult rifle",
+	"Sniper",
+	"Rocket Launcher",
+	"Shotgun"
+]
 
 # Keep the server endpoint editable from the inspector
 @export var server_url: String = "wss://pixelfight.live/ws"
@@ -120,7 +131,7 @@ func _create_tls_options() -> TLSOptions:
 func send_move(x: float, y: float, angle: float) -> void:
 	if socket.get_ready_state() != WebSocketPeer.STATE_OPEN:
 		return
-	if not are_finite_numbers([x, y, angle]):
+	if not are_finite_numbers([x, y]) or not is_valid_angle(angle):
 		return
 
 	_send_json(
@@ -135,7 +146,7 @@ func send_move(x: float, y: float, angle: float) -> void:
 func send_idle(x: float, y: float, angle: float) -> void:
 	if socket.get_ready_state() != WebSocketPeer.STATE_OPEN:
 		return
-	if not are_finite_numbers([x, y, angle]):
+	if not are_finite_numbers([x, y]) or not is_valid_angle(angle):
 		return
 
 	_send_json(
@@ -150,7 +161,7 @@ func send_idle(x: float, y: float, angle: float) -> void:
 func send_angle(angle: float) -> void:
 	if socket.get_ready_state() != WebSocketPeer.STATE_OPEN:
 		return
-	if not is_finite_number(angle):
+	if not is_valid_angle(angle):
 		return
 
 	_send_json(
@@ -169,10 +180,8 @@ func send_on_connect() -> void:
 		{
 			"type": "on_connect",
 			"player_id": player_id,
-			"playerName": player_name,
-			"level": player_level,
-			"currentXp": current_xp,
-			"language": language
+			"player_name": player_name,
+			"level": player_level
 		}
 	)
 	has_sent_room_reservation_request = true
@@ -187,7 +196,8 @@ func request_room_reservation() -> void:
 func send_on_join(x: float, y: float, angle: float, weapon_type: String) -> void:
 	if socket.get_ready_state() != WebSocketPeer.STATE_OPEN:
 		return
-	if not are_finite_numbers([x, y, angle]):
+	var normalized_weapon_type := normalize_weapon_type(weapon_type)
+	if not are_finite_numbers([x, y]) or not is_valid_angle(angle) or normalized_weapon_type == "":
 		return
 
 	_send_json(
@@ -196,123 +206,98 @@ func send_on_join(x: float, y: float, angle: float, weapon_type: String) -> void
 			"x": x,
 			"y": y,
 			"angle": angle,
-			"weaponType": weapon_type
+			"weapon_type": normalized_weapon_type
 		}
 	)
 
-func send_respawn(x: float, y: float, angle: float, weapon_type: String) -> void:
+func send_respawn(x: float, y: float) -> void:
 	if socket.get_ready_state() != WebSocketPeer.STATE_OPEN:
 		return
-	if not are_finite_numbers([x, y, angle]):
+	if not are_finite_numbers([x, y]):
 		return
 
 	_send_json(
 		{
 			"type": "respawn",
 			"x": x,
-			"y": y,
-			"angle": angle,
-			"weaponType": weapon_type
+			"y": y
 		}
 	)
 
-func send_health_update(health: int, is_dead: bool, x: float, y: float, angle: float, weapon_type: String, heal_amount: int = 0, source: String = "") -> void:
+func send_medkit_heal(heal_amount: int = 0) -> void:
 	if socket.get_ready_state() != WebSocketPeer.STATE_OPEN:
 		return
-	if not are_finite_numbers([x, y, angle]):
-		return
-
-	var clamped_health := maxi(health, 0)
-	var clamped_heal_amount := maxi(heal_amount, 0)
-	var normalized_source := source.strip_edges()
-	var health_state := {
-		"health": clamped_health,
-		"newHealth": clamped_health,
-		"currentHealth": clamped_health,
-		"playerHealth": clamped_health,
-		"isDead": is_dead,
-		"x": x,
-		"y": y,
-		"angle": angle,
-		"weaponType": weapon_type
+	var payload := {
+		"type": "heal",
+		"request": "medkit_heal",
+		"source": "medkit"
 	}
 
-	if clamped_heal_amount > 0:
-		health_state["amount"] = clamped_heal_amount
-		health_state["healAmount"] = clamped_heal_amount
-	if normalized_source != "":
-		health_state["source"] = normalized_source
+	if heal_amount > 0:
+		payload["heal_amount"] = heal_amount
 
-	var payload := health_state.duplicate()
-	payload["type"] = "heal"
-	payload["request"] = "medkit_heal" if normalized_source == "medkit" else "health_update"
-	_apply_local_packet_identity(payload)
 	_send_json(payload)
 
-	var compatibility_payload := health_state.duplicate()
-	compatibility_payload["type"] = "player_health"
-	compatibility_payload["request"] = "health_update"
-	_apply_local_packet_identity(compatibility_payload)
-	_send_json(compatibility_payload)
-
-func _apply_local_packet_identity(payload: Dictionary) -> void:
-	if local_player_id != "":
-		payload["player_id"] = local_player_id
-	elif player_id != "":
-		payload["player_id"] = player_id
-
-	if local_room_id != "":
-		payload["room_id"] = local_room_id
-
-func send_hit(target_player_id: String, weapon_type: String, damage: int, shot_id: String, x: float, y: float, angle: float, timestamp: int) -> void:
+func send_hit(target_player_id: String, weapon_type: String, damage: int, shot_id: String = "", x: float = NAN, y: float = NAN, angle: float = NAN, timestamp: int = 0) -> void:
 	if socket.get_ready_state() != WebSocketPeer.STATE_OPEN:
 		return
-	if target_player_id.strip_edges() == "" or damage <= 0:
-		return
-	if not are_finite_numbers([x, y, angle]):
+	var normalized_target_player_id := target_player_id.strip_edges().left(MAX_PLAYER_ID_LENGTH)
+	var normalized_weapon_type := normalize_weapon_type(weapon_type)
+	if normalized_target_player_id == "" or normalized_weapon_type == "" or damage <= 0:
 		return
 
-	_send_json(
-		{
-			"type": "hit",
-			"target_player_id": target_player_id,
-			"weaponType": weapon_type,
-			"damage": damage,
-			"shot_id": shot_id,
-			"x": x,
-			"y": y,
-			"angle": angle,
-			"timestamp": timestamp
-		}
-	)
+	var payload := {
+		"type": "hit",
+		"target_player_id": normalized_target_player_id,
+		"weapon_type": normalized_weapon_type,
+		"damage": damage
+	}
+	if shot_id != "":
+		payload["shot_id"] = shot_id
+	if is_finite_number(x) and is_finite_number(y):
+		payload["x"] = x
+		payload["y"] = y
+	if is_valid_angle(angle):
+		payload["angle"] = angle
+	if timestamp > 0:
+		payload["timestamp"] = timestamp
+
+	_send_json(payload)
 
 func send_weapon_switch(weapon_type: String) -> void:
 	if socket.get_ready_state() != WebSocketPeer.STATE_OPEN:
+		return
+	var normalized_weapon_type := normalize_weapon_type(weapon_type)
+	if normalized_weapon_type == "":
 		return
 
 	_send_json(
 		{
 			"type": "weapon_switch",
-			"weaponType": weapon_type
+			"weapon_type": normalized_weapon_type
 		}
 	)
 
-func send_shoot(angle: float, weapon_type: String, shooter_position: Vector2, start_position: Vector2, target_position: Vector2) -> void:
+func send_shoot(angle_radians: float, weapon_type: String, shooter_position: Vector2, start_position: Vector2, target_position: Vector2) -> void:
 	if socket.get_ready_state() != WebSocketPeer.STATE_OPEN:
 		return
-	if not are_finite_numbers([angle, shooter_position.x, shooter_position.y, start_position.x, start_position.y, target_position.x, target_position.y]):
+	var angle := fposmod(rad_to_deg(angle_radians), 360.0)
+	var normalized_weapon_type := normalize_weapon_type(weapon_type)
+	if not is_valid_angle(angle) or normalized_weapon_type == "":
+		return
+	if not are_finite_numbers([shooter_position.x, shooter_position.y, start_position.x, start_position.y, target_position.x, target_position.y]):
 		return
 
 	var payload := {
 		"type": "shoot",
 		"angle": angle,
-		"weaponType": weapon_type,
+		"weapon_type": normalized_weapon_type,
 		"x": shooter_position.x,
 		"y": shooter_position.y,
-		"startX": start_position.x,
-		"startY": start_position.y,
-		"targetX": target_position.x,
-		"targetY": target_position.y
+		"start_x": start_position.x,
+		"start_y": start_position.y,
+		"target_x": target_position.x,
+		"target_y": target_position.y
 	}
 
 	_send_json(payload)
@@ -357,22 +342,29 @@ func send_chat_message(content: String) -> void:
 	if socket.get_ready_state() != WebSocketPeer.STATE_OPEN:
 		return
 
-	var clean_content: String = content.strip_edges()
+	var clean_content: String = content.strip_edges().left(MAX_GAME_CHAT_LENGTH)
 	if clean_content == "":
 		return
 
 	var payload := {
-		"request": "message",
+		"type": "chat_message",
 		"player_id": local_player_id if local_player_id != "" else player_id,
-		"playerName": player_name,
 		"content": clean_content,
-		"timestamp": Time.get_ticks_msec()
+		"timestamp": int(Time.get_unix_time_from_system())
 	}
 
 	if local_room_id != "":
 		payload["room_id"] = local_room_id
 
 	_send_json(payload)
+
+func send_heartbeat(message_type: String = "heartbeat") -> void:
+	if socket.get_ready_state() != WebSocketPeer.STATE_OPEN:
+		return
+	if not ["heartbeat", "ping", "pong"].has(message_type):
+		return
+
+	_send_json({"type": message_type})
 
 func _handle_state_changes(state: int) -> void:
 	if state == WebSocketPeer.STATE_OPEN and not was_open_last_frame:
@@ -479,8 +471,8 @@ func _handle_message(message: Dictionary) -> void:
 			_apply_room_assignment(message)
 			room_joined.emit(message)
 		"time_sync":
-			var had_remaining_seconds := message.has("remainingSeconds")
-			remaining_seconds = get_finite_float(message.get("remainingSeconds", remaining_seconds), remaining_seconds)
+			var had_remaining_seconds := message.has("remaining_seconds")
+			remaining_seconds = get_finite_float(message.get("remaining_seconds", remaining_seconds), remaining_seconds)
 			time_synced.emit(message)
 			if had_remaining_seconds and remaining_seconds <= 0.0:
 				match_finished = true
@@ -493,10 +485,53 @@ func _handle_message(message: Dictionary) -> void:
 			pass
 
 func _send_json(payload: Dictionary) -> void:
+	var invalid_key := _find_non_snake_case_key(payload)
+	if invalid_key != "":
+		push_error("NetworkClient: refused websocket payload with non-snake-case key: %s" % invalid_key)
+		return
+
 	var data := JSON.stringify(payload)
 	var error := socket.send_text(data)
 	if error != OK:
 		push_warning("NetworkClient: failed to send packet (error %d)" % error)
+
+static func _find_non_snake_case_key(value: Variant, path: String = "") -> String:
+	if typeof(value) == TYPE_DICTIONARY:
+		var dictionary := value as Dictionary
+		for key_variant in dictionary.keys():
+			var key := str(key_variant)
+			var key_path := key if path == "" else "%s.%s" % [path, key]
+			if not _is_snake_case_key(key):
+				return key_path
+
+			var nested_invalid_key := _find_non_snake_case_key(dictionary[key_variant], key_path)
+			if nested_invalid_key != "":
+				return nested_invalid_key
+	elif typeof(value) == TYPE_ARRAY:
+		var array := value as Array
+		for index in range(array.size()):
+			var nested_invalid_key := _find_non_snake_case_key(array[index], "%s[%d]" % [path, index])
+			if nested_invalid_key != "":
+				return nested_invalid_key
+
+	return ""
+
+static func _is_snake_case_key(key: String) -> bool:
+	if key.is_empty():
+		return false
+
+	var first_code := key.unicode_at(0)
+	if first_code < 97 or first_code > 122:
+		return false
+
+	for index in range(1, key.length()):
+		var code := key.unicode_at(index)
+		var is_lowercase_letter := code >= 97 and code <= 122
+		var is_digit := code >= 48 and code <= 57
+		if not is_lowercase_letter and not is_digit and code != 95:
+			return false
+
+	return true
 
 static func get_finite_float(value: Variant, fallback: float = NAN) -> float:
 	var result := fallback
@@ -534,6 +569,21 @@ static func are_finite_numbers(values: Array) -> bool:
 
 	return true
 
+static func is_valid_angle(angle: Variant) -> bool:
+	if not is_finite_number(angle):
+		return false
+
+	var numeric_angle := float(angle)
+	return numeric_angle >= 0.0 and numeric_angle < 360.0
+
+static func normalize_weapon_type(weapon_type: String) -> String:
+	var normalized_value := weapon_type.strip_edges()
+	for valid_weapon_type in VALID_WEAPON_TYPES:
+		if normalized_value.to_lower() == valid_weapon_type.to_lower():
+			return valid_weapon_type
+
+	return ""
+
 static func has_finite_vector2(message: Dictionary, x_key: String, y_key: String) -> bool:
 	return message.has(x_key) and message.has(y_key) and is_finite_number(message[x_key]) and is_finite_number(message[y_key])
 
@@ -555,7 +605,7 @@ static func get_first_finite_float(message: Dictionary, keys: Array[String], fal
 	return fallback
 
 static func has_authoritative_health(message: Dictionary) -> bool:
-	for key in ["health", "newHealth", "currentHealth", "playerHealth"]:
+	for key in ["health", "new_health", "current_health", "player_health"]:
 		if message.has(key) and is_finite_number(message[key]):
 			return true
 
@@ -563,12 +613,12 @@ static func has_authoritative_health(message: Dictionary) -> bool:
 
 static func get_authoritative_health(message: Dictionary, fallback: int = 0) -> int:
 	return get_finite_int(
-		get_first_finite_float(message, ["health", "newHealth", "currentHealth", "playerHealth"], float(fallback)),
+		get_first_finite_float(message, ["health", "new_health", "current_health", "player_health"], float(fallback)),
 		fallback
 	)
 
 static func get_health_source(message: Dictionary) -> String:
-	for key in ["source", "healSource", "heal_source"]:
+	for key in ["source", "heal_source"]:
 		if not message.has(key):
 			continue
 
@@ -583,7 +633,7 @@ static func is_medkit_heal(message: Dictionary) -> bool:
 	return get_health_source(message) == "medkit" or request_type == "medkit_heal"
 
 static func get_health_heal_amount(message: Dictionary, previous_health: int, new_health: int) -> int:
-	for key in ["healAmount", "heal_amount", "healedAmount", "amount"]:
+	for key in ["heal_amount", "healed_amount", "amount"]:
 		if message.has(key):
 			return maxi(get_finite_int(message[key], 0), 0)
 
@@ -600,11 +650,11 @@ static func get_authoritative_remote_weapon_type(message: Dictionary) -> String:
 		"player_health", "heal":
 			# Health packets often describe the attacker weapon. Only accept
 			# fields that explicitly name the damaged player's equipped weapon.
-			weapon_keys = ["targetWeapon", "targetWeaponType", "target_weapon", "target_weapon_type", "targetCurrentWeapon"]
+			weapon_keys = ["target_weapon", "target_weapon_type", "target_current_weapon"]
 		"player_weapon_switch", "player_connected", "player_move", "player_heartbeat", "":
-			weapon_keys = ["weaponType", "weapon", "weapon_type", "weaponId", "weapon_id", "weaponHolding", "currentWeapon", "equippedWeapon", "activeWeapon"]
+			weapon_keys = ["weapon", "weapon_type", "weapon_id", "weapon_holding", "current_weapon", "equipped_weapon", "active_weapon"]
 		_:
-			weapon_keys = ["targetWeapon", "targetWeaponType", "target_weapon", "target_weapon_type", "targetCurrentWeapon"]
+			weapon_keys = ["target_weapon", "target_weapon_type", "target_current_weapon"]
 
 	for key in weapon_keys:
 		if not message.has(key):
@@ -619,15 +669,14 @@ static func get_authoritative_remote_weapon_type(message: Dictionary) -> String:
 func _sanitize_incoming_message(message: Dictionary) -> void:
 	for pair_variant in [
 		["x", "y"],
-		["startX", "startY"],
-		["muzzleX", "muzzleY"],
-		["bulletX", "bulletY"],
-		["targetX", "targetY"],
+		["start_x", "start_y"],
+		["muzzle_x", "muzzle_y"],
+		["bullet_x", "bullet_y"],
 		["target_x", "target_y"]
 	]:
 		_sanitize_numeric_pair(message, str(pair_variant[0]), str(pair_variant[1]))
 
-	for field in ["angle", "rotation", "aimAngle", "health", "damage", "remainingSeconds", "durationSeconds", "timestamp", "level"]:
+	for field in ["angle", "rotation", "aim_angle", "health", "damage", "remaining_seconds", "duration_seconds", "timestamp", "level"]:
 		_sanitize_numeric_field(message, field)
 
 	for vector_key in ["start", "muzzle", "target"]:
@@ -671,9 +720,9 @@ func _truncate_packet_for_log(text: String) -> String:
 func _prepare_player_profile() -> void:
 	_apply_web_player_profile_overrides()
 
-	player_id = player_id.strip_edges()
-	player_name = player_name.strip_edges()
-	player_level = maxi(player_level, 1)
+	player_id = player_id.strip_edges().left(MAX_PLAYER_ID_LENGTH)
+	player_name = player_name.strip_edges().left(MAX_PLAYER_NAME_LENGTH)
+	player_level = clampi(player_level, MIN_PLAYER_LEVEL, MAX_PLAYER_LEVEL)
 	current_xp = maxi(current_xp, 0)
 	language = Localization.normalize_language(language)
 	Localization.set_language(language)
@@ -701,7 +750,7 @@ func get_player_display_name(message: Dictionary, target_player_id: String, fall
 		if direct_name != "" and (normalized_player_id == "" or direct_player_id == normalized_player_id):
 			return direct_name
 
-		for collection_key in ["players", "remotePlayers", "leaderboard"]:
+		for collection_key in ["players", "remote_players", "leaderboard"]:
 			var collection_variant: Variant = message.get(collection_key, [])
 			if not (collection_variant is Array):
 				continue
@@ -732,7 +781,7 @@ func _extract_player_id(message: Dictionary) -> String:
 	return str(message.get("player_id", "")).strip_edges()
 
 func _extract_player_display_name(message: Dictionary, include_generic_name_fields: bool = true) -> String:
-	var keys: Array[String] = ["playerName", "player_name", "displayName", "display_name"]
+	var keys: Array[String] = ["player_name", "display_name"]
 	if include_generic_name_fields:
 		keys.append_array(["username", "name", "nickname"])
 
@@ -780,8 +829,8 @@ func _apply_room_assignment(message: Dictionary) -> void:
 	var assigned_player_id := _extract_player_id(message)
 	local_player_id = assigned_player_id if assigned_player_id != "" else player_id
 	local_room_id = str(message.get("room_id", local_room_id))
-	match_duration_seconds = get_finite_int(message.get("durationSeconds", match_duration_seconds), match_duration_seconds)
-	remaining_seconds = get_finite_float(message.get("remainingSeconds", remaining_seconds if remaining_seconds > 0.0 else match_duration_seconds), remaining_seconds)
+	match_duration_seconds = get_finite_int(message.get("duration_seconds", match_duration_seconds), match_duration_seconds)
+	remaining_seconds = get_finite_float(message.get("remaining_seconds", remaining_seconds if remaining_seconds > 0.0 else match_duration_seconds), remaining_seconds)
 	match_finished = false
 	last_room_joined_message = message.duplicate(true)
 
@@ -836,7 +885,7 @@ func _store_remote_player_snapshot(message: Dictionary) -> void:
 	remote_player_snapshots[player_id] = merged_snapshot
 
 func _is_ambiguous_health_weapon_field(key: String) -> bool:
-	return ["weaponType", "weapon", "weapon_type", "weaponId", "weapon_id", "weaponHolding", "currentWeapon", "equippedWeapon", "activeWeapon"].has(key)
+	return ["weapon", "weapon_type", "weapon_id", "weapon_holding", "current_weapon", "equipped_weapon", "active_weapon"].has(key)
 
 func _handle_connection_loss(reason: String) -> void:
 	if has_reported_connection_loss:

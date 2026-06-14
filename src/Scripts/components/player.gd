@@ -872,21 +872,10 @@ func _remove_death_drop(drop: Node2D = null) -> void:
 	active_death_medkit = null
 
 func _send_health_state(heal_amount: int = 0, source: String = "") -> void:
-	var active_weapon := weapon.get_active_weapon() if weapon != null else null
-	if active_weapon == null or network_client == null:
+	if network_client == null or source.strip_edges().to_lower() != "medkit":
 		return
 
-	last_sent_angle = _get_current_aim_angle()
-	network_client.send_health_update(
-		health,
-		is_dead,
-		global_position.x,
-		global_position.y,
-		last_sent_angle,
-		active_weapon.get_weapon_name(),
-		heal_amount,
-		source
-	)
+	network_client.send_medkit_heal(heal_amount)
 
 func update_auto_attack() -> void:
 	# AI picks a live target and keeps aiming at it
@@ -1045,16 +1034,12 @@ func _on_network_connection_established() -> void:
 		network_client.connection_established.disconnect(_on_network_connection_established)
 
 func _send_respawn_state() -> void:
-	var active_weapon := weapon.get_active_weapon() if weapon != null else null
-	if active_weapon == null or network_client == null:
+	if network_client == null:
 		return
 
-	last_sent_angle = _get_current_aim_angle()
 	network_client.send_respawn(
 		global_position.x,
-		global_position.y,
-		last_sent_angle,
-		active_weapon.get_weapon_name()
+		global_position.y
 	)
 	idle_position_heartbeat_time = 0.0
 	move_sync_elapsed = 0.0
@@ -1227,7 +1212,16 @@ func report_authoritative_hit(target: Node, damage: int, hit_position: Vector2, 
 	var shot_angle := rad_to_deg((hit_position - global_position).angle())
 	if shot_angle < 0.0:
 		shot_angle += 360.0
-	network_client.send_hit(target_player_id, weapon_type, damage, shot_id, global_position.x, global_position.y, shot_angle, Time.get_ticks_msec())
+	network_client.send_hit(
+		target_player_id,
+		weapon_type,
+		damage,
+		shot_id,
+		global_position.x,
+		global_position.y,
+		shot_angle,
+		int(Time.get_unix_time_from_system())
+	)
 	return true
 
 func is_local_aim_target_on_self(raw_target: Vector2) -> bool:

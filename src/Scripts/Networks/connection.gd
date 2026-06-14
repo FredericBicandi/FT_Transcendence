@@ -268,7 +268,7 @@ func _apply_initial_preview_players(message: Dictionary) -> void:
 		return
 
 	# Draw already-connected players in the lobby preview
-	var players_variant: Variant = message.get("players", message.get("remotePlayers", []))
+	var players_variant: Variant = message.get("players", message.get("remote_players", []))
 	if not (players_variant is Array):
 		return
 
@@ -316,12 +316,12 @@ func _apply_preview_remote_player_state(message: Dictionary) -> void:
 
 	var has_health := NetworkClient.has_authoritative_health(message)
 	var new_health := remote_body.health
-	var authoritative_is_dead := bool(message.get("isDead", remote_body.is_dead))
+	var authoritative_is_dead := bool(message.get("is_dead", remote_body.is_dead))
 	if has_health:
 		new_health = NetworkClient.get_authoritative_health(message, remote_body.health)
-	if has_health and not message.has("isDead"):
+	if has_health and not message.has("is_dead"):
 		authoritative_is_dead = new_health <= 0
-	if has_health or message.has("isDead"):
+	if has_health or message.has("is_dead"):
 		remote_body.apply_authoritative_health_state(
 			new_health,
 			authoritative_is_dead,
@@ -335,8 +335,8 @@ func _apply_preview_remote_player_state(message: Dictionary) -> void:
 		aim_angle_degrees = NetworkClient.get_finite_float(message["angle"], NAN)
 	elif message.has("rotation"):
 		aim_angle_degrees = rad_to_deg(NetworkClient.get_finite_float(message["rotation"], 0.0))
-	elif message.has("aimAngle"):
-		aim_angle_degrees = NetworkClient.get_finite_float(message["aimAngle"], NAN)
+	elif message.has("aim_angle"):
+		aim_angle_degrees = NetworkClient.get_finite_float(message["aim_angle"], NAN)
 
 	if has_position:
 		var remote_position := NetworkClient.get_finite_vector2(message, "x", "y")
