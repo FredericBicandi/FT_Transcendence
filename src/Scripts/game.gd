@@ -29,6 +29,12 @@ const CHAT_MAX_MESSAGE_LENGTH: int = 300
 const CHAT_REPEATED_CHAR_LIMIT: int = 8
 const CHAT_MESSAGE_LIFETIME: float = 5.0
 const CHAT_INPUT_FONT_SIZE: int = 13
+const MEDKIT_TEXTURE: Texture2D = preload("res://Assets/medkit.png")
+const MEDKIT_LAYER_NAME := "ServerMedkits"
+const MEDKIT_VISUAL_SCALE := Vector2(0.45, 0.45)
+const MEDKIT_PICKUP_RADIUS: float = 10.0
+const MEDKIT_Z_INDEX: int = 1
+const PLAYER_COLLISION_LAYER_MASK: int = 2
 
 # Cache scene nodes once so gameplay updates stay cheap
 @onready var map: Node2D = $Map
@@ -69,16 +75,18 @@ var chat_message_audio_player: AudioStreamPlayer
 var match_end_audio_player: AudioStreamPlayer
 var chat_is_open: bool = false
 var chat_controls_enabled_before_open: bool = true
-var match_started_msec: int = 0
+var fallback_play_time_started_msec: int = 0
 var final_match_summary: Dictionary = {}
 var match_end_exit_scheduled: bool = false
 var match_end_sound_played: bool = false
 var processed_match_saved_ids: Dictionary = {}
 var pending_match_ended_messages: Dictionary = {}
 var pending_remote_player_states: Dictionary = {}
+var active_medkits: Dictionary = {}
+var pending_medkit_pickups: Dictionary = {}
 
 func _ready() -> void:
-	match_started_msec = Time.get_ticks_msec()
+	fallback_play_time_started_msec = Time.get_ticks_msec()
 	respawn_rng.randomize()
 	_cache_respawn_positions()
 	# Let the map own spawn points instead of hardcoding them in the player
@@ -96,6 +104,7 @@ func _ready() -> void:
 	_on_active_weapon_changed(weapons.get_active_weapon())
 	_connect_network_signals()
 	apply_network_snapshot()
+	_apply_cached_medkits()
 	respawn_ui.call("update_for_player", player_body)
 	timer_ui.call("set_remaining_seconds", remaining_match_seconds)
 	_set_mouse_visible(false)
@@ -279,6 +288,7 @@ func _cleanup_match_state() -> void:
 	processed_match_saved_ids.clear()
 	pending_match_ended_messages.clear()
 	pending_remote_player_states.clear()
+	pending_medkit_pickups.clear()
 
 	if player_body != null:
 		player_body.set_match_controls_enabled(false)
@@ -292,6 +302,11 @@ func _cleanup_match_state() -> void:
 			remote_wrapper.queue_free()
 
 	remote_players.clear()
+	for medkit_variant in active_medkits.values():
+		var medkit := medkit_variant as Area2D
+		if medkit != null and is_instance_valid(medkit):
+			medkit.queue_free()
+	active_medkits.clear()
 
 func _post_exit_game(reason: String = "manual", summary: Dictionary = {}) -> void:
 	if not OS.has_feature("web"):
@@ -907,6 +922,12 @@ func _connect_network_signals() -> void:
 	if not network_client.player_health_received.is_connected(_on_player_health_received):
 		network_client.player_health_received.connect(_on_player_health_received)
 
+	if not network_client.medkit_spawned.is_connected(_on_medkit_spawned):
+		network_client.medkit_spawned.connect(_on_medkit_spawned)
+
+	if not network_client.medkit_removed.is_connected(_on_medkit_removed):
+		network_client.medkit_removed.connect(_on_medkit_removed)
+
 	if not network_client.bullet_spawn_received.is_connected(_on_bullet_spawn_received):
 		network_client.bullet_spawn_received.connect(_on_bullet_spawn_received)
 
@@ -968,6 +989,7 @@ func _on_room_joined(message: Dictionary) -> void:
 	_apply_leaderboard_snapshot(message)
 	_apply_local_player_state(message, false)
 	_apply_initial_remote_players(message)
+	_apply_cached_medkits()
 
 func _on_time_synced(message: Dictionary) -> void:
 	var synced_room_id := str(message.get("room_id", ""))
@@ -1008,7 +1030,8 @@ func _on_player_angle_received(message: Dictionary) -> void:
 
 	var player_id := str(message.get("player_id", ""))
 	var has_angle := (
-		NetworkClient.is_finite_number(message.get("angle", NAN))
+		NetworkClient.is_valid_aim_frame(message.get("aim_frame", NAN))
+		or NetworkClient.is_finite_number(message.get("angle", NAN))
 		or NetworkClient.is_finite_number(message.get("rotation", NAN))
 		or NetworkClient.is_finite_number(message.get("aim_angle", NAN))
 	)
@@ -1036,10 +1059,92 @@ func _on_player_health_received(message: Dictionary) -> void:
 		return
 
 	if player_id == local_player_id:
-		_apply_local_player_state(message, false)
+		_apply_local_player_state(message, NetworkClient.is_respawn_state(message))
 		return
 
 	_queue_remote_player_state_message(player_id, message)
+
+func _on_medkit_spawned(message: Dictionary) -> void:
+	var medkit_id := str(message.get("medkit_id", "")).strip_edges()
+	if medkit_id == "" or not NetworkClient.has_finite_vector2(message, "x", "y"):
+		return
+
+	_spawn_server_medkit(medkit_id, NetworkClient.get_finite_vector2(message, "x", "y"))
+
+func _on_medkit_removed(message: Dictionary) -> void:
+	var medkit_id := str(message.get("medkit_id", "")).strip_edges()
+	if medkit_id != "":
+		_remove_server_medkit(medkit_id)
+
+func _apply_cached_medkits() -> void:
+	if network_client == null:
+		return
+
+	for medkit_variant in network_client.active_medkits.values():
+		if typeof(medkit_variant) == TYPE_DICTIONARY:
+			_on_medkit_spawned(medkit_variant)
+
+func _spawn_server_medkit(medkit_id: String, position: Vector2) -> void:
+	var existing := active_medkits.get(medkit_id) as Area2D
+	if existing != null and is_instance_valid(existing):
+		existing.global_position = position
+		return
+
+	var layer := _get_medkit_layer()
+	if layer == null:
+		return
+
+	var medkit := Area2D.new()
+	medkit.name = "Medkit_%s" % medkit_id.validate_node_name()
+	medkit.collision_layer = 0
+	medkit.collision_mask = PLAYER_COLLISION_LAYER_MASK
+	medkit.monitorable = false
+	medkit.body_entered.connect(_on_server_medkit_body_entered.bind(medkit_id))
+	layer.add_child(medkit)
+	medkit.global_position = position
+
+	var sprite := Sprite2D.new()
+	sprite.texture = MEDKIT_TEXTURE
+	sprite.scale = MEDKIT_VISUAL_SCALE
+	sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	sprite.z_index = MEDKIT_Z_INDEX
+	medkit.add_child(sprite)
+
+	var collision := CollisionShape2D.new()
+	var shape := CircleShape2D.new()
+	shape.radius = MEDKIT_PICKUP_RADIUS
+	collision.shape = shape
+	medkit.add_child(collision)
+	active_medkits[medkit_id] = medkit
+
+func _get_medkit_layer() -> Node2D:
+	var existing := get_node_or_null(MEDKIT_LAYER_NAME) as Node2D
+	if existing != null:
+		return existing
+
+	var layer := Node2D.new()
+	layer.name = MEDKIT_LAYER_NAME
+	layer.y_sort_enabled = true
+	add_child(layer)
+	move_child(layer, map.get_index() + 1)
+	return layer
+
+func _on_server_medkit_body_entered(body: Node2D, medkit_id: String) -> void:
+	var collector := body as Player
+	if collector == null or not collector.can_collect_death_medkit():
+		return
+	if pending_medkit_pickups.has(medkit_id) or network_client == null:
+		return
+
+	if collector.request_death_medkit_heal(medkit_id):
+		pending_medkit_pickups[medkit_id] = true
+
+func _remove_server_medkit(medkit_id: String) -> void:
+	pending_medkit_pickups.erase(medkit_id)
+	var medkit := active_medkits.get(medkit_id) as Area2D
+	active_medkits.erase(medkit_id)
+	if medkit != null and is_instance_valid(medkit):
+		medkit.queue_free()
 
 func _queue_remote_player_state_message(player_id: String, message: Dictionary) -> void:
 	if player_id == "":
@@ -1162,7 +1267,7 @@ func _reset_parent_after_exit() -> void:
 
 func _build_match_summary() -> Dictionary:
 	var stats := _get_local_leaderboard_stats()
-	var elapsed_ms: int = maxi(Time.get_ticks_msec() - match_started_msec, 0)
+	var elapsed_ms := _get_player_play_time_ms()
 	var resolved_room_id := room_id
 	if resolved_room_id == "" and network_client != null:
 		resolved_room_id = network_client.local_room_id
@@ -1191,6 +1296,7 @@ func _build_match_saved_parent_payload(match_saved_message: Dictionary, match_en
 	var player_result := _get_local_match_result(leaderboard_variant as Array)
 	if player_result.is_empty():
 		return {}
+	var play_time_ms := _get_player_play_time_ms()
 
 	return {
 		"type": "match_saved",
@@ -1198,8 +1304,17 @@ func _build_match_saved_parent_payload(match_saved_message: Dictionary, match_en
 		"score": int(player_result.get("score", 0)),
 		"kills": int(player_result.get("kills", 0)),
 		"deaths": int(player_result.get("deaths", 0)),
-		"duration_seconds": int(NetworkClient.get_finite_int(match_ended_message.get("duration_seconds", 0), 0))
+		"duration_seconds": int(floor(float(play_time_ms) / 1000.0)),
+		"play_time_ms": play_time_ms,
+		"play_time_seconds": float(play_time_ms) / 1000.0
 	}
+
+func _get_player_play_time_ms() -> int:
+	var parent_node := get_parent()
+	if parent_node != null and parent_node.has_method("get_player_play_time_ms"):
+		return maxi(int(parent_node.call("get_player_play_time_ms")), 0)
+
+	return maxi(Time.get_ticks_msec() - fallback_play_time_started_msec, 0)
 
 func _get_local_match_result(leaderboard: Array) -> Dictionary:
 	for entry_variant in leaderboard:
@@ -1270,7 +1385,7 @@ func _on_bullet_spawn_received(message: Dictionary) -> void:
 	# Replay the server bullet using the shooter's weapon
 	remote_body.spawn_remote_bullet_from_server(
 		NetworkClient.get_finite_vector2(message, "x", "y", remote_body.global_position),
-		NetworkClient.get_finite_float(message.get("angle", 0.0), 0.0),
+		deg_to_rad(fposmod(NetworkClient.get_finite_float(message.get("angle", 0.0), 0.0), 360.0)),
 		weapon_type,
 		_get_bullet_target_position(message),
 		_get_bullet_start_position(message)
@@ -1352,17 +1467,22 @@ func _apply_local_player_state(message: Dictionary, should_apply_position: bool 
 		player_body.set_spawn_position(authoritative_position)
 
 	var has_health := NetworkClient.has_authoritative_health(message)
-	if has_health or message.has("is_dead"):
-		var new_health := NetworkClient.get_authoritative_health(message, player_body.health)
+	var is_respawn_state := NetworkClient.is_respawn_state(message)
+	if has_health or message.has("is_dead") or is_respawn_state:
+		var new_health := NetworkClient.get_authoritative_health(
+			message,
+			player_body.max_health if is_respawn_state else player_body.health
+		)
 		player_body.apply_authoritative_health_state(
 			new_health,
-			bool(message.get("is_dead", player_body.is_dead)),
+			bool(message.get("is_dead", false if is_respawn_state else player_body.is_dead)),
 			NetworkClient.get_finite_int(message.get("damage", 0), 0),
 			NetworkClient.get_health_heal_amount(message, player_body.health, new_health),
 			_get_health_feedback_source(message)
 		)
-		if NetworkClient.is_medkit_heal(message):
-			_consume_collected_death_medkit(_get_health_packet_position(message, player_body))
+		var medkit_id := str(message.get("medkit_id", "")).strip_edges()
+		if NetworkClient.is_medkit_heal(message) and medkit_id != "":
+			_remove_server_medkit(medkit_id)
 
 func _get_remote_player(player_id: String) -> Player:
 	var existing_wrapper := remote_players.get(player_id) as Node2D
@@ -1422,12 +1542,15 @@ func _apply_remote_player_state(message: Dictionary) -> void:
 
 	var has_health := NetworkClient.has_authoritative_health(message)
 	var new_health := remote_body.health
-	var authoritative_is_dead := bool(message.get("is_dead", remote_body.is_dead))
+	var is_respawn_state := NetworkClient.is_respawn_state(message)
+	var authoritative_is_dead := bool(message.get("is_dead", false if is_respawn_state else remote_body.is_dead))
 	if has_health:
 		new_health = NetworkClient.get_authoritative_health(message, remote_body.health)
+	elif is_respawn_state:
+		new_health = remote_body.max_health
 	if has_health and not message.has("is_dead"):
 		authoritative_is_dead = new_health <= 0
-	if has_health or message.has("is_dead"):
+	if has_health or message.has("is_dead") or is_respawn_state:
 		remote_body.apply_authoritative_health_state(
 			new_health,
 			authoritative_is_dead,
@@ -1435,11 +1558,14 @@ func _apply_remote_player_state(message: Dictionary) -> void:
 			NetworkClient.get_health_heal_amount(message, remote_body.health, new_health),
 			_get_health_feedback_source(message)
 		)
-		if NetworkClient.is_medkit_heal(message):
-			_consume_collected_death_medkit(_get_health_packet_position(message, remote_body))
+		var medkit_id := str(message.get("medkit_id", "")).strip_edges()
+		if NetworkClient.is_medkit_heal(message) and medkit_id != "":
+			_remove_server_medkit(medkit_id)
 
 	var aim_angle_degrees := NAN
-	if message.has("angle"):
+	if message.has("aim_frame") and NetworkClient.is_valid_aim_frame(message["aim_frame"]):
+		aim_angle_degrees = float(int(message["aim_frame"])) * 45.0
+	elif message.has("angle"):
 		aim_angle_degrees = NetworkClient.get_finite_float(message["angle"], NAN)
 	elif message.has("rotation"):
 		aim_angle_degrees = rad_to_deg(NetworkClient.get_finite_float(message["rotation"], 0.0))
@@ -1448,7 +1574,7 @@ func _apply_remote_player_state(message: Dictionary) -> void:
 
 	if has_position:
 		var remote_position := NetworkClient.get_finite_vector2(message, "x", "y")
-		var is_respawn_snap := was_dead and not authoritative_is_dead and has_health and new_health > 0
+		var is_respawn_snap := was_dead and not authoritative_is_dead and (has_health or is_respawn_state) and new_health > 0
 		if is_respawn_snap:
 			# Respawns should appear immediately at the new spawn point
 			remote_body.snap_remote_snapshot(remote_position, aim_angle_degrees)
@@ -1459,44 +1585,6 @@ func _apply_remote_player_state(message: Dictionary) -> void:
 
 func _get_health_feedback_source(message: Dictionary) -> String:
 	return "medkit" if NetworkClient.is_medkit_heal(message) else NetworkClient.get_health_source(message)
-
-func _get_health_packet_position(message: Dictionary, fallback_player: Player) -> Vector2:
-	if NetworkClient.has_finite_vector2(message, "x", "y"):
-		return NetworkClient.get_finite_vector2(message, "x", "y")
-
-	return fallback_player.global_position if fallback_player != null else Vector2.ZERO
-
-func _consume_collected_death_medkit(collector_position: Vector2) -> void:
-	var closest_owner: Player = null
-	var closest_distance := INF
-
-	for owner in _get_players_with_death_medkits():
-		var distance := owner.get_death_medkit_distance_to(collector_position)
-		if distance < closest_distance:
-			closest_distance = distance
-			closest_owner = owner
-
-	if closest_owner == null:
-		return
-
-	closest_owner.consume_death_medkit_near(collector_position)
-
-func _get_players_with_death_medkits() -> Array[Player]:
-	var players: Array[Player] = []
-	var local_body := player_body as Player
-	if local_body != null:
-		players.append(local_body)
-
-	for remote_wrapper_variant in remote_players.values():
-		var remote_wrapper := remote_wrapper_variant as Node
-		if remote_wrapper == null or not is_instance_valid(remote_wrapper):
-			continue
-
-		var remote_body := remote_wrapper.get_node_or_null("CharacterBody2D") as Player
-		if remote_body != null:
-			players.append(remote_body)
-
-	return players
 
 func _remove_remote_player(player_id: String) -> void:
 	var remote_wrapper := remote_players.get(player_id) as Node2D

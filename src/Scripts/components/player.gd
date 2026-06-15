@@ -3,16 +3,9 @@ extends CharacterBody2D
 
 const Localization = preload("res://src/Scripts/components/localization.gd")
 const DEATH_SCENE_TEXTURE: Texture2D = preload("res://Assets/Textures/Character/dead.png")
-const DEATH_MEDKIT_TEXTURE: Texture2D = preload("res://Assets/medkit.png")
 const FOOTSTEP_SOUND: AudioStream = preload("res://Assets/Audio/footSteps.ogg")
 const DEATH_MEDKIT_LAYER_NAME := "DeathMedkits"
-const DEATH_MEDKIT_VISUAL_SCALE := Vector2(0.45, 0.45)
-const DEATH_MEDKIT_VISUAL_OFFSET := Vector2(7.0, -5.0)
-const DEATH_MEDKIT_PICKUP_RADIUS: float = 10.0
-const DEATH_MEDKIT_PICKUP_SYNC_MARGIN: float = 14.0
-const DEATH_MEDKIT_CONSUMED_META := "consumed"
-const PLAYER_COLLISION_LAYER_MASK: int = 2
-const POSITION_HEARTBEAT_INTERVAL: float = 5.0
+const IDLE_SYNC_INTERVAL: float = 5.0
 const MOVE_SYNC_INTERVAL: float = 0.05
 const MOVE_SYNC_FORCE_DISTANCE: float = 10.0
 const DAMAGE_NUMBER_LIFETIME: float = 0.45
@@ -72,7 +65,7 @@ var spawn_position: Vector2
 var respawn_position_provider: Callable = Callable()
 var attack_target: Node = null
 var network_client: NetworkClient = null
-var idle_position_heartbeat_time: float = 0.0
+var idle_position_sync_time: float = 0.0
 var move_sync_elapsed: float = 0.0
 var last_sent_position: Vector2 = Vector2.INF
 var shoot_sound_cooldown_remaining: float = 0.0
@@ -117,7 +110,6 @@ var footstep_audio_player: AudioStreamPlayer2D
 var camera_focus_enabled := false
 var camera_focus_strength := 0.0
 var active_death_drop: Node2D
-var active_death_medkit: Area2D
 
 @onready var head: AnimatedSprite2D = $Head
 @onready var legs: AnimatedSprite2D = $Leg
@@ -676,7 +668,7 @@ func die() -> void:
 	respawn_timer = respawn_delay
 	has_requested_server_respawn = false
 	server_respawn_retry_timer = 0.0
-	idle_position_heartbeat_time = 0.0
+	idle_position_sync_time = 0.0
 	velocity = Vector2.ZERO
 	hit_flash_time = 0.0
 	attack_target = null
@@ -685,7 +677,9 @@ func die() -> void:
 	head.modulate = Color.WHITE
 	_clear_active_shot_voices()
 	_stop_footstep_sound()
-	_spawn_death_medkit()
+	_spawn_death_drop()
+	if accepts_input and not is_remote_proxy and network_client != null:
+		network_client.send_player_death(global_position.x, global_position.y)
 	legs.visible = false
 	head.visible = false
 	overhead_panel.visible = false
@@ -707,7 +701,7 @@ func respawn() -> void:
 	if accepts_input and network_client != null:
 		_send_respawn_state()
 
-func _spawn_death_medkit() -> void:
+func _spawn_death_drop() -> void:
 	_remove_death_drop()
 
 	var parent := _get_death_medkit_layer()
@@ -725,32 +719,6 @@ func _spawn_death_medkit() -> void:
 	dead_scene.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	dead_scene.z_index = 0
 	active_death_drop.add_child(dead_scene)
-
-	active_death_medkit = Area2D.new()
-	active_death_medkit.name = "DeathMedkit"
-	active_death_medkit.monitoring = true
-	active_death_medkit.monitorable = false
-	active_death_medkit.collision_layer = 0
-	active_death_medkit.collision_mask = PLAYER_COLLISION_LAYER_MASK
-	active_death_medkit.set_meta(DEATH_MEDKIT_CONSUMED_META, false)
-	active_death_medkit.position = DEATH_MEDKIT_VISUAL_OFFSET
-	active_death_medkit.z_index = 1
-	active_death_medkit.body_entered.connect(_on_death_medkit_body_entered.bind(active_death_medkit))
-	active_death_drop.add_child(active_death_medkit)
-
-	var sprite := Sprite2D.new()
-	sprite.name = "Sprite"
-	sprite.texture = DEATH_MEDKIT_TEXTURE
-	sprite.scale = DEATH_MEDKIT_VISUAL_SCALE
-	sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	active_death_medkit.add_child(sprite)
-
-	var collision := CollisionShape2D.new()
-	collision.name = "PickupRadius"
-	var shape := CircleShape2D.new()
-	shape.radius = DEATH_MEDKIT_PICKUP_RADIUS
-	collision.shape = shape
-	active_death_medkit.add_child(collision)
 
 	get_tree().create_timer(maxf(respawn_delay, 0.1)).timeout.connect(_remove_death_drop.bind(active_death_drop))
 
@@ -784,79 +752,28 @@ func _get_death_medkit_layer_root() -> Node2D:
 
 	return get_tree().current_scene as Node2D
 
-func _on_death_medkit_body_entered(body: Node2D, medkit: Area2D) -> void:
-	if medkit == null or medkit != active_death_medkit or not is_instance_valid(medkit):
-		return
-	if _is_death_medkit_consumed(medkit):
-		return
-
-	var collector := body as Player
-	if collector == null or not collector.can_collect_death_medkit():
-		return
-
-	_consume_death_medkit(medkit)
-	if collector.can_apply_death_medkit_heal():
-		collector.collect_death_medkit()
-
 func can_collect_death_medkit() -> bool:
-	return (accepts_input or is_remote_proxy) and not is_dead and health < max_health
-
-func can_apply_death_medkit_heal() -> bool:
 	return accepts_input and not is_remote_proxy and not is_dead and health < max_health
 
-func collect_death_medkit() -> void:
-	var healed_amount := max_health - health
-	if healed_amount <= 0:
-		return
-	set_health(max_health)
-	_show_heal_number(healed_amount)
-	_send_health_state(healed_amount, "medkit")
-
-func consume_death_medkit_near(point: Vector2, extra_margin: float = DEATH_MEDKIT_PICKUP_SYNC_MARGIN) -> bool:
-	if active_death_medkit == null or not is_instance_valid(active_death_medkit):
-		return false
-	if _is_death_medkit_consumed(active_death_medkit):
+func request_death_medkit_heal(medkit_id: String) -> bool:
+	if not can_collect_death_medkit() or network_client == null:
 		return false
 
-	var pickup_distance := DEATH_MEDKIT_PICKUP_RADIUS + maxf(extra_margin, 0.0)
-	if active_death_medkit.global_position.distance_to(point) > pickup_distance:
+	var active_weapon := weapon.get_active_weapon() if weapon != null else null
+	if active_weapon == null:
 		return false
 
-	_consume_death_medkit(active_death_medkit)
-	return true
-
-func get_death_medkit_distance_to(point: Vector2) -> float:
-	if active_death_medkit == null or not is_instance_valid(active_death_medkit):
-		return INF
-	if _is_death_medkit_consumed(active_death_medkit):
-		return INF
-
-	return active_death_medkit.global_position.distance_to(point)
-
-func _consume_death_medkit(medkit: Area2D) -> void:
-	if medkit == null or not is_instance_valid(medkit) or _is_death_medkit_consumed(medkit):
-		return
-
-	medkit.set_meta(DEATH_MEDKIT_CONSUMED_META, true)
-	medkit.visible = false
-	medkit.set_deferred("monitoring", false)
-	medkit.set_deferred("collision_mask", 0)
-	_remove_death_medkit(medkit)
-
-func _is_death_medkit_consumed(medkit: Area2D) -> bool:
-	return medkit != null and is_instance_valid(medkit) and bool(medkit.get_meta(DEATH_MEDKIT_CONSUMED_META, false))
-
-func _remove_death_medkit(medkit: Area2D = null) -> void:
-	if medkit != null:
-		if not is_instance_valid(medkit):
-			return
-		if medkit != active_death_medkit:
-			medkit.queue_free()
-			return
-
-	if active_death_medkit != null and is_instance_valid(active_death_medkit):
-		active_death_medkit.queue_free()
-	active_death_medkit = null
+	last_sent_angle = _get_current_aim_angle()
+	return network_client.send_medkit_heal(
+		medkit_id,
+		global_position.x,
+		global_position.y,
+		last_sent_angle,
+		_get_current_aim_frame(),
+		health,
+		is_dead,
+		active_weapon.get_weapon_name()
+	)
 
 func _remove_death_drop(drop: Node2D = null) -> void:
 	if drop != null:
@@ -869,13 +786,6 @@ func _remove_death_drop(drop: Node2D = null) -> void:
 	if active_death_drop != null and is_instance_valid(active_death_drop):
 		active_death_drop.queue_free()
 	active_death_drop = null
-	active_death_medkit = null
-
-func _send_health_state(heal_amount: int = 0, source: String = "") -> void:
-	if network_client == null or source.strip_edges().to_lower() != "medkit":
-		return
-
-	network_client.send_medkit_heal(heal_amount)
 
 func update_auto_attack() -> void:
 	# AI picks a live target and keeps aiming at it
@@ -945,29 +855,31 @@ func _report_position_sync(previous_position: Vector2, delta: float) -> void:
 	move_sync_elapsed += delta
 
 	if not global_position.is_equal_approx(previous_position):
-		idle_position_heartbeat_time = 0.0
+		idle_position_sync_time = 0.0
 		var moved_far_since_last_sync := last_sent_position == Vector2.INF or global_position.distance_to(last_sent_position) >= MOVE_SYNC_FORCE_DISTANCE
 		if move_sync_elapsed >= MOVE_SYNC_INTERVAL or moved_far_since_last_sync:
 			_send_move_position()
 		return
 
-	idle_position_heartbeat_time += delta
-	if idle_position_heartbeat_time < POSITION_HEARTBEAT_INTERVAL:
+	idle_position_sync_time += delta
+	if idle_position_sync_time < IDLE_SYNC_INTERVAL:
 		return
 
-	# Send idle pings so the server still knows where we are
-	idle_position_heartbeat_time = 0.0
-	_send_ping_position()
+	# Refresh stationary position and facing for the server.
+	idle_position_sync_time = 0.0
+	_send_idle_position()
 
 func _send_move_position() -> void:
-	last_sent_angle = _get_current_aim_angle()
-	network_client.send_move(global_position.x, global_position.y, last_sent_angle)
+	var aim_frame := _get_current_aim_frame()
+	last_sent_angle = _get_angle_for_aim_frame(aim_frame)
+	network_client.send_move(global_position.x, global_position.y, last_sent_angle, aim_frame)
 	move_sync_elapsed = 0.0
 	last_sent_position = global_position
 
-func _send_ping_position() -> void:
-	last_sent_angle = _get_current_aim_angle()
-	network_client.send_idle(global_position.x, global_position.y, last_sent_angle)
+func _send_idle_position() -> void:
+	var aim_frame := _get_current_aim_frame()
+	last_sent_angle = _get_angle_for_aim_frame(aim_frame)
+	network_client.send_idle(global_position.x, global_position.y, last_sent_angle, aim_frame)
 	move_sync_elapsed = 0.0
 	last_sent_position = global_position
 
@@ -1037,11 +949,19 @@ func _send_respawn_state() -> void:
 	if network_client == null:
 		return
 
+	var active_weapon := weapon.get_active_weapon() if weapon != null else null
+	if active_weapon == null:
+		return
+	var aim_frame := _get_current_aim_frame()
+	last_sent_angle = _get_angle_for_aim_frame(aim_frame)
 	network_client.send_respawn(
 		global_position.x,
-		global_position.y
+		global_position.y,
+		last_sent_angle,
+		aim_frame,
+		active_weapon.get_weapon_name()
 	)
-	idle_position_heartbeat_time = 0.0
+	idle_position_sync_time = 0.0
 	move_sync_elapsed = 0.0
 	last_sent_position = global_position
 
@@ -1054,6 +974,7 @@ func _request_server_respawn() -> void:
 	has_requested_server_respawn = true
 	server_respawn_retry_timer = SERVER_RESPAWN_RETRY_SECONDS
 	global_position = _resolve_respawn_position()
+	_remove_death_drop()
 	_send_respawn_state()
 
 func set_spawn_position(position: Vector2) -> void:
@@ -1075,15 +996,17 @@ func _send_full_player_state() -> bool:
 	if active_weapon == null or network_client == null:
 		return false
 
-	last_sent_angle = _get_current_aim_angle()
+	var aim_frame := _get_current_aim_frame()
+	last_sent_angle = _get_angle_for_aim_frame(aim_frame)
 	network_client.send_on_join(
 		global_position.x,
 		global_position.y,
 		last_sent_angle,
+		aim_frame,
 		active_weapon.get_weapon_name()
 	)
 	last_reported_weapon_type = active_weapon.get_weapon_name()
-	last_sent_aim_frame = weapon.get_aim_frame()
+	last_sent_aim_frame = aim_frame
 	last_sent_position = global_position
 	move_sync_elapsed = 0.0
 	return true
@@ -1091,7 +1014,7 @@ func _send_full_player_state() -> bool:
 func set_match_controls_enabled(is_enabled: bool) -> void:
 	match_controls_enabled = is_enabled
 	velocity = Vector2.ZERO
-	idle_position_heartbeat_time = 0.0
+	idle_position_sync_time = 0.0
 	move_sync_elapsed = 0.0
 	last_sent_position = global_position
 	if not is_enabled:
@@ -1293,7 +1216,7 @@ func apply_authoritative_health_state(new_health: int, authoritative_is_dead: bo
 		_restore_after_respawn()
 
 func _should_show_authoritative_heal_feedback(heal_source: String) -> bool:
-	if not is_remote_proxy:
+	if is_remote_proxy or not accepts_input:
 		return false
 
 	return heal_source.strip_edges().to_lower() == "medkit"
@@ -1303,7 +1226,7 @@ func _restore_after_respawn() -> void:
 	respawn_timer = 0.0
 	has_requested_server_respawn = false
 	server_respawn_retry_timer = 0.0
-	idle_position_heartbeat_time = 0.0
+	idle_position_sync_time = 0.0
 	_remove_death_drop()
 	# Snapshots enqueued while we were dead never played (physics process
 	# bails for dead bodies); drop them so respawn does not warp through them.
@@ -1628,28 +1551,29 @@ func _compact_remote_snapshot_queue() -> void:
 	remote_snapshot_head_index = 0
 
 func _get_current_aim_angle() -> float:
-	var aim_direction := get_global_mouse_position() - global_position
-	if aim_direction == Vector2.ZERO:
-		return 0.0
+	return _get_angle_for_aim_frame(_get_current_aim_frame())
 
-	var angle := rad_to_deg(aim_direction.angle())
-	if angle < 0.0:
-		angle += 360.0
+func _get_current_aim_frame() -> int:
+	if weapon == null:
+		return 0
 
-	return angle
+	return clampi(weapon.get_aim_frame(), 0, 7)
+
+func _get_angle_for_aim_frame(aim_frame: int) -> float:
+	return float(posmod(aim_frame, 8)) * 45.0
 
 func _report_angle_on_frame_change() -> void:
 	if not accepts_input or not match_controls_enabled or network_client == null or weapon == null:
 		return
 
-	var current_aim_frame := weapon.get_aim_frame()
+	var current_aim_frame := _get_current_aim_frame()
 	if current_aim_frame == last_sent_aim_frame:
 		return
 
 	# Send only when the 8-direction frame changes to reduce traffic
 	last_sent_aim_frame = current_aim_frame
-	last_sent_angle = _get_current_aim_angle()
-	network_client.send_angle(last_sent_angle)
+	last_sent_angle = _get_angle_for_aim_frame(current_aim_frame)
+	network_client.send_angle(last_sent_angle, current_aim_frame)
 
 
 func is_sniper_equipped() -> bool:

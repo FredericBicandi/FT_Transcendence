@@ -13,6 +13,8 @@ signal player_move_received(message: Dictionary)
 signal player_angle_received(message: Dictionary)
 signal player_weapon_switch_received(message: Dictionary)
 signal player_health_received(message: Dictionary)
+signal medkit_spawned(message: Dictionary)
+signal medkit_removed(message: Dictionary)
 signal bullet_spawn_received(message: Dictionary)
 signal player_left_received(player_id: String)
 signal leaderboard_updated(message: Dictionary)
@@ -60,6 +62,7 @@ var remaining_seconds: float = 0.0
 var match_finished: bool = false
 var last_room_joined_message: Dictionary = {}
 var remote_player_snapshots: Dictionary = {}
+var active_medkits: Dictionary = {}
 var seconds_since_last_server_activity: float = 0.0
 var is_connection_closed_manually: bool = false
 
@@ -108,6 +111,7 @@ func connect_to_server() -> Error:
 	match_finished = false
 	last_room_joined_message = {}
 	remote_player_snapshots.clear()
+	active_medkits.clear()
 	seconds_since_last_server_activity = 0.0
 	is_connection_closed_manually = false
 
@@ -128,10 +132,10 @@ func _create_tls_options() -> TLSOptions:
 
 	return TLSOptions.client()
 
-func send_move(x: float, y: float, angle: float) -> void:
+func send_move(x: float, y: float, angle: float, aim_frame: int) -> void:
 	if socket.get_ready_state() != WebSocketPeer.STATE_OPEN:
 		return
-	if not are_finite_numbers([x, y]) or not is_valid_angle(angle):
+	if not are_finite_numbers([x, y]) or not is_valid_angle(angle) or not is_valid_aim_frame(aim_frame):
 		return
 
 	_send_json(
@@ -139,14 +143,15 @@ func send_move(x: float, y: float, angle: float) -> void:
 			"type": "move",
 			"x": x,
 			"y": y,
-			"angle": angle
+			"angle": angle,
+			"aim_frame": aim_frame
 		}
 	)
 
-func send_idle(x: float, y: float, angle: float) -> void:
+func send_idle(x: float, y: float, angle: float, aim_frame: int) -> void:
 	if socket.get_ready_state() != WebSocketPeer.STATE_OPEN:
 		return
-	if not are_finite_numbers([x, y]) or not is_valid_angle(angle):
+	if not are_finite_numbers([x, y]) or not is_valid_angle(angle) or not is_valid_aim_frame(aim_frame):
 		return
 
 	_send_json(
@@ -154,20 +159,22 @@ func send_idle(x: float, y: float, angle: float) -> void:
 			"type": "idle",
 			"x": x,
 			"y": y,
-			"angle": angle
+			"angle": angle,
+			"aim_frame": aim_frame
 		}
 	)
 
-func send_angle(angle: float) -> void:
+func send_angle(angle: float, aim_frame: int) -> void:
 	if socket.get_ready_state() != WebSocketPeer.STATE_OPEN:
 		return
-	if not is_valid_angle(angle):
+	if not is_valid_angle(angle) or not is_valid_aim_frame(aim_frame):
 		return
 
 	_send_json(
 		{
 			"type": "angle",
-			"angle": angle
+			"angle": angle,
+			"aim_frame": aim_frame
 		}
 	)
 
@@ -193,11 +200,11 @@ func request_room_reservation() -> void:
 	has_sent_room_reservation_request = false
 	send_on_connect()
 
-func send_on_join(x: float, y: float, angle: float, weapon_type: String) -> void:
+func send_on_join(x: float, y: float, angle: float, aim_frame: int, weapon_type: String) -> void:
 	if socket.get_ready_state() != WebSocketPeer.STATE_OPEN:
 		return
 	var normalized_weapon_type := normalize_weapon_type(weapon_type)
-	if not are_finite_numbers([x, y]) or not is_valid_angle(angle) or normalized_weapon_type == "":
+	if not are_finite_numbers([x, y]) or not is_valid_angle(angle) or not is_valid_aim_frame(aim_frame) or normalized_weapon_type == "":
 		return
 
 	_send_json(
@@ -206,11 +213,12 @@ func send_on_join(x: float, y: float, angle: float, weapon_type: String) -> void
 			"x": x,
 			"y": y,
 			"angle": angle,
+			"aim_frame": aim_frame,
 			"weapon_type": normalized_weapon_type
 		}
 	)
 
-func send_respawn(x: float, y: float) -> void:
+func send_player_death(x: float, y: float) -> void:
 	if socket.get_ready_state() != WebSocketPeer.STATE_OPEN:
 		return
 	if not are_finite_numbers([x, y]):
@@ -218,25 +226,73 @@ func send_respawn(x: float, y: float) -> void:
 
 	_send_json(
 		{
-			"type": "respawn",
+			"type": "player_death",
 			"x": x,
 			"y": y
 		}
 	)
 
-func send_medkit_heal(heal_amount: int = 0) -> void:
+func send_respawn(x: float, y: float, angle: float, aim_frame: int, weapon_type: String) -> void:
 	if socket.get_ready_state() != WebSocketPeer.STATE_OPEN:
 		return
-	var payload := {
-		"type": "heal",
-		"request": "medkit_heal",
-		"source": "medkit"
-	}
+	var normalized_weapon_type := normalize_weapon_type(weapon_type)
+	if not are_finite_numbers([x, y]) or not is_valid_angle(angle) or not is_valid_aim_frame(aim_frame) or normalized_weapon_type == "":
+		return
 
-	if heal_amount > 0:
-		payload["heal_amount"] = heal_amount
+	_send_json(
+		{
+			"type": "respawn",
+			"x": x,
+			"y": y,
+			"angle": angle,
+			"aim_frame": aim_frame,
+			"weapon_type": normalized_weapon_type
+		}
+	)
 
-	_send_json(payload)
+func send_medkit_heal(
+	medkit_id: String,
+	x: float,
+	y: float,
+	angle: float,
+	aim_frame: int,
+	current_health: int,
+	is_dead: bool,
+	weapon_type: String
+) -> bool:
+	if socket.get_ready_state() != WebSocketPeer.STATE_OPEN:
+		return false
+	var normalized_medkit_id := medkit_id.strip_edges().left(MAX_PLAYER_ID_LENGTH)
+	var normalized_weapon_type := normalize_weapon_type(weapon_type)
+	if (
+		normalized_medkit_id == ""
+		or not are_finite_numbers([x, y])
+		or not is_valid_angle(angle)
+		or not is_valid_aim_frame(aim_frame)
+		or normalized_weapon_type == ""
+	):
+		return false
+
+	_send_json(
+		{
+			"type": "heal",
+			"request": "medkit_heal",
+			"source": "medkit",
+			"medkit_id": normalized_medkit_id,
+			"player_id": local_player_id if local_player_id != "" else player_id,
+			"player_name": player_name,
+			"room_id": local_room_id,
+			"x": x,
+			"y": y,
+			"angle": angle,
+			"aim_frame": aim_frame,
+			"current_health": maxi(current_health, 0),
+			"is_dead": is_dead,
+			"weapon_type": normalized_weapon_type,
+			"timestamp": int(Time.get_unix_time_from_system())
+		}
+	)
+	return true
 
 func send_hit(target_player_id: String, weapon_type: String, damage: int, shot_id: String = "", x: float = NAN, y: float = NAN, angle: float = NAN, timestamp: int = 0) -> void:
 	if socket.get_ready_state() != WebSocketPeer.STATE_OPEN:
@@ -358,14 +414,6 @@ func send_chat_message(content: String) -> void:
 
 	_send_json(payload)
 
-func send_heartbeat(message_type: String = "heartbeat") -> void:
-	if socket.get_ready_state() != WebSocketPeer.STATE_OPEN:
-		return
-	if not ["heartbeat", "ping", "pong"].has(message_type):
-		return
-
-	_send_json({"type": message_type})
-
 func _handle_state_changes(state: int) -> void:
 	if state == WebSocketPeer.STATE_OPEN and not was_open_last_frame:
 		was_open_last_frame = true
@@ -424,8 +472,6 @@ func _handle_message(message: Dictionary) -> void:
 		return
 
 	match message_type:
-		"pong":
-			pass
 		"player_connected":
 			_store_remote_player_snapshot(message)
 			player_move_received.emit(message)
@@ -444,9 +490,15 @@ func _handle_message(message: Dictionary) -> void:
 		"heal":
 			_store_remote_player_snapshot(message)
 			player_health_received.emit(message)
-		"player_heartbeat":
+		"respawn", "player_respawn", "player_respawned":
 			_store_remote_player_snapshot(message)
 			player_health_received.emit(message)
+		"medkit_spawn", "medkit_spawned":
+			_store_medkit(message)
+			medkit_spawned.emit(message)
+		"medkit_remove", "medkit_removed":
+			_remove_stored_medkit(message)
+			medkit_removed.emit(message)
 		"bullet_spawn":
 			bullet_spawn_received.emit(message)
 		"player_left":
@@ -494,6 +546,18 @@ func _send_json(payload: Dictionary) -> void:
 	var error := socket.send_text(data)
 	if error != OK:
 		push_warning("NetworkClient: failed to send packet (error %d)" % error)
+
+func _store_medkit(message: Dictionary) -> void:
+	var medkit_id := str(message.get("medkit_id", "")).strip_edges()
+	if medkit_id == "" or not has_finite_vector2(message, "x", "y"):
+		return
+
+	active_medkits[medkit_id] = message.duplicate(true)
+
+func _remove_stored_medkit(message: Dictionary) -> void:
+	var medkit_id := str(message.get("medkit_id", "")).strip_edges()
+	if medkit_id != "":
+		active_medkits.erase(medkit_id)
 
 static func _find_non_snake_case_key(value: Variant, path: String = "") -> String:
 	if typeof(value) == TYPE_DICTIONARY:
@@ -576,6 +640,13 @@ static func is_valid_angle(angle: Variant) -> bool:
 	var numeric_angle := float(angle)
 	return numeric_angle >= 0.0 and numeric_angle < 360.0
 
+static func is_valid_aim_frame(aim_frame: Variant) -> bool:
+	if not is_finite_number(aim_frame):
+		return false
+
+	var numeric_frame := int(aim_frame)
+	return numeric_frame >= 0 and numeric_frame < 8 and float(numeric_frame) == float(aim_frame)
+
 static func normalize_weapon_type(weapon_type: String) -> String:
 	var normalized_value := weapon_type.strip_edges()
 	for valid_weapon_type in VALID_WEAPON_TYPES:
@@ -632,6 +703,11 @@ static func is_medkit_heal(message: Dictionary) -> bool:
 	var request_type := str(message.get("request", "")).strip_edges().to_lower()
 	return get_health_source(message) == "medkit" or request_type == "medkit_heal"
 
+static func is_respawn_state(message: Dictionary) -> bool:
+	return ["respawn", "player_respawn", "player_respawned"].has(
+		str(message.get("type", "")).strip_edges().to_lower()
+	)
+
 static func get_health_heal_amount(message: Dictionary, previous_health: int, new_health: int) -> int:
 	for key in ["heal_amount", "healed_amount", "amount"]:
 		if message.has(key):
@@ -651,7 +727,7 @@ static func get_authoritative_remote_weapon_type(message: Dictionary) -> String:
 			# Health packets often describe the attacker weapon. Only accept
 			# fields that explicitly name the damaged player's equipped weapon.
 			weapon_keys = ["target_weapon", "target_weapon_type", "target_current_weapon"]
-		"player_weapon_switch", "player_connected", "player_move", "player_heartbeat", "":
+		"player_weapon_switch", "player_connected", "player_move", "respawn", "player_respawn", "player_respawned", "":
 			weapon_keys = ["weapon", "weapon_type", "weapon_id", "weapon_holding", "current_weapon", "equipped_weapon", "active_weapon"]
 		_:
 			weapon_keys = ["target_weapon", "target_weapon_type", "target_current_weapon"]
@@ -676,7 +752,7 @@ func _sanitize_incoming_message(message: Dictionary) -> void:
 	]:
 		_sanitize_numeric_pair(message, str(pair_variant[0]), str(pair_variant[1]))
 
-	for field in ["angle", "rotation", "aim_angle", "health", "damage", "remaining_seconds", "duration_seconds", "timestamp", "level"]:
+	for field in ["angle", "aim_frame", "rotation", "aim_angle", "health", "damage", "remaining_seconds", "duration_seconds", "timestamp", "level"]:
 		_sanitize_numeric_field(message, field)
 
 	for vector_key in ["start", "muzzle", "target"]:
@@ -833,6 +909,13 @@ func _apply_room_assignment(message: Dictionary) -> void:
 	remaining_seconds = get_finite_float(message.get("remaining_seconds", remaining_seconds if remaining_seconds > 0.0 else match_duration_seconds), remaining_seconds)
 	match_finished = false
 	last_room_joined_message = message.duplicate(true)
+	if message.has("medkits"):
+		active_medkits.clear()
+		var medkits_variant: Variant = message.get("medkits", [])
+		if medkits_variant is Array:
+			for medkit_variant in medkits_variant:
+				if typeof(medkit_variant) == TYPE_DICTIONARY:
+					_store_medkit(medkit_variant)
 
 	if local_player_id != "":
 		player_id = local_player_id
@@ -860,6 +943,7 @@ func clear_match_state() -> void:
 	match_finished = false
 	last_room_joined_message = {}
 	remote_player_snapshots.clear()
+	active_medkits.clear()
 
 func _store_remote_player_snapshot(message: Dictionary) -> void:
 	var player_id := _extract_player_id(message)

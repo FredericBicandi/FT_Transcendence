@@ -23,6 +23,9 @@ var is_room_ready: bool = false
 var local_player_id: String = ""
 var preview_remote_players: Dictionary = {}
 var lobby_leaderboard_refresh_elapsed: float = 0.0
+var player_play_time_accumulated_ms: int = 0
+var player_play_time_started_msec: int = -1
+var player_play_time_room_id: String = ""
 
 func _ready() -> void:
 	Localization.apply_url_language()
@@ -90,6 +93,11 @@ func _on_room_ready(message: Dictionary) -> void:
 	# Show the room preview until the player chooses to join the match
 	is_room_ready = true
 	lobby_leaderboard_refresh_elapsed = 0.0
+	var assigned_room_id := str(message.get("room_id", network_client.local_room_id)).strip_edges()
+	if player_play_time_room_id != "" and assigned_room_id != "" and assigned_room_id != player_play_time_room_id:
+		_reset_player_play_timer()
+	if player_play_time_room_id == "":
+		player_play_time_room_id = assigned_room_id
 	if network_client.local_player_id != "":
 		local_player_id = network_client.local_player_id
 	else:
@@ -126,6 +134,9 @@ func _on_connection_lost(reason: String) -> void:
 	if is_returning_to_lobby:
 		return
 
+	# Disconnected time is not active play time. Preserve the accumulated
+	# value so rejoining the same room resumes the player's clock.
+	_pause_player_play_timer()
 	# Throw away the live match scene before reconnecting to the lobby
 	if game_instance != null and is_instance_valid(game_instance):
 		game_instance.queue_free()
@@ -137,10 +148,12 @@ func _on_connection_lost(reason: String) -> void:
 	_clear_preview_remote_players()
 	_begin_connection_attempt(Localization.translate("reconnecting") % reason)
 
-func _on_match_ended(_message: Dictionary) -> void:
+func _on_match_ended(message: Dictionary) -> void:
+	_pause_player_play_timer()
 	if has_started_game and game_instance != null and is_instance_valid(game_instance):
 		return
 
+	_apply_leaderboard_snapshot(message)
 	_exit_to_dashboard("match_ended", false)
 
 func _on_match_left(_message: Dictionary) -> void:
@@ -159,6 +172,7 @@ func _on_dashboard_button_pressed() -> void:
 	_return_to_lobby()
 
 func _start_game() -> void:
+	_start_player_play_timer()
 	has_started_game = true
 	_set_status_text(Localization.translate("joining_match"))
 	_set_room_ready_ui_visible(false)
@@ -316,12 +330,15 @@ func _apply_preview_remote_player_state(message: Dictionary) -> void:
 
 	var has_health := NetworkClient.has_authoritative_health(message)
 	var new_health := remote_body.health
-	var authoritative_is_dead := bool(message.get("is_dead", remote_body.is_dead))
+	var is_respawn_state := NetworkClient.is_respawn_state(message)
+	var authoritative_is_dead := bool(message.get("is_dead", false if is_respawn_state else remote_body.is_dead))
 	if has_health:
 		new_health = NetworkClient.get_authoritative_health(message, remote_body.health)
+	elif is_respawn_state:
+		new_health = remote_body.max_health
 	if has_health and not message.has("is_dead"):
 		authoritative_is_dead = new_health <= 0
-	if has_health or message.has("is_dead"):
+	if has_health or message.has("is_dead") or is_respawn_state:
 		remote_body.apply_authoritative_health_state(
 			new_health,
 			authoritative_is_dead,
@@ -331,7 +348,9 @@ func _apply_preview_remote_player_state(message: Dictionary) -> void:
 		)
 
 	var aim_angle_degrees := NAN
-	if message.has("angle"):
+	if message.has("aim_frame") and NetworkClient.is_valid_aim_frame(message["aim_frame"]):
+		aim_angle_degrees = float(int(message["aim_frame"])) * 45.0
+	elif message.has("angle"):
 		aim_angle_degrees = NetworkClient.get_finite_float(message["angle"], NAN)
 	elif message.has("rotation"):
 		aim_angle_degrees = rad_to_deg(NetworkClient.get_finite_float(message["rotation"], 0.0))
@@ -340,7 +359,7 @@ func _apply_preview_remote_player_state(message: Dictionary) -> void:
 
 	if has_position:
 		var remote_position := NetworkClient.get_finite_vector2(message, "x", "y")
-		var is_respawn_snap := was_dead and not authoritative_is_dead and has_health and new_health > 0
+		var is_respawn_snap := was_dead and not authoritative_is_dead and (has_health or is_respawn_state) and new_health > 0
 		if is_respawn_snap:
 			# Respawns should snap so players do not slide from the death spot
 			remote_body.snap_remote_snapshot(remote_position, aim_angle_degrees)
@@ -403,6 +422,10 @@ func _exit_to_dashboard(reason: String, should_notify_server: bool = true) -> vo
 		return
 
 	is_returning_to_lobby = true
+	var play_time_ms := get_player_play_time_ms()
+	var player_stats := _get_local_player_stats()
+	var exit_room_id := network_client.local_room_id
+	var exit_player_id := local_player_id if local_player_id != "" else network_client.local_player_id
 	if should_notify_server and _is_in_room():
 		network_client.send_leave_match()
 		network_client.clear_match_state()
@@ -414,6 +437,25 @@ func _exit_to_dashboard(reason: String, should_notify_server: bool = true) -> vo
 			"type": "EXIT_GAME",
 			"reason": reason
 		}
+		if play_time_ms > 0:
+			payload["room_id"] = exit_room_id
+			payload["player_id"] = exit_player_id
+			payload["kills"] = int(player_stats.get("kills", 0))
+			payload["deaths"] = int(player_stats.get("deaths", 0))
+			payload["death"] = int(player_stats.get("deaths", 0))
+			payload["score"] = int(player_stats.get("score", 0))
+			payload["play_time_ms"] = play_time_ms
+			payload["play_time_seconds"] = float(play_time_ms) / 1000.0
+			payload["match_summary"] = {
+				"room_id": exit_room_id,
+				"player_id": exit_player_id,
+				"kills": int(player_stats.get("kills", 0)),
+				"deaths": int(player_stats.get("deaths", 0)),
+				"death": int(player_stats.get("deaths", 0)),
+				"score": int(player_stats.get("score", 0)),
+				"play_time_ms": play_time_ms,
+				"play_time_seconds": float(play_time_ms) / 1000.0
+			}
 		JavaScriptBridge.eval(
 			"window.parent.postMessage(%s, window.location.origin); if (window.parent === window) { window.location.href = '%s'; }" % [JSON.stringify(payload), LOBBY_URL],
 			false
@@ -425,7 +467,24 @@ func _exit_to_dashboard(reason: String, should_notify_server: bool = true) -> vo
 func _is_in_room() -> bool:
 	return network_client != null and network_client.is_in_room()
 
+func _get_local_player_stats() -> Dictionary:
+	if leaderboard_ui == null:
+		return {"kills": 0, "deaths": 0, "score": 0}
+
+	var target_player_id := local_player_id if local_player_id != "" else network_client.local_player_id
+	var entry_variant: Variant = leaderboard_ui.call("get_entry_for_player", target_player_id)
+	if typeof(entry_variant) != TYPE_DICTIONARY:
+		return {"kills": 0, "deaths": 0, "score": 0}
+
+	var entry := entry_variant as Dictionary
+	return {
+		"kills": int(entry.get("kills", 0)),
+		"deaths": int(entry.get("deaths", 0)),
+		"score": int(entry.get("score", 0))
+	}
+
 func _cleanup_match_state() -> void:
+	_pause_player_play_timer()
 	is_room_ready = false
 	local_player_id = ""
 	_clear_preview_remote_players()
@@ -452,6 +511,7 @@ func _reset_after_match_exit() -> void:
 
 	game_instance = null
 	has_started_game = false
+	_reset_player_play_timer()
 	is_room_ready = false
 	is_returning_to_lobby = false
 	local_player_id = network_client.local_player_id
@@ -464,3 +524,32 @@ func _reset_after_match_exit() -> void:
 
 	if network_client != null:
 		network_client.request_room_reservation()
+
+func get_player_play_time_ms() -> int:
+	var elapsed_ms := player_play_time_accumulated_ms
+	if player_play_time_started_msec >= 0:
+		elapsed_ms += maxi(Time.get_ticks_msec() - player_play_time_started_msec, 0)
+	return maxi(elapsed_ms, 0)
+
+func get_player_play_time_seconds() -> float:
+	return float(get_player_play_time_ms()) / 1000.0
+
+func _start_player_play_timer() -> void:
+	if player_play_time_started_msec >= 0:
+		return
+
+	if player_play_time_room_id == "":
+		player_play_time_room_id = network_client.local_room_id.strip_edges()
+	player_play_time_started_msec = Time.get_ticks_msec()
+
+func _pause_player_play_timer() -> void:
+	if player_play_time_started_msec < 0:
+		return
+
+	player_play_time_accumulated_ms += maxi(Time.get_ticks_msec() - player_play_time_started_msec, 0)
+	player_play_time_started_msec = -1
+
+func _reset_player_play_timer() -> void:
+	player_play_time_accumulated_ms = 0
+	player_play_time_started_msec = -1
+	player_play_time_room_id = ""
