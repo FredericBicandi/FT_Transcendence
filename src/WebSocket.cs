@@ -6,10 +6,6 @@ using System.Text;
 
 public sealed class Ws
 {
-    private static readonly TimeSpan HeartbeatTimeout = TimeSpan.FromMinutes(1);
-    private static readonly TimeSpan PendingJoinTimeout = TimeSpan.FromMinutes(10);
-    private static readonly TimeSpan HeartbeatCheckInterval = TimeSpan.FromSeconds(5);
-    private static readonly TimeSpan IdleTimeout = TimeSpan.FromSeconds(60);
     private static readonly TimeSpan TimeSyncInterval = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan EndedRoomRetention = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan SendLockTimeout = TimeSpan.FromSeconds(2);
@@ -26,12 +22,9 @@ public sealed class Ws
     private const int MinPlayerLevel = 0;
     private const int MaxPlayerLevel = 1000;
     private const double DefaultPlayerHealth = 100.0;
-    private const double DefaultSpawnX = 0.0;
-    private const double DefaultSpawnY = 0.0;
-    internal const double DefaultSpawnAngle = 0.0;
     private const double MaxHitDamage = DefaultPlayerHealth;
-    private const double DefaultMedkitHealAmount = 75.0;
-    private const double MaxMedkitHealAmount = DefaultMedkitHealAmount;
+    private const double MedkitPickupDistance = 64.0;
+    private const double PlayerPositionTolerance = 64.0;
     private const double MinRocketLauncherDamage = 1.0;
     private const double MaxRocketLauncherDamage = 80.0;
     private const string MedkitHealRequest = "medkit_heal";
@@ -95,7 +88,6 @@ public sealed class Ws
         Console.WriteLine($"Socket connected: {connectionId}");
 
         using var connectionLifetime = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
-        var heartbeatTask = MonitorHeartbeatAsync(client, connectionLifetime.Token);
 
         try
         {
@@ -120,14 +112,6 @@ public sealed class Ws
             if (client.HasPlayerId)
                 Helper.RemovePlayer(clients, client.PlayerId);
             var disconnectedRoom = RemovePlayerFromRoom(client);
-
-            try
-            {
-                await heartbeatTask;
-            }
-            catch (Exception ex) when (IsExpectedWebSocketDisconnect(ex))
-            {
-            }
 
             await CloseSocketAsync(client, WebSocketCloseStatus.NormalClosure, "Closing");
 
@@ -392,44 +376,6 @@ public sealed class Ws
         await Task.WhenAll(sendTasks);
     }
 
-    // Closes stale sockets when the client stops sending gameplay messages.
-    private async Task MonitorHeartbeatAsync(ClientConnection client, CancellationToken cancellationToken)
-    {
-        using var timer = new PeriodicTimer(HeartbeatCheckInterval);
-
-        while (await timer.WaitForNextTickAsync(cancellationToken))
-        {
-            if (client.Socket.State != WebSocketState.Open)
-                return;
-
-            if (client.IsIdle)
-            {
-                var idleDuration = DateTimeOffset.UtcNow - client.IdleSinceUtc;
-
-                if (idleDuration < IdleTimeout)
-                    continue;
-
-                Console.WriteLine($"Idle timeout for {client.PlayerId}: idle for {idleDuration.TotalSeconds:F0}s");
-
-                await CloseSocketAsync(client, WebSocketCloseStatus.PolicyViolation, "Idle timeout");
-
-                return;
-            }
-
-            var inactiveDuration = DateTimeOffset.UtcNow - client.LastActivityUtc;
-            var timeout = client.HasJoinedGame ? HeartbeatTimeout : PendingJoinTimeout;
-
-            if (inactiveDuration < timeout)
-                continue;
-
-            Console.WriteLine($"Heartbeat timeout for {client.PlayerId}: idle for {inactiveDuration.TotalSeconds:F0}s");
-
-            await CloseSocketAsync(client, WebSocketCloseStatus.PolicyViolation, "Heartbeat timeout");
-
-            return;
-        }
-    }
-
     // Sends one JSON message while serializing writes per socket.
     public Task SendJsonAsync(ClientConnection client, object payload)
     {
@@ -643,6 +589,12 @@ public sealed class Ws
                 return;
             }
 
+            if (client.HasPlayerId &&
+                !ValidateOptionalSessionFields(root, message, client))
+            {
+                return;
+            }
+
             if (type == "on_join")
             {
                 if (!client.HasPlayerId || !client.HasRoom)
@@ -671,10 +623,10 @@ public sealed class Ws
                     return;
                 }
 
-                if (!TryReadPlayerState(root, message, client.PlayerId, "on_join", out var x, out var y, out var angle, out var weapon))
+                if (!TryReadPlayerState(root, message, client.PlayerId, "on_join", out var x, out var y, out var angle, out var aimFrame, out var weapon))
                     return;
 
-                var health = client.MarkJoined(x, y, angle, weapon);
+                var health = client.MarkJoined(x, y, angle, aimFrame, weapon);
                 room.MarkPlayerJoined(client.PlayerId, client.PlayerName, client.Level);
                 Console.WriteLine($"On join from {client.PlayerId}: name={client.PlayerName}, level={client.Level}, x={x}, y={y}, angle={angle}, weapon={weapon}, health={health}");
 
@@ -701,6 +653,7 @@ public sealed class Ws
                     x,
                     y,
                     angle,
+                    aim_frame = aimFrame,
                     weapon_type = weapon,
                     health,
                     is_dead = false
@@ -713,6 +666,8 @@ public sealed class Ws
                     leaderboard = room.LeaderboardSnapshot()
                 });
 
+                await SendExistingMedkitsAsync(client, room);
+
                 return;
             }
 
@@ -723,8 +678,6 @@ public sealed class Ws
 
                 if (!TryReadChatMessage(root, message, client, out var chat))
                     return;
-
-                client.MarkHeartbeat();
 
                 await BroadcastToRoomAsync(client.RoomId, chat.ToPayload(client.RoomId));
 
@@ -746,8 +699,6 @@ public sealed class Ws
                 if (!TryReadLeaderboardRequest(root, message, client, out var roomId))
                     return;
 
-                client.MarkHeartbeat();
-
                 if (!rooms.TryGetValue(roomId, out var room))
                 {
                     Console.WriteLine($"leaderboard_request for missing room from {client.PlayerId}: {message}");
@@ -766,32 +717,18 @@ public sealed class Ws
                 return;
             }
 
-            if (type == "ping")
-            {
-                client.MarkHeartbeat();
-                await SendJsonAsync(client, new
-                {
-                    type = "pong"
-                });
-
-                return;
-            }
-
-            if (type == "pong")
-            {
-                client.MarkHeartbeat();
-                return;
-            }
-
             if (type == "move")
             {
                 if (!await RequireActiveJoinedAsync(client, type, message))
                     return;
 
-                if (!TryReadMove(root, message, client.PlayerId, out var x, out var y, out var angle))
+                if (!client.IsAlive)
                     return;
 
-                client.MarkMovement(x, y, angle);
+                if (!TryReadMove(root, message, client.PlayerId, out var x, out var y, out var angle, out var aimFrame))
+                    return;
+
+                client.MarkMovement(x, y, angle, aimFrame);
 
                 await BroadcastToRoomAsync(client.RoomId, new
                 {
@@ -799,32 +736,8 @@ public sealed class Ws
                     player_id = client.PlayerId,
                     x,
                     y,
-                    angle
-                });
-
-                return;
-            }
-
-            if (type == "heartbeat")
-            {
-                client.MarkHeartbeat();
-                if (!client.HasJoinedGame)
-                    return;
-
-                if (!rooms.TryGetValue(client.RoomId, out var room) ||
-                    !await EnsureRoomRunningAsync(room))
-                {
-                    return;
-                }
-
-                var snapshot = client.GetAuthoritativeHealthSnapshot();
-
-                await BroadcastToRoomAsync(room, new
-                {
-                    type = "player_heartbeat",
-                    player_id = client.PlayerId,
-                    health = snapshot.Health,
-                    is_dead = snapshot.IsDead
+                    angle,
+                    aim_frame = aimFrame
                 });
 
                 return;
@@ -835,16 +748,20 @@ public sealed class Ws
                 if (!await RequireActiveJoinedAsync(client, type, message))
                     return;
 
-                if (!TryReadAngle(root, message, client.PlayerId, out var angle))
+                if (!client.IsAlive)
                     return;
 
-                client.MarkAngle(angle);
+                if (!TryReadAngle(root, message, client.PlayerId, out var angle, out var aimFrame))
+                    return;
+
+                client.MarkAngle(angle, aimFrame);
 
                 await BroadcastToRoomAsync(client.RoomId, new
                 {
                     type = "player_angle",
                     player_id = client.PlayerId,
-                    angle
+                    angle,
+                    aim_frame = aimFrame
                 });
 
                 return;
@@ -868,33 +785,113 @@ public sealed class Ws
                 if (!await RequireActiveJoinedAsync(client, type, message))
                     return;
 
-                if (!TryReadHeal(root, message, client.PlayerId, out var heal))
+                if (!rooms.TryGetValue(client.RoomId, out var room) ||
+                    !TryReadHeal(root, message, client, out var heal))
                     return;
 
-                var result = client.ApplyHeal(heal.Amount);
-                if (result.Heal <= 0)
+                if (!client.TryGetStateSnapshot(out var state) ||
+                    state.IsDead ||
+                    !PositionsWithin(state.X, state.Y, heal.X, heal.Y, PlayerPositionTolerance) ||
+                    state.Health != heal.CurrentHealth ||
+                    (heal.WeaponType is not null && state.Weapon != heal.WeaponType))
                 {
-                    Console.WriteLine($"Rejected heal from {client.PlayerId}: player is dead, full health, or heal amount is zero");
+                    Console.WriteLine($"Rejected stale or invalid heal state from {client.PlayerId}: {message}");
                     return;
                 }
 
+                if (!room.TryConsumeMedkit(
+                        heal.MedkitId,
+                        heal.X,
+                        heal.Y,
+                        MedkitPickupDistance,
+                        out var medkit))
+                {
+                    Console.WriteLine($"Rejected missing, distant, or duplicate medkit {heal.MedkitId} from {client.PlayerId}");
+                    return;
+                }
+
+                var result = client.ApplyHeal(DefaultPlayerHealth);
+                if (result.Heal <= 0)
+                {
+                    room.RestoreMedkit(medkit);
+                    Console.WriteLine($"Rejected heal from {client.PlayerId}: player is dead or already at full health");
+                    return;
+                }
+
+                client.MarkAngle(heal.Angle, heal.AimFrame);
+
                 await BroadcastToRoomAsync(client.RoomId, new
                 {
-                    type = "player_health",
-                    request = heal.Request,
+                    type = "medkit_removed",
+                    medkit_id = heal.MedkitId
+                });
+
+                await BroadcastToRoomAsync(client.RoomId, new
+                {
+                    type = "heal",
+                    request = MedkitHealRequest,
+                    source = MedkitSource,
+                    medkit_id = heal.MedkitId,
                     player_id = client.PlayerId,
+                    x = state.X,
+                    y = state.Y,
                     health = result.Health,
-                    new_health = result.Health,
-                    current_health = result.Health,
-                    player_health = result.Health,
-                    previous_health = result.PreviousHealth,
-                    heal = result.Heal,
                     heal_amount = result.Heal,
-                    amount = result.Heal,
-                    requested_amount = heal.Amount,
-                    source = heal.Source,
                     is_dead = result.IsDead,
-                    reason = heal.Request
+                    angle = heal.Angle,
+                    aim_frame = heal.AimFrame
+                });
+
+                return;
+            }
+
+            if (type == "player_death")
+            {
+                if (!await RequireActiveJoinedAsync(client, type, message))
+                    return;
+
+                if (!TryReadCoordinates(root, message, client.PlayerId, "player_death", out var x, out var y) ||
+                    !client.TryGetStateSnapshot(out var state) ||
+                    !PositionsWithin(state.X, state.Y, x, y, PlayerPositionTolerance))
+                {
+                    Console.WriteLine($"Rejected invalid player_death from {client.PlayerId}: {message}");
+                    return;
+                }
+
+                if (!rooms.TryGetValue(client.RoomId, out var room))
+                    return;
+
+                var death = client.ApplyDeath();
+                if (!death.BecameDead)
+                    return;
+
+                room.RecordDeath(client.PlayerId);
+
+                await BroadcastToRoomAsync(room, new
+                {
+                    type = "player_health",
+                    player_id = client.PlayerId,
+                    health = death.Health,
+                    damage = death.Damage,
+                    is_dead = true,
+                    reason = "player_death"
+                });
+
+                await BroadcastToRoomAsync(room, new
+                {
+                    type = "player_death",
+                    player_id = client.PlayerId,
+                    x = state.X,
+                    y = state.Y
+                });
+
+                await SpawnDeathMedkitAsync(room, client, state);
+
+                await BroadcastToRoomAsync(room, new
+                {
+                    type = "leaderboard_update",
+                    room_id = room.RoomId,
+                    leaderboard = room.LeaderboardSnapshot()
                 });
 
                 return;
@@ -912,7 +909,7 @@ public sealed class Ws
                 if (!await RequireActiveJoinedAsync(client, type, message))
                     return;
 
-                if (!TryReadOptionalRespawnPosition(root, message, client.PlayerId, out var spawnX, out var spawnY))
+                if (!TryReadRespawn(root, message, client.PlayerId, out var spawnX, out var spawnY, out var angle, out var aimFrame, out var weapon))
                     return;
 
                 // Respawn must only fire after death. Without this, a living player at low HP could
@@ -923,32 +920,48 @@ public sealed class Ws
                     return;
                 }
 
-                var result = client.Respawn(spawnX, spawnY);
+                var result = client.Respawn(spawnX, spawnY, angle, aimFrame, weapon);
 
                 await BroadcastToRoomAsync(client.RoomId, new
                 {
-                    type = "player_health",
+                    type = "player_respawned",
                     player_id = client.PlayerId,
                     health = result.Health,
                     is_dead = result.IsDead,
-                    reason = "respawn",
                     x = result.X,
                     y = result.Y,
-                    angle = result.Angle
+                    angle = result.Angle,
+                    aim_frame = result.AimFrame,
+                    weapon_type = result.Weapon
                 });
+
+                if (rooms.TryGetValue(client.RoomId, out var room))
+                {
+                    foreach (var medkit in room.RemoveMedkitsForOwner(client.PlayerId))
+                    {
+                        await BroadcastToRoomAsync(room, new
+                        {
+                            type = "medkit_removed",
+                            medkit_id = medkit.MedkitId
+                        });
+                    }
+                }
 
                 return;
             }
 
-            if (type == "idle" || type == "idle_heartbeat")
+            if (type == "idle")
             {
                 if (!await RequireActiveJoinedAsync(client, type, message))
                     return;
 
-                if (!TryReadIdle(root, message, client.PlayerId, out var x, out var y, out var angle))
+                if (!client.IsAlive)
                     return;
 
-                client.MarkIdle(x, y, angle);
+                if (!TryReadIdle(root, message, client.PlayerId, out var x, out var y, out var angle, out var aimFrame))
+                    return;
+
+                client.MarkIdle(x, y, angle, aimFrame);
 
                 await BroadcastToRoomAsync(client.RoomId, new
                 {
@@ -956,7 +969,8 @@ public sealed class Ws
                     player_id = client.PlayerId,
                     x,
                     y,
-                    angle
+                    angle,
+                    aim_frame = aimFrame
                 });
 
                 return;
@@ -1060,11 +1074,47 @@ public sealed class Ws
                 x = state.X,
                 y = state.Y,
                 angle = state.Angle,
+                aim_frame = state.AimFrame,
                 weapon_type = state.Weapon,
                 health = state.Health,
                 is_dead = state.IsDead
             });
         }
+    }
+
+    private async Task SendExistingMedkitsAsync(ClientConnection client, GameRoom room)
+    {
+        foreach (var medkit in room.MedkitsSnapshot())
+        {
+            await SendJsonAsync(client, new
+            {
+                type = "medkit_spawned",
+                medkit_id = medkit.MedkitId,
+                owner_player_id = medkit.OwnerPlayerId,
+                x = medkit.X,
+                y = medkit.Y
+            });
+        }
+    }
+
+    private async Task SpawnDeathMedkitAsync(
+        GameRoom room,
+        ClientConnection player,
+        PlayerState state)
+    {
+        if (!player.TryClaimDeathMedkit())
+            return;
+
+        var medkit = room.SpawnMedkit(player.PlayerId, state.X, state.Y);
+
+        await BroadcastToRoomAsync(room, new
+        {
+            type = "medkit_spawned",
+            medkit_id = medkit.MedkitId,
+            owner_player_id = medkit.OwnerPlayerId,
+            x = medkit.X,
+            y = medkit.Y
+        });
     }
 
     private static bool RequireJoined(ClientConnection client, string messageType, string message)
@@ -1176,6 +1226,19 @@ public sealed class Ws
 
         if (result.IsDead)
         {
+            if (target.TryGetStateSnapshot(out var deadState))
+            {
+                await BroadcastToRoomAsync(room, new
+                {
+                    type = "player_death",
+                    player_id = target.PlayerId,
+                    x = deadState.X,
+                    y = deadState.Y
+                });
+
+                await SpawnDeathMedkitAsync(room, target, deadState);
+            }
+
             await BroadcastToRoomAsync(room, new
             {
                 type = "kill_feed",
@@ -1218,79 +1281,90 @@ public sealed class Ws
     private static bool TryReadHeal(
         JsonElement root,
         string message,
-        string playerId,
-        out HealRequest heal)
+        ClientConnection client,
+        out MedkitHealRequestData heal)
     {
         heal = default;
 
         if (!Helper.TryGetString(root, "request", out var request) ||
-            !string.Equals(request, MedkitHealRequest, StringComparison.OrdinalIgnoreCase))
+            request != MedkitHealRequest ||
+            !Helper.TryGetString(root, "medkit_id", out var medkitId) ||
+            medkitId.Length > MaxShotIdLength ||
+            !Helper.TryGetString(root, "player_id", out var playerId) ||
+            playerId != client.PlayerId)
         {
-            Console.WriteLine($"Invalid heal request from {playerId}: {message}");
+            Console.WriteLine($"Invalid heal identity or medkit from {client.LogId}: {message}");
             return false;
         }
 
-        var source = MedkitSource;
-        if (root.TryGetProperty("source", out _))
+        if (root.TryGetProperty("source", out _) &&
+            (!Helper.TryGetString(root, "source", out var source) ||
+             source != MedkitSource))
         {
-            if (!Helper.TryGetString(root, "source", out source) ||
-                !string.Equals(source, MedkitSource, StringComparison.OrdinalIgnoreCase))
-            {
-                Console.WriteLine($"Invalid heal source from {playerId}: {message}");
-                return false;
-            }
-
-            source = MedkitSource;
-        }
-
-        var amount = DefaultMedkitHealAmount;
-        if (root.TryGetProperty("heal_amount", out _) || root.TryGetProperty("amount", out _))
-        {
-            if (!Helper.TryGetNumber(root, "heal_amount", out amount) &&
-                !Helper.TryGetNumber(root, "amount", out amount))
-            {
-                Console.WriteLine($"Invalid heal amount from {playerId}: {message}");
-                return false;
-            }
-        }
-
-        if (!double.IsFinite(amount) || amount <= 0)
-        {
-            Console.WriteLine($"Invalid heal amount from {playerId}: {message}");
+            Console.WriteLine($"Invalid heal source from {client.PlayerId}: {message}");
             return false;
         }
 
-        amount = Math.Clamp(amount, 0, MaxMedkitHealAmount);
+        if (!TryReadCoordinates(root, message, client.PlayerId, "heal", out var x, out var y) ||
+            !TryReadAim(root, message, client.PlayerId, "heal", out var angle, out var aimFrame) ||
+            !Helper.TryGetNumber(root, "current_health", out var currentHealth) ||
+            !double.IsFinite(currentHealth) ||
+            currentHealth < 0 ||
+            currentHealth > DefaultPlayerHealth ||
+            !root.TryGetProperty("is_dead", out var isDeadElement) ||
+            isDeadElement.ValueKind is not JsonValueKind.True and not JsonValueKind.False ||
+            isDeadElement.GetBoolean())
+        {
+            Console.WriteLine($"Invalid heal state from {client.PlayerId}: {message}");
+            return false;
+        }
 
-        heal = new HealRequest(request, source, amount);
+        string? weaponType = null;
+        if (root.TryGetProperty("weapon_type", out _) ||
+            root.TryGetProperty("weapon", out _))
+        {
+            if (!TryReadWeapon(root, message, client.PlayerId, "heal", out var parsedWeapon))
+                return false;
+
+            weaponType = parsedWeapon;
+        }
+
+        if (root.TryGetProperty("timestamp", out var timestampElement) &&
+            timestampElement.ValueKind is not JsonValueKind.Number and not JsonValueKind.String)
+        {
+            Console.WriteLine($"Invalid heal timestamp from {client.PlayerId}: {message}");
+            return false;
+        }
+
+        heal = new MedkitHealRequestData(
+            medkitId,
+            x,
+            y,
+            angle,
+            aimFrame,
+            currentHealth,
+            weaponType);
         return true;
     }
 
-    private static bool TryReadOptionalRespawnPosition(
+    private static bool TryReadRespawn(
         JsonElement root,
         string message,
         string playerId,
         out double spawnX,
-        out double spawnY)
+        out double spawnY,
+        out double angle,
+        out int aimFrame,
+        out string weapon)
     {
-        spawnX = DefaultSpawnX;
-        spawnY = DefaultSpawnY;
+        angle = default;
+        aimFrame = default;
+        weapon = string.Empty;
 
-        var hasX = root.TryGetProperty("x", out _);
-        var hasY = root.TryGetProperty("y", out _);
-
-        if (!hasX && !hasY)
-            return true;
-
-        if (!hasX || !hasY ||
-            !Helper.TryGetNumber(root, "x", out spawnX) ||
-            !Helper.TryGetNumber(root, "y", out spawnY) ||
-            !double.IsFinite(spawnX) ||
-            !double.IsFinite(spawnY))
-        {
-            Console.WriteLine($"Invalid respawn position from {playerId}: {message}");
+        if (!TryReadCoordinates(root, message, playerId, "respawn", out spawnX, out spawnY) ||
+            !TryReadAim(root, message, playerId, "respawn", out angle, out aimFrame) ||
+            !TryReadWeapon(root, message, playerId, "respawn", out weapon))
             return false;
-        }
 
         return true;
     }
@@ -1324,23 +1398,16 @@ public sealed class Ws
         string playerId,
         out double x,
         out double y,
-        out double angle)
+        out double angle,
+        out int aimFrame)
     {
         angle = default;
+        aimFrame = default;
 
         if (!TryReadCoordinates(root, message, playerId, "move", out x, out y))
             return false;
 
-        if (!Helper.TryGetNumber(root, "angle", out angle) ||
-            !double.IsFinite(angle) ||
-            angle < MinAimAngleDegrees ||
-            angle >= MaxAimAngleDegrees)
-        {
-            Console.WriteLine($"Invalid move angle from {playerId}: {message}");
-            return false;
-        }
-
-        return true;
+        return TryReadAim(root, message, playerId, "move", out angle, out aimFrame);
     }
 
     private static bool TryReadPlayerState(
@@ -1351,22 +1418,18 @@ public sealed class Ws
         out double x,
         out double y,
         out double angle,
+        out int aimFrame,
         out string weapon)
     {
         angle = default;
+        aimFrame = default;
         weapon = string.Empty;
 
         if (!TryReadCoordinates(root, message, playerId, messageType, out x, out y))
             return false;
 
-        if (!Helper.TryGetNumber(root, "angle", out angle) ||
-            !double.IsFinite(angle) ||
-            angle < MinAimAngleDegrees ||
-            angle >= MaxAimAngleDegrees)
-        {
-            Console.WriteLine($"Invalid {messageType} angle from {playerId}: {message}");
+        if (!TryReadAim(root, message, playerId, messageType, out angle, out aimFrame))
             return false;
-        }
 
         if (!TryReadWeapon(root, message, playerId, messageType, out weapon))
             return false;
@@ -1487,6 +1550,39 @@ public sealed class Ws
 
     private static bool TryReadRoomId(JsonElement root, out string roomId) =>
         Helper.TryGetString(root, "room_id", out roomId);
+
+    private static bool ValidateOptionalSessionFields(
+        JsonElement root,
+        string message,
+        ClientConnection client)
+    {
+        if (root.TryGetProperty("player_id", out _) &&
+            (!Helper.TryGetString(root, "player_id", out var playerId) ||
+             playerId != client.PlayerId))
+        {
+            Console.WriteLine($"Rejected mismatched player identity from {client.LogId}: {message}");
+            return false;
+        }
+
+        if (root.TryGetProperty("room_id", out _) &&
+            (!TryReadRoomId(root, out var roomId) ||
+             !client.HasRoom ||
+             roomId != client.RoomId))
+        {
+            Console.WriteLine($"Rejected mismatched room identity from {client.LogId}: {message}");
+            return false;
+        }
+
+        if (root.TryGetProperty("player_name", out _) &&
+            (!Helper.TryGetString(root, "player_name", out var playerName) ||
+             playerName != client.PlayerName))
+        {
+            Console.WriteLine($"Rejected mismatched player name from {client.LogId}: {message}");
+            return false;
+        }
+
+        return true;
+    }
 
     private static bool TryReadMessageKind(JsonElement root, out string type) =>
         Helper.TryGetString(root, "type", out type) ||
@@ -1692,7 +1788,9 @@ public sealed class Ws
 
         double angle;
         if (!Helper.TryGetNumber(root, "angle", out angle) ||
-            !double.IsFinite(angle))
+            !double.IsFinite(angle) ||
+            angle < MinAimAngleDegrees ||
+            angle >= MaxAimAngleDegrees)
         {
             Console.WriteLine($"Invalid shoot angle from {playerId}: {message}");
             return false;
@@ -1749,18 +1847,10 @@ public sealed class Ws
         JsonElement root,
         string message,
         string playerId,
-        out double angle)
+        out double angle,
+        out int aimFrame)
     {
-        if (!Helper.TryGetNumber(root, "angle", out angle) ||
-            !double.IsFinite(angle) ||
-            angle < MinAimAngleDegrees ||
-            angle >= MaxAimAngleDegrees)
-        {
-            Console.WriteLine($"Invalid angle from {playerId}: {message}");
-            return false;
-        }
-
-        return true;
+        return TryReadAim(root, message, playerId, "angle", out angle, out aimFrame);
     }
 
     private static bool TryReadIdle(
@@ -1769,23 +1859,53 @@ public sealed class Ws
         string playerId,
         out double x,
         out double y,
-        out double angle)
+        out double angle,
+        out int aimFrame)
     {
         angle = default;
+        aimFrame = default;
 
         if (!TryReadCoordinates(root, message, playerId, "idle", out x, out y))
             return false;
 
+        return TryReadAim(root, message, playerId, "idle", out angle, out aimFrame);
+    }
+
+    private static bool TryReadAim(
+        JsonElement root,
+        string message,
+        string playerId,
+        string messageType,
+        out double angle,
+        out int aimFrame)
+    {
+        angle = default;
+        aimFrame = default;
+
         if (!Helper.TryGetNumber(root, "angle", out angle) ||
             !double.IsFinite(angle) ||
-            angle < MinAimAngleDegrees ||
-            angle >= MaxAimAngleDegrees)
+            !TryReadInt(root, "aim_frame", out aimFrame) ||
+            aimFrame < 0 ||
+            aimFrame > 7 ||
+            angle != aimFrame * 45.0)
         {
-            Console.WriteLine($"Invalid idle angle from {playerId}: {message}");
+            Console.WriteLine($"Invalid {messageType} aim from {playerId}: {message}");
             return false;
         }
 
         return true;
+    }
+
+    private static bool PositionsWithin(
+        double firstX,
+        double firstY,
+        double secondX,
+        double secondY,
+        double maximumDistance)
+    {
+        var deltaX = firstX - secondX;
+        var deltaY = firstY - secondY;
+        return deltaX * deltaX + deltaY * deltaY <= maximumDistance * maximumDistance;
     }
 
     // Sends a payload to the clients currently connected to a room.
@@ -1830,6 +1950,7 @@ public sealed class GameRoom
     private readonly ConcurrentDictionary<string, byte> playerIds = new();
     private readonly ConcurrentDictionary<string, byte> joinedPlayerIds = new();
     private readonly ConcurrentDictionary<string, LeaderboardEntry> leaderboard = new();
+    private readonly Dictionary<string, MedkitState> medkits = new(StringComparer.Ordinal);
 
     private GameRoom(string roomId)
     {
@@ -1935,6 +2056,73 @@ public sealed class GameRoom
             .ThenBy(entry => entry.PlayerId, StringComparer.Ordinal)
             .ToArray();
 
+    public MedkitState SpawnMedkit(string ownerPlayerId, double x, double y)
+    {
+        lock (syncRoot)
+        {
+            var medkit = new MedkitState(
+                $"medkit-{Guid.NewGuid():N}",
+                ownerPlayerId,
+                x,
+                y);
+            medkits[medkit.MedkitId] = medkit;
+            return medkit;
+        }
+    }
+
+    public MedkitState[] MedkitsSnapshot()
+    {
+        lock (syncRoot)
+        {
+            return medkits.Values.ToArray();
+        }
+    }
+
+    public bool TryConsumeMedkit(
+        string medkitId,
+        double playerX,
+        double playerY,
+        double maximumDistance,
+        out MedkitState medkit)
+    {
+        lock (syncRoot)
+        {
+            if (!medkits.TryGetValue(medkitId, out medkit))
+                return false;
+
+            var deltaX = medkit.X - playerX;
+            var deltaY = medkit.Y - playerY;
+            if (deltaX * deltaX + deltaY * deltaY > maximumDistance * maximumDistance)
+                return false;
+
+            medkits.Remove(medkitId);
+            return true;
+        }
+    }
+
+    public void RestoreMedkit(MedkitState medkit)
+    {
+        lock (syncRoot)
+        {
+            medkits.TryAdd(medkit.MedkitId, medkit);
+        }
+    }
+
+    public MedkitState[] RemoveMedkitsForOwner(string ownerPlayerId)
+    {
+        lock (syncRoot)
+        {
+            var ownedMedkits = medkits.Values
+                .Where(medkit => medkit.OwnerPlayerId == ownerPlayerId)
+                .ToArray();
+
+            foreach (var medkit in ownedMedkits)
+                medkits.Remove(medkit.MedkitId);
+
+            return ownedMedkits;
+        }
+    }
+
     public void RecordHit(string shooterPlayerId, string targetPlayerId, double damage, bool killed)
     {
         leaderboard.AddOrUpdate(
@@ -2017,10 +2205,20 @@ public readonly record struct HitRequest(
     double Damage,
     string? ShotId);
 
-public readonly record struct HealRequest(
-    string Request,
-    string Source,
-    double Amount);
+public readonly record struct MedkitHealRequestData(
+    string MedkitId,
+    double X,
+    double Y,
+    double Angle,
+    int AimFrame,
+    double CurrentHealth,
+    string? WeaponType);
+
+public readonly record struct MedkitState(
+    string MedkitId,
+    string OwnerPlayerId,
+    double X,
+    double Y);
 
 public readonly record struct ShootRequest(
     string? WeaponType,
@@ -2061,13 +2259,32 @@ public readonly record struct ShotTargetKey(string ShotId, string TargetPlayerId
 
 public readonly record struct HealthSnapshot(double Health, bool IsDead);
 
-public readonly record struct RespawnResult(double Health, bool IsDead, double X, double Y, double Angle);
+public readonly record struct RespawnResult(
+    double Health,
+    bool IsDead,
+    double X,
+    double Y,
+    double Angle,
+    int AimFrame,
+    string Weapon);
 
 public readonly record struct DamageResult(double Health, double Damage, bool IsDead);
 
+public readonly record struct DeathResult(
+    double Health,
+    double Damage,
+    bool BecameDead);
+
 public readonly record struct HealResult(double Health, double Heal, double PreviousHealth, bool IsDead);
 
-public readonly record struct PlayerState(double X, double Y, double Angle, string Weapon, double Health, bool IsDead);
+public readonly record struct PlayerState(
+    double X,
+    double Y,
+    double Angle,
+    int AimFrame,
+    string Weapon,
+    double Health,
+    bool IsDead);
 
 public readonly record struct LeaderboardEntry(
     [property: JsonPropertyName("player_id")]
@@ -2125,8 +2342,6 @@ public sealed class ClientConnection
     public string ConnectionId { get; }
     public WebSocket Socket { get; }
     private readonly object stateLock = new();
-    private long lastActivityUtcTicks = DateTimeOffset.UtcNow.UtcTicks;
-    private long idleSinceUtcTicks;
     private bool hasState;
     private string? playerId;
     private string? roomId;
@@ -2140,14 +2355,6 @@ public sealed class ClientConnection
     public string LogId => playerId ?? ConnectionId;
     public bool HasPlayerId => playerId is not null;
     public bool HasRoom => roomId is not null;
-
-    public DateTimeOffset LastActivityUtc =>
-        new(Interlocked.Read(ref lastActivityUtcTicks), TimeSpan.Zero);
-
-    public bool IsIdle => Interlocked.Read(ref idleSinceUtcTicks) != 0;
-
-    public DateTimeOffset IdleSinceUtc =>
-        new(Interlocked.Read(ref idleSinceUtcTicks), TimeSpan.Zero);
 
     public bool HasJoinedGame
     {
@@ -2163,9 +2370,11 @@ public sealed class ClientConnection
     private double x;
     private double y;
     private double angle;
+    private int aimFrame;
     private string weapon = string.Empty;
     private double health = 100.0;
     private bool isDead;
+    private bool deathMedkitClaimed;
     private readonly HashSet<ShotTargetKey> processedShotHits = new();
 
     public void Identify(string playerId, string playerName, int level)
@@ -2176,8 +2385,6 @@ public sealed class ClientConnection
             this.playerName = playerName;
             this.level = level;
         }
-
-        Interlocked.Exchange(ref lastActivityUtcTicks, DateTimeOffset.UtcNow.UtcTicks);
     }
 
     public void UpdateProfile(string playerName, int level)
@@ -2187,8 +2394,6 @@ public sealed class ClientConnection
             this.playerName = playerName;
             this.level = level;
         }
-
-        Interlocked.Exchange(ref lastActivityUtcTicks, DateTimeOffset.UtcNow.UtcTicks);
     }
 
     public void AssignRoom(string roomId)
@@ -2197,8 +2402,6 @@ public sealed class ClientConnection
         {
             this.roomId = roomId;
         }
-
-        Interlocked.Exchange(ref lastActivityUtcTicks, DateTimeOffset.UtcNow.UtcTicks);
     }
 
     public void LeaveRoom()
@@ -2210,14 +2413,13 @@ public sealed class ClientConnection
             x = default;
             y = default;
             angle = default;
+            aimFrame = default;
             weapon = string.Empty;
             health = 100.0;
             isDead = false;
+            deathMedkitClaimed = false;
             processedShotHits.Clear();
         }
-
-        Interlocked.Exchange(ref lastActivityUtcTicks, DateTimeOffset.UtcNow.UtcTicks);
-        Interlocked.Exchange(ref idleSinceUtcTicks, 0);
     }
 
     public bool TryGetStateSnapshot(out PlayerState state)
@@ -2230,52 +2432,47 @@ public sealed class ClientConnection
                 return false;
             }
 
-            state = new PlayerState(x, y, angle, weapon, health, isDead);
+            state = new PlayerState(x, y, angle, aimFrame, weapon, health, isDead);
             return true;
         }
     }
 
-    public double MarkJoined(double x, double y, double angle, string weapon)
+    public double MarkJoined(double x, double y, double angle, int aimFrame, string weapon)
     {
         lock (stateLock)
         {
             this.x = x;
             this.y = y;
             this.angle = angle;
+            this.aimFrame = aimFrame;
             this.weapon = weapon;
             health = 100.0;
             isDead = false;
+            deathMedkitClaimed = false;
             hasState = true;
         }
-
-        Interlocked.Exchange(ref lastActivityUtcTicks, DateTimeOffset.UtcNow.UtcTicks);
-        Interlocked.Exchange(ref idleSinceUtcTicks, 0);
 
         return health;
     }
 
-    public void MarkMovement(double x, double y, double angle)
+    public void MarkMovement(double x, double y, double angle, int aimFrame)
     {
         lock (stateLock)
         {
             this.x = x;
             this.y = y;
             this.angle = angle;
+            this.aimFrame = aimFrame;
         }
-
-        Interlocked.Exchange(ref lastActivityUtcTicks, DateTimeOffset.UtcNow.UtcTicks);
-        Interlocked.Exchange(ref idleSinceUtcTicks, 0);
     }
 
-    public void MarkAngle(double angle)
+    public void MarkAngle(double angle, int aimFrame)
     {
         lock (stateLock)
         {
             this.angle = angle;
+            this.aimFrame = aimFrame;
         }
-
-        Interlocked.Exchange(ref lastActivityUtcTicks, DateTimeOffset.UtcNow.UtcTicks);
-        Interlocked.Exchange(ref idleSinceUtcTicks, 0);
     }
 
     public void MarkWeaponSwitch(string weapon)
@@ -2284,29 +2481,17 @@ public sealed class ClientConnection
         {
             this.weapon = weapon;
         }
-
-        Interlocked.Exchange(ref lastActivityUtcTicks, DateTimeOffset.UtcNow.UtcTicks);
-        Interlocked.Exchange(ref idleSinceUtcTicks, 0);
     }
 
-    public void MarkIdle(double x, double y, double angle)
+    public void MarkIdle(double x, double y, double angle, int aimFrame)
     {
-        var now = DateTimeOffset.UtcNow.UtcTicks;
-
         lock (stateLock)
         {
             this.x = x;
             this.y = y;
             this.angle = angle;
+            this.aimFrame = aimFrame;
         }
-
-        Interlocked.Exchange(ref lastActivityUtcTicks, now);
-        Interlocked.CompareExchange(ref idleSinceUtcTicks, now, 0);
-    }
-
-    public void MarkHeartbeat()
-    {
-        Interlocked.Exchange(ref lastActivityUtcTicks, DateTimeOffset.UtcNow.UtcTicks);
     }
 
     public HealthSnapshot GetAuthoritativeHealthSnapshot()
@@ -2347,9 +2532,28 @@ public sealed class ClientConnection
             health = Math.Clamp(health - damage, 0, 100.0);
 
             if (health <= 0)
+            {
                 isDead = true;
+                deathMedkitClaimed = false;
+            }
 
             return new DamageResult(health, previousHealth - health, isDead);
+        }
+    }
+
+    public DeathResult ApplyDeath()
+    {
+        lock (stateLock)
+        {
+            if (!hasState || isDead)
+                return new DeathResult(health, 0, false);
+
+            var damage = health;
+            health = 0;
+            isDead = true;
+            deathMedkitClaimed = false;
+
+            return new DeathResult(health, damage, true);
         }
     }
 
@@ -2367,7 +2571,24 @@ public sealed class ClientConnection
         }
     }
 
-    public RespawnResult Respawn(double spawnX, double spawnY)
+    public bool TryClaimDeathMedkit()
+    {
+        lock (stateLock)
+        {
+            if (!hasState || !isDead || deathMedkitClaimed)
+                return false;
+
+            deathMedkitClaimed = true;
+            return true;
+        }
+    }
+
+    public RespawnResult Respawn(
+        double spawnX,
+        double spawnY,
+        double angle,
+        int aimFrame,
+        string weapon)
     {
         lock (stateLock)
         {
@@ -2375,10 +2596,20 @@ public sealed class ClientConnection
             isDead = false;
             x = spawnX;
             y = spawnY;
-            angle = Ws.DefaultSpawnAngle;
+            this.angle = angle;
+            this.aimFrame = aimFrame;
+            this.weapon = weapon;
+            deathMedkitClaimed = false;
             processedShotHits.Clear();
 
-            return new RespawnResult(health, isDead, x, y, angle);
+            return new RespawnResult(
+                health,
+                isDead,
+                x,
+                y,
+                this.angle,
+                this.aimFrame,
+                this.weapon);
         }
     }
 }

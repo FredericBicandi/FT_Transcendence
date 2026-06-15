@@ -22,7 +22,8 @@ var tests = new (string Name, Func<Task> Run)[]
     ("abrupt disconnect cleanup", AbruptDisconnectCleanup),
     ("heartbeat keeps connection active", HeartbeatKeepsConnectionActive),
     ("stale connection cleanup", StaleConnectionCleanup),
-    ("game websocket isolation", GameWebSocketIsolation)
+    ("game websocket isolation", GameWebSocketIsolation),
+    ("Godot medkit and aim protocol", GodotMedkitAndAimProtocol)
 };
 
 var failed = 0;
@@ -478,6 +479,216 @@ static async Task GameWebSocketIsolation()
     AssertEqual(0, gameConnections.Count);
 
     await CloseAllAsync((socket, task));
+}
+
+static async Task GodotMedkitAndAimProtocol()
+{
+    var clients = new ConcurrentDictionary<string, ClientConnection>();
+    var server = new Ws(clients);
+    var firstSocket = new FakeWebSocket();
+    var secondSocket = new FakeWebSocket();
+    var first = new ClientConnection("connection-1", firstSocket);
+    var second = new ClientConnection("connection-2", secondSocket);
+
+    await ConnectAndJoinGameAsync(server, first, "player-1", "Alice", 120, 85);
+    await ConnectAndJoinGameAsync(server, second, "player-2", "Fredy", 120, 85);
+
+    await server.HandleMessageAsync(
+        second,
+        """
+        {"type":"hit","target_player_id":"player-1","weapon_type":"Shotgun","damage":60,"shot_id":"shot-1","angle":270}
+        """
+    );
+    await server.HandleMessageAsync(
+        second,
+        """{"type":"player_death","x":120.0,"y":85.0}"""
+    );
+
+    using var spawned = await WaitForTypeAsync(firstSocket, "medkit_spawned");
+    var medkitId = ReadString(spawned.RootElement, "medkit_id");
+    AssertEqual("player-2", ReadString(spawned.RootElement, "owner_player_id"));
+    AssertEqual(120.0, spawned.RootElement.GetProperty("x").GetDouble());
+    AssertEqual(85.0, spawned.RootElement.GetProperty("y").GetDouble());
+
+    var spawnCount = CountMessagesOfType(firstSocket, "medkit_spawned");
+    await server.HandleMessageAsync(
+        second,
+        """{"type":"player_death","x":120.0,"y":85.0}"""
+    );
+    AssertEqual(spawnCount, CountMessagesOfType(firstSocket, "medkit_spawned"));
+
+    await server.HandleMessageAsync(
+        first,
+        """{"type":"move","x":121.0,"y":86.0,"angle":270.0,"aim_frame":6}"""
+    );
+    using (var movement = await WaitForTypeAsync(firstSocket, "player_move"))
+    {
+        AssertEqual(270.0, movement.RootElement.GetProperty("angle").GetDouble());
+        AssertEqual(6, movement.RootElement.GetProperty("aim_frame").GetInt32());
+    }
+
+    string HealPacket(string playerId, double x, double currentHealth) =>
+        JsonSerializer.Serialize(new
+        {
+            type = "heal",
+            request = "medkit_heal",
+            medkit_id = medkitId,
+            player_id = playerId,
+            x,
+            y = 86.0,
+            angle = 270.0,
+            aim_frame = 6,
+            current_health = currentHealth,
+            is_dead = false
+        });
+
+    await server.HandleMessageAsync(first, HealPacket("player-2", 121, 40));
+    await server.HandleMessageAsync(first, HealPacket("player-1", 500, 40));
+    await server.HandleMessageAsync(first, HealPacket("player-1", 121, 41));
+    AssertEqual(0, CountMessagesOfType(firstSocket, "heal"));
+
+    await server.HandleMessageAsync(first, HealPacket("player-1", 121, 40));
+    var pickupMessages = firstSocket.SentMessages.ToArray();
+    var removedIndex = FindLastMessageIndex(pickupMessages, "medkit_removed");
+    var healIndex = FindLastMessageIndex(pickupMessages, "heal");
+    AssertTrue(
+        removedIndex >= 0 && removedIndex < healIndex,
+        "medkit_removed must be broadcast before authoritative heal"
+    );
+    using (var removed = JsonDocument.Parse(pickupMessages[removedIndex]))
+        AssertEqual(medkitId, ReadString(removed.RootElement, "medkit_id"));
+    using (var heal = JsonDocument.Parse(pickupMessages[healIndex]))
+    {
+        AssertEqual(medkitId, ReadString(heal.RootElement, "medkit_id"));
+        AssertEqual(100.0, heal.RootElement.GetProperty("health").GetDouble());
+        AssertEqual(60.0, heal.RootElement.GetProperty("heal_amount").GetDouble());
+        AssertEqual(270.0, heal.RootElement.GetProperty("angle").GetDouble());
+        AssertEqual(6, heal.RootElement.GetProperty("aim_frame").GetInt32());
+    }
+
+    var healCount = CountMessagesOfType(firstSocket, "heal");
+    await server.HandleMessageAsync(first, HealPacket("player-1", 121, 100));
+    AssertEqual(healCount, CountMessagesOfType(firstSocket, "heal"));
+
+    await server.HandleMessageAsync(
+        second,
+        """{"type":"respawn","x":300.0,"y":140.0,"angle":270.0,"aim_frame":6,"weapon_type":"Shotgun"}"""
+    );
+    using (var respawn = await WaitForTypeAsync(firstSocket, "player_respawned"))
+    {
+        AssertEqual(100.0, respawn.RootElement.GetProperty("health").GetDouble());
+        AssertEqual(270.0, respawn.RootElement.GetProperty("angle").GetDouble());
+        AssertEqual(6, respawn.RootElement.GetProperty("aim_frame").GetInt32());
+    }
+
+    await server.HandleMessageAsync(
+        second,
+        """{"type":"player_death","x":300.0,"y":140.0}"""
+    );
+    using var secondSpawn = await WaitForTypeAsync(firstSocket, "medkit_spawned");
+    var secondMedkitId = ReadString(secondSpawn.RootElement, "medkit_id");
+
+    await server.HandleMessageAsync(
+        second,
+        """{"type":"respawn","x":305.0,"y":140.0,"angle":270.0,"aim_frame":6,"weapon_type":"Shotgun"}"""
+    );
+    using (var secondRespawn = await WaitForTypeAsync(firstSocket, "player_respawned"))
+        AssertEqual("player-2", ReadString(secondRespawn.RootElement, "player_id"));
+    using (var removedOnRespawn = await WaitForTypeAsync(firstSocket, "medkit_removed"))
+        AssertEqual(secondMedkitId, ReadString(removedOnRespawn.RootElement, "medkit_id"));
+
+    await server.HandleMessageAsync(
+        second,
+        """{"type":"idle","x":305.0,"y":140.0,"angle":270.0,"aim_frame":6}"""
+    );
+    using (var idle = await WaitForTypeAsync(firstSocket, "player_idle"))
+        AssertEqual(6, idle.RootElement.GetProperty("aim_frame").GetInt32());
+
+    await server.HandleMessageAsync(
+        second,
+        """{"type":"angle","angle":315.0,"aim_frame":7}"""
+    );
+    using (var angle = await WaitForTypeAsync(firstSocket, "player_angle"))
+    {
+        AssertEqual(315.0, angle.RootElement.GetProperty("angle").GetDouble());
+        AssertEqual(7, angle.RootElement.GetProperty("aim_frame").GetInt32());
+    }
+
+    var angleCount = CountMessagesOfType(firstSocket, "player_angle");
+    await server.HandleMessageAsync(
+        second,
+        """{"type":"angle","angle":270.0,"aim_frame":7}"""
+    );
+    AssertEqual(angleCount, CountMessagesOfType(firstSocket, "player_angle"));
+
+    await server.HandleMessageAsync(
+        second,
+        """{"type":"shoot","weapon_type":"Shotgun","angle":270.0}"""
+    );
+    using var bullet = await WaitForTypeAsync(firstSocket, "bullet_spawn");
+    AssertEqual(270.0, bullet.RootElement.GetProperty("angle").GetDouble());
+
+    await server.HandleMessageAsync(first, """{"type":"ping"}""");
+    await server.HandleMessageAsync(first, """{"type":"heartbeat"}""");
+    AssertEqual(0, CountMessagesOfType(firstSocket, "pong"));
+    AssertEqual(0, CountMessagesOfType(firstSocket, "player_heartbeat"));
+}
+
+static async Task ConnectAndJoinGameAsync(
+    Ws server,
+    ClientConnection client,
+    string playerId,
+    string playerName,
+    double x,
+    double y)
+{
+    await server.HandleMessageAsync(
+        client,
+        JsonSerializer.Serialize(new
+        {
+            type = "on_connect",
+            player_id = playerId,
+            player_name = playerName,
+            level = 1
+        })
+    );
+    await server.HandleMessageAsync(
+        client,
+        JsonSerializer.Serialize(new
+        {
+            type = "on_join",
+            x,
+            y,
+            angle = 270.0,
+            aim_frame = 6,
+            weapon_type = "Shotgun"
+        })
+    );
+}
+
+static int CountMessagesOfType(FakeWebSocket socket, string expectedType) =>
+    socket.SentMessages.Count(message =>
+    {
+        using var document = JsonDocument.Parse(message);
+        return document.RootElement.TryGetProperty("type", out var type) &&
+            type.GetString() == expectedType;
+    });
+
+static int FindLastMessageIndex(
+    IReadOnlyList<string> messages,
+    string expectedType)
+{
+    for (var index = messages.Count - 1; index >= 0; index -= 1)
+    {
+        using var document = JsonDocument.Parse(messages[index]);
+        if (document.RootElement.TryGetProperty("type", out var type) &&
+            type.GetString() == expectedType)
+        {
+            return index;
+        }
+    }
+
+    return -1;
 }
 
 static DashboardWebSocketHub CreateHub(
