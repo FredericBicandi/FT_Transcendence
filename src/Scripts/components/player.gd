@@ -1216,9 +1216,6 @@ func apply_authoritative_health_state(new_health: int, authoritative_is_dead: bo
 		_restore_after_respawn()
 
 func _should_show_authoritative_heal_feedback(heal_source: String) -> bool:
-	if is_remote_proxy or not accepts_input:
-		return false
-
 	return heal_source.strip_edges().to_lower() == "medkit"
 
 func _restore_after_respawn() -> void:
