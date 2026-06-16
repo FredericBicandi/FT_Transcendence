@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { AuthModal } from "@/components/home/AuthModal";
 import { LoginSignupButton } from "@/components/home/LoginSignupButton";
 import { GlobalChat } from "@/components/home/GlobalChat";
@@ -27,21 +27,30 @@ export function HomeView() {
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [language, setLanguage] = useState<HomeLanguage>("english");
   const translations = homeTranslations[language];
+  const openProfileAfterMatch = useCallback(() => {
+    setShowProfileModal(true);
+  }, []);
   const {
     chatError,
     chatMessages,
+    clearMatchProgressAnimation,
     gameUrl,
     isChatConnected,
     isPlayerProfileLoading,
+    matchProgressAnimation,
     onlineCount,
     playerProfile,
+    deleteAccount,
     refreshPlayerProfile,
     registerGameWindow,
     sendChatMessage,
     signOut,
     showGame,
     playGame,
-  } = useHomeController({ language });
+  } = useHomeController({
+    language,
+    onMatchComplete: openProfileAfterMatch,
+  });
   const needsUsernameSetup =
     !isPlayerProfileLoading &&
     playerProfile !== null &&
@@ -85,7 +94,7 @@ export function HomeView() {
           language={language}
           onLanguageChange={setLanguage}
           onProfileClick={() => {
-            if (!needsUsernameSetup) {
+            if (!isPlayerProfileLoading && !needsUsernameSetup) {
               setShowProfileModal(true);
             }
           }}
@@ -172,9 +181,12 @@ export function HomeView() {
         <ProfileModal
           key={playerProfile?.playerId ?? "loading"}
           onClose={() => setShowProfileModal(false)}
+          onDeleteAccount={deleteAccount}
           onLogout={signOut}
+          onProgressAnimationSeen={clearMatchProgressAnimation}
           onProfileUpdated={refreshPlayerProfile}
           playerProfile={playerProfile}
+          progressAnimation={matchProgressAnimation}
           translations={translations.profile}
         />
       )}

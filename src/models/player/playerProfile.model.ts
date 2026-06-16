@@ -7,6 +7,7 @@ export type PlayerProfile = {
   playerName: string;
   avatarUrl?: string;
   currentXp: number;
+  xpRequiredForNextLevel: number;
   level: number;
   isGuest: boolean;
   needsUsername: boolean;
@@ -43,11 +44,36 @@ export type MatchStatsPayload = {
   score: number;
 };
 
+export type MatchProgressUpdate = {
+  currentXp: number;
+  level: number;
+  previousCurrentXp: number;
+  previousLevel: number;
+  previousXpRequiredForNextLevel: number;
+  xpGained: number;
+  xpRequiredForNextLevel: number;
+};
+
 const PLAYER_PROFILE_STORAGE_KEY = "playerProfile";
+const AUTHENTICATED_PROFILE_CACHE_KEY_PREFIX = "authenticatedPlayerProfile:";
 const PLAYED_MATCHES_TABLE = "played_matches";
 const MAX_GUEST_NAME_LENGTH = 10;
-const NEW_AUTHENTICATED_PLAYER_LEVEL = 1;
+const NEW_AUTHENTICATED_PLAYER_LEVEL = 0;
+const DEFAULT_XP_REQUIRED_FOR_NEXT_LEVEL = 100;
 const USERNAME_TAKEN_ERROR = "USERNAME_TAKEN";
+const FALLBACK_PROGRESS_REQUIREMENTS: ProgressRequirement[] = [
+  { level: 0, xpRequired: 100 },
+  { level: 1, xpRequired: 100 },
+  { level: 2, xpRequired: 150 },
+  { level: 3, xpRequired: 225 },
+  { level: 4, xpRequired: 325 },
+  { level: 5, xpRequired: 450 },
+  { level: 6, xpRequired: 600 },
+  { level: 7, xpRequired: 775 },
+  { level: 8, xpRequired: 975 },
+  { level: 9, xpRequired: 1200 },
+  { level: 10, xpRequired: 1450 },
+];
 
 type ProfileRow = {
   current_xp: unknown;
@@ -55,6 +81,15 @@ type ProfileRow = {
   level: unknown;
   picture_url: unknown;
   username: unknown;
+};
+
+type ProgressRequirement = {
+  level: number;
+  xpRequired: number;
+};
+
+type LoadPlayerProfileOptions = {
+  preferCache?: boolean;
 };
 
 function normalizePlayerName(value: unknown, fallback: string) {
@@ -75,7 +110,7 @@ function normalizePlayerLevel(value: unknown, fallback = 0) {
         ? Number(value)
         : fallback;
 
-  return Number.isFinite(numericLevel) && numericLevel > 0
+  return Number.isFinite(numericLevel) && numericLevel >= 0
     ? Math.floor(numericLevel)
     : fallback;
 }
@@ -179,6 +214,15 @@ function getUserAvatarUrl(userMetadata: Record<string, unknown> | undefined) {
   );
 }
 
+function getUserDisplayName(userMetadata: Record<string, unknown> | undefined) {
+  return (
+    normalizePlayerName(userMetadata?.preferred_username, "") ||
+    normalizePlayerName(userMetadata?.user_name, "") ||
+    normalizePlayerName(userMetadata?.name, "") ||
+    normalizePlayerName(userMetadata?.full_name, "")
+  );
+}
+
 function createGuestPlayerProfile(): PlayerProfile {
   const guestNumber = Math.floor(1000 + Math.random() * 9000);
   const playerName = `Guest${guestNumber}`.slice(0, MAX_GUEST_NAME_LENGTH);
@@ -187,11 +231,22 @@ function createGuestPlayerProfile(): PlayerProfile {
     playerId: `guest-${crypto.randomUUID()}`,
     playerName,
     currentXp: 0,
+    xpRequiredForNextLevel: DEFAULT_XP_REQUIRED_FOR_NEXT_LEVEL,
     level: 0,
     isGuest: true,
     needsUsername: false,
     matchLogs: [],
   };
+}
+
+export function resetGuestPlayerProfile(): PlayerProfile {
+  const playerProfile = createGuestPlayerProfile();
+  localStorage.setItem(
+    PLAYER_PROFILE_STORAGE_KEY,
+    JSON.stringify(playerProfile),
+  );
+
+  return playerProfile;
 }
 
 function isPlayerProfile(value: unknown): value is PlayerProfile {
@@ -212,6 +267,56 @@ function isPlayerProfile(value: unknown): value is PlayerProfile {
   );
 }
 
+function getAuthenticatedProfileCacheKey(playerId: string) {
+  return `${AUTHENTICATED_PROFILE_CACHE_KEY_PREFIX}${playerId}`;
+}
+
+function loadCachedAuthenticatedPlayerProfile(playerId: string) {
+  const cacheKey = getAuthenticatedProfileCacheKey(playerId);
+  const savedProfile = localStorage.getItem(cacheKey);
+
+  if (!savedProfile) {
+    return null;
+  }
+
+  try {
+    const parsedProfile: unknown = JSON.parse(savedProfile);
+
+    if (isPlayerProfile(parsedProfile) && !parsedProfile.isGuest) {
+      return {
+        ...parsedProfile,
+        xpRequiredForNextLevel:
+          typeof parsedProfile.xpRequiredForNextLevel === "number"
+            ? parsedProfile.xpRequiredForNextLevel
+            : DEFAULT_XP_REQUIRED_FOR_NEXT_LEVEL,
+        matchLogs: Array.isArray(parsedProfile.matchLogs)
+          ? parsedProfile.matchLogs
+          : [],
+      };
+    }
+  } catch {
+    // Fall through and replace corrupted cache after the next successful load.
+  }
+
+  localStorage.removeItem(cacheKey);
+  return null;
+}
+
+export function cacheAuthenticatedPlayerProfile(playerProfile: PlayerProfile) {
+  if (playerProfile.isGuest) {
+    return;
+  }
+
+  localStorage.setItem(
+    getAuthenticatedProfileCacheKey(playerProfile.playerId),
+    JSON.stringify(playerProfile),
+  );
+}
+
+export function clearCachedAuthenticatedPlayerProfile(playerId: string) {
+  localStorage.removeItem(getAuthenticatedProfileCacheKey(playerId));
+}
+
 function loadGuestPlayerProfile(): PlayerProfile {
   const savedProfile = localStorage.getItem(PLAYER_PROFILE_STORAGE_KEY);
 
@@ -222,6 +327,10 @@ function loadGuestPlayerProfile(): PlayerProfile {
       if (isPlayerProfile(parsedProfile)) {
         return {
           ...parsedProfile,
+          xpRequiredForNextLevel:
+            typeof parsedProfile.xpRequiredForNextLevel === "number"
+              ? parsedProfile.xpRequiredForNextLevel
+              : DEFAULT_XP_REQUIRED_FOR_NEXT_LEVEL,
           matchLogs: Array.isArray(parsedProfile.matchLogs)
             ? parsedProfile.matchLogs
             : [],
@@ -232,35 +341,107 @@ function loadGuestPlayerProfile(): PlayerProfile {
     }
   }
 
-  const playerProfile = createGuestPlayerProfile();
-  localStorage.setItem(
-    PLAYER_PROFILE_STORAGE_KEY,
-    JSON.stringify(playerProfile),
-  );
-
-  return playerProfile;
+  return resetGuestPlayerProfile();
 }
 
 function createAuthenticatedPlayerProfile(
   fallbackAvatarUrl: string | undefined,
+  fallbackPlayerName: string,
   userId: string,
   profile: ProfileRow | null,
   matchLogs: MatchLog[],
+  progressRequirements: ProgressRequirement[],
+  options: { forceUsernameResolved?: boolean } = {},
 ) {
-  const playerName = normalizePlayerName(profile?.username, "");
+  const savedPlayerName = normalizePlayerName(profile?.username, "");
+  const playerName =
+    savedPlayerName || normalizePlayerName(fallbackPlayerName, "");
+  const level = normalizePlayerLevel(
+    profile?.level,
+    NEW_AUTHENTICATED_PLAYER_LEVEL,
+  );
 
   return {
     playerId: userId,
     playerName: playerName || "Player",
     avatarUrl: normalizeAvatarUrl(profile?.picture_url) ?? fallbackAvatarUrl,
     currentXp: normalizeCurrentXp(profile?.current_xp),
-    level: normalizePlayerLevel(
-      profile?.level,
-      NEW_AUTHENTICATED_PLAYER_LEVEL,
+    xpRequiredForNextLevel: getXpRequiredForLevel(
+      level,
+      progressRequirements,
     ),
+    level,
     isGuest: false,
-    needsUsername: !playerName,
+    needsUsername: options.forceUsernameResolved ? false : !savedPlayerName,
     matchLogs,
+  };
+}
+
+async function loadProgressRequirements() {
+  return FALLBACK_PROGRESS_REQUIREMENTS;
+}
+
+function getXpRequiredForLevel(
+  level: number,
+  progressRequirements: ProgressRequirement[],
+) {
+  const requirement = progressRequirements.find(
+    (progressRequirement) => progressRequirement.level === level,
+  );
+
+  if (requirement) {
+    return requirement.xpRequired;
+  }
+
+  const highestKnownRequirement = progressRequirements.at(-1);
+
+  if (!highestKnownRequirement) {
+    return DEFAULT_XP_REQUIRED_FOR_NEXT_LEVEL;
+  }
+
+  const levelDelta = Math.max(0, level - highestKnownRequirement.level);
+
+  return highestKnownRequirement.xpRequired + levelDelta * 100;
+}
+
+function calculateMatchProgressUpdate({
+  currentXp,
+  level,
+  progressRequirements,
+  score,
+}: {
+  currentXp: number;
+  level: number;
+  progressRequirements: ProgressRequirement[];
+  score: number;
+}): MatchProgressUpdate {
+  const previousLevel = level;
+  const previousCurrentXp = currentXp;
+  const previousXpRequiredForNextLevel = getXpRequiredForLevel(
+    previousLevel,
+    progressRequirements,
+  );
+  let nextLevel = previousLevel;
+  let nextCurrentXp = previousCurrentXp + Math.max(0, Math.floor(score));
+  let nextXpRequiredForNextLevel = previousXpRequiredForNextLevel;
+
+  while (nextCurrentXp >= nextXpRequiredForNextLevel) {
+    nextCurrentXp -= nextXpRequiredForNextLevel;
+    nextLevel += 1;
+    nextXpRequiredForNextLevel = getXpRequiredForLevel(
+      nextLevel,
+      progressRequirements,
+    );
+  }
+
+  return {
+    currentXp: nextCurrentXp,
+    level: nextLevel,
+    previousCurrentXp,
+    previousLevel,
+    previousXpRequiredForNextLevel,
+    xpGained: Math.max(0, Math.floor(score)),
+    xpRequiredForNextLevel: nextXpRequiredForNextLevel,
   };
 }
 
@@ -304,6 +485,27 @@ async function loadAuthenticatedPlayerMatchLogs(playerId: string) {
     .filter((row): row is MatchLog => row !== null);
 }
 
+export async function loadAuthenticatedPlayerProfileDetails({
+  level,
+  playerId,
+}: {
+  level: number;
+  playerId: string;
+}) {
+  const [matchLogs, progressRequirements] = await Promise.all([
+    loadAuthenticatedPlayerMatchLogs(playerId),
+    loadProgressRequirements(),
+  ]);
+
+  return {
+    matchLogs,
+    xpRequiredForNextLevel: getXpRequiredForLevel(
+      level,
+      progressRequirements,
+    ),
+  };
+}
+
 export async function saveAuthenticatedMatchLog({
   deaths,
   durationSeconds,
@@ -342,7 +544,52 @@ export async function saveAuthenticatedMatchLog({
   return createMatchLog(data);
 }
 
-export async function loadPlayerProfile(): Promise<PlayerProfile> {
+export function createOptimisticMatchProgressUpdate(
+  playerProfile: PlayerProfile,
+  score: number,
+) {
+  return calculateMatchProgressUpdate({
+    currentXp: playerProfile.currentXp,
+    level: playerProfile.level,
+    progressRequirements: [
+      {
+        level: playerProfile.level,
+        xpRequired: playerProfile.xpRequiredForNextLevel,
+      },
+    ],
+    score,
+  });
+}
+
+export async function saveAuthenticatedMatchProgress(
+  playerId: string,
+  progressUpdate: MatchProgressUpdate,
+): Promise<MatchProgressUpdate | null> {
+  const supabase = createSupabaseClient();
+
+  if (!playerId) {
+    return null;
+  }
+
+  const { error } = await supabase
+    .from("profiles")
+    .update({
+      current_xp: progressUpdate.currentXp,
+      level: progressUpdate.level,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", playerId);
+
+  if (error) {
+    throw error;
+  }
+
+  return progressUpdate;
+}
+
+export async function loadPlayerProfile({
+  preferCache = true,
+}: LoadPlayerProfileOptions = {}): Promise<PlayerProfile> {
   try {
     const supabase = createSupabaseClient();
     const {
@@ -350,32 +597,58 @@ export async function loadPlayerProfile(): Promise<PlayerProfile> {
     } = await supabase.auth.getUser();
 
     if (user) {
+      if (preferCache) {
+        const cachedProfile = loadCachedAuthenticatedPlayerProfile(user.id);
+
+        if (cachedProfile) {
+          return cachedProfile;
+        }
+      }
+
       const userAvatarUrl = getUserAvatarUrl(user.user_metadata);
-      const [profileResult, matchLogs] = await Promise.all([
+      const userDisplayName = getUserDisplayName(user.user_metadata);
+      const [profileResult, progressRequirements] = await Promise.all([
         supabase
           .from("profiles")
           .select("id, level, username, current_xp, picture_url")
           .eq("id", user.id)
           .maybeSingle<ProfileRow>(),
-        loadAuthenticatedPlayerMatchLogs(user.id),
+        loadProgressRequirements(),
       ]);
       const { data, error } = profileResult;
 
       if (error) {
-        return createAuthenticatedPlayerProfile(
+        const fallbackProfile = createAuthenticatedPlayerProfile(
           userAvatarUrl,
+          userDisplayName,
           user.id,
-          null,
-          matchLogs,
+          {
+            current_xp: 0,
+            id: user.id,
+            level: NEW_AUTHENTICATED_PLAYER_LEVEL,
+            picture_url: null,
+            username: userDisplayName,
+          },
+          [],
+          progressRequirements,
+          { forceUsernameResolved: true },
         );
+
+        cacheAuthenticatedPlayerProfile(fallbackProfile);
+        return fallbackProfile;
       }
 
-      return createAuthenticatedPlayerProfile(
+      const authenticatedProfile = createAuthenticatedPlayerProfile(
         userAvatarUrl,
+        userDisplayName,
         user.id,
         data,
-        matchLogs,
+        [],
+        progressRequirements,
       );
+
+      cacheAuthenticatedPlayerProfile(authenticatedProfile);
+      return authenticatedProfile;
     }
   } catch {
     // Supabase is optional for guests, including local runs without env vars.
@@ -430,8 +703,6 @@ async function upsertProfileDetails({
     id: playerId,
     username: playerName,
     picture_url: avatarUrl ?? null,
-    level: NEW_AUTHENTICATED_PLAYER_LEVEL,
-    current_xp: 0,
   });
 
   if (error) {
@@ -494,6 +765,23 @@ export async function saveAuthenticatedPlayerProfile({
     playerId,
     playerName: normalizedPlayerName,
   });
+}
+
+export async function deleteAuthenticatedPlayerAccount() {
+  const response = await fetch("/api/account", {
+    method: "DELETE",
+  });
+
+  if (!response.ok) {
+    throw new Error("DELETE_ACCOUNT_FAILED");
+  }
+
+  const supabase = createSupabaseClient();
+  await supabase.auth.signOut().catch(() => {
+    // The auth user is already deleted server-side; still clear local app state.
+  });
+
+  return resetGuestPlayerProfile();
 }
 
 export function isUsernameTakenError(error: unknown) {

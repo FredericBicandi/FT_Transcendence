@@ -2,9 +2,16 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  cacheAuthenticatedPlayerProfile,
+  clearCachedAuthenticatedPlayerProfile,
   createPlayerProfileSearchParams,
+  createOptimisticMatchProgressUpdate,
+  deleteAuthenticatedPlayerAccount,
+  loadAuthenticatedPlayerProfileDetails,
   loadPlayerProfile,
   saveAuthenticatedMatchLog,
+  saveAuthenticatedMatchProgress,
+  type MatchProgressUpdate,
   type PlayerProfile,
 } from "@/models/player/playerProfile.model";
 import { createSupabaseClient } from "@/models/supabase/client.model";
@@ -12,11 +19,13 @@ import { useDashboardSocket } from "@/controllers/home/useDashboardSocket";
 
 const EXIT_GAME_MESSAGE_TYPE = "EXIT_GAME";
 const MATCH_SAVED_MESSAGE_TYPE = "match_saved";
+const POST_MATCH_EXIT_FALLBACK_MS = 10000;
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 type HomeControllerOptions = {
   language: string;
+  onMatchComplete?: () => void;
 };
 
 function isExitGameMessage(value: unknown) {
@@ -30,6 +39,10 @@ function isExitGameMessage(value: unknown) {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function isMatchEndExitGameMessage(value: unknown) {
+  return isRecord(value) && value.reason === "match_ended";
 }
 
 type MatchSavedMessage = {
@@ -65,29 +78,135 @@ function createGameUrl(playerProfile: PlayerProfile, language: string) {
   return `/Game/index.html?${searchParams.toString()}`;
 }
 
-export function useHomeController({ language }: HomeControllerOptions) {
+export type MatchProgressAnimation = MatchProgressUpdate & {
+  id: number;
+};
+
+export function useHomeController({
+  language,
+  onMatchComplete,
+}: HomeControllerOptions) {
   const dashboardSocket = useDashboardSocket();
   const gameWindowRef = useRef<Window | null>(null);
   const isMountedRef = useRef(true);
+  const matchCompletionPendingRef = useRef(false);
+  const playerProfileRef = useRef<PlayerProfile | null>(null);
+  const postMatchExitTimeoutRef = useRef<number | null>(null);
   const profileRequestIdRef = useRef(0);
+  const profileDetailsRequestIdRef = useRef(0);
+  const loadedProfileDetailsKeyRef = useRef<string | null>(null);
+  const progressAnimationIdRef = useRef(0);
+  const progressSaveQueueRef = useRef(Promise.resolve());
+  const [activeGameUrl, setActiveGameUrl] = useState<string | null>(null);
   const [showGame, setShowGame] = useState(false);
   const [isPlayerProfileLoading, setIsPlayerProfileLoading] = useState(true);
+  const [matchProgressAnimation, setMatchProgressAnimation] =
+    useState<MatchProgressAnimation | null>(null);
   const [playerProfile, setPlayerProfile] = useState<PlayerProfile | null>(
     null,
   );
 
+  const clearMatchProgressAnimation = useCallback(() => {
+    setMatchProgressAnimation(null);
+  }, []);
+
+  const clearPostMatchExitTimeout = useCallback(() => {
+    if (postMatchExitTimeoutRef.current !== null) {
+      window.clearTimeout(postMatchExitTimeoutRef.current);
+      postMatchExitTimeoutRef.current = null;
+    }
+  }, []);
+
+  const finishPostMatchFlow = useCallback(() => {
+    const shouldOpenProfile = matchCompletionPendingRef.current;
+    matchCompletionPendingRef.current = false;
+    clearPostMatchExitTimeout();
+    setActiveGameUrl(null);
+    setShowGame(false);
+    if (shouldOpenProfile) {
+      onMatchComplete?.();
+    }
+  }, [clearPostMatchExitTimeout, onMatchComplete]);
+
+  useEffect(() => {
+    playerProfileRef.current = playerProfile;
+  }, [playerProfile]);
+
+  useEffect(() => {
+    if (
+      showGame ||
+      isPlayerProfileLoading ||
+      !playerProfile ||
+      playerProfile.isGuest
+    ) {
+      return;
+    }
+
+    const detailsKey = `${playerProfile.playerId}:${playerProfile.level}`;
+
+    if (
+      loadedProfileDetailsKeyRef.current === detailsKey ||
+      playerProfile.matchLogs.length > 0
+    ) {
+      return;
+    }
+
+    const requestId = profileDetailsRequestIdRef.current + 1;
+    profileDetailsRequestIdRef.current = requestId;
+
+    void loadAuthenticatedPlayerProfileDetails({
+      level: playerProfile.level,
+      playerId: playerProfile.playerId,
+    })
+      .then((details) => {
+        if (
+          !isMountedRef.current ||
+          profileDetailsRequestIdRef.current !== requestId
+        ) {
+          return;
+        }
+
+        loadedProfileDetailsKeyRef.current = detailsKey;
+        setPlayerProfile((currentProfile) => {
+          if (
+            !currentProfile ||
+            currentProfile.isGuest ||
+            currentProfile.playerId !== playerProfile.playerId ||
+            currentProfile.level !== playerProfile.level
+          ) {
+            return currentProfile;
+          }
+
+          const updatedProfile = {
+            ...currentProfile,
+            matchLogs: details.matchLogs,
+            xpRequiredForNextLevel: details.xpRequiredForNextLevel,
+          };
+
+          cacheAuthenticatedPlayerProfile(updatedProfile);
+          return updatedProfile;
+        });
+      })
+      .catch(() => {
+        // Keep the core profile usable even when history/progress enrichment fails.
+      });
+  }, [isPlayerProfileLoading, playerProfile, showGame]);
+
   const refreshPlayerProfile = useCallback(async () => {
     const requestId = profileRequestIdRef.current + 1;
     profileRequestIdRef.current = requestId;
+    loadedProfileDetailsKeyRef.current = null;
+    profileDetailsRequestIdRef.current += 1;
     setIsPlayerProfileLoading(true);
 
     try {
-      const profile = await loadPlayerProfile();
+      const profile = await loadPlayerProfile({ preferCache: false });
 
       if (
         isMountedRef.current &&
         profileRequestIdRef.current === requestId
       ) {
+        cacheAuthenticatedPlayerProfile(profile);
         setPlayerProfile(profile);
       }
     } finally {
@@ -112,6 +231,7 @@ export function useHomeController({ language }: HomeControllerOptions) {
           isMountedRef.current &&
           profileRequestIdRef.current === requestId
         ) {
+          cacheAuthenticatedPlayerProfile(profile);
           setPlayerProfile(profile);
         }
       } finally {
@@ -129,14 +249,17 @@ export function useHomeController({ language }: HomeControllerOptions) {
     return () => {
       isMountedRef.current = false;
       profileRequestIdRef.current += 1;
+      clearPostMatchExitTimeout();
     };
-  }, [refreshPlayerProfile]);
+  }, [clearPostMatchExitTimeout, refreshPlayerProfile]);
 
   useEffect(() => {
     const supabase = createSupabaseClient();
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(() => {
+      matchCompletionPendingRef.current = false;
+      setActiveGameUrl(null);
       setShowGame(false);
       refreshPlayerProfile();
     });
@@ -147,6 +270,26 @@ export function useHomeController({ language }: HomeControllerOptions) {
   }, [refreshPlayerProfile]);
 
   useEffect(() => {
+    function enqueueMatchProgressSave(
+      playerId: string,
+      progressUpdate: MatchProgressUpdate,
+    ) {
+      const nextSave = progressSaveQueueRef.current
+        .catch(() => {
+          // Keep later match saves running even when an earlier background save fails.
+        })
+        .then(() =>
+          saveAuthenticatedMatchProgress(playerId, progressUpdate),
+        );
+
+      progressSaveQueueRef.current = nextSave.then(
+        () => undefined,
+        () => undefined,
+      );
+
+      return nextSave;
+    }
+
     function handleGameMessage(event: MessageEvent<unknown>) {
       if (
         event.origin !== window.location.origin ||
@@ -156,20 +299,64 @@ export function useHomeController({ language }: HomeControllerOptions) {
       }
 
       if (isExitGameMessage(event.data)) {
-        setShowGame(false);
+        if (isMatchEndExitGameMessage(event.data)) {
+          matchCompletionPendingRef.current = true;
+        }
+        finishPostMatchFlow();
         return;
       }
 
       if (isMatchSavedMessage(event.data)) {
-        void saveAuthenticatedMatchLog({
+        const matchStats = {
           deaths: Math.max(0, Math.floor(event.data.deaths)),
           durationSeconds: Math.max(0, Math.floor(event.data.duration_seconds)),
           kills: Math.max(0, Math.floor(event.data.kills)),
           matchId: event.data.match_id,
           score: Math.max(0, Math.floor(event.data.score)),
-        })
-          .then((savedMatch) => {
-            if (!savedMatch || !isMountedRef.current) {
+        };
+
+        clearPostMatchExitTimeout();
+        matchCompletionPendingRef.current = true;
+        postMatchExitTimeoutRef.current = window.setTimeout(
+          finishPostMatchFlow,
+          POST_MATCH_EXIT_FALLBACK_MS,
+        );
+
+        const currentProfile = playerProfileRef.current;
+        const progressUpdate =
+          currentProfile && !currentProfile.isGuest
+            ? createOptimisticMatchProgressUpdate(
+                currentProfile,
+                matchStats.score,
+              )
+            : null;
+
+        if (currentProfile && progressUpdate) {
+          progressAnimationIdRef.current += 1;
+          setMatchProgressAnimation({
+            ...progressUpdate,
+            id: progressAnimationIdRef.current,
+          });
+
+          const updatedProfile = {
+            ...currentProfile,
+            currentXp: progressUpdate.currentXp,
+            level: progressUpdate.level,
+            xpRequiredForNextLevel: progressUpdate.xpRequiredForNextLevel,
+          };
+
+          cacheAuthenticatedPlayerProfile(updatedProfile);
+          setPlayerProfile(updatedProfile);
+        }
+
+        void Promise.all([
+          saveAuthenticatedMatchLog(matchStats),
+          currentProfile && progressUpdate
+            ? enqueueMatchProgressSave(currentProfile.playerId, progressUpdate)
+            : Promise.resolve(null),
+        ])
+          .then(([savedMatch, savedProgress]) => {
+            if (!isMountedRef.current) {
               return;
             }
 
@@ -178,19 +365,32 @@ export function useHomeController({ language }: HomeControllerOptions) {
                 return currentProfile;
               }
 
-              return {
+              const updatedProfile = {
                 ...currentProfile,
-                matchLogs: [
-                  savedMatch,
-                  ...currentProfile.matchLogs.filter(
-                    (match) => match.id !== savedMatch.id,
-                  ),
-                ],
+                ...(savedProgress
+                  ? {
+                      currentXp: savedProgress.currentXp,
+                      level: savedProgress.level,
+                      xpRequiredForNextLevel:
+                        savedProgress.xpRequiredForNextLevel,
+                    }
+                  : {}),
+                matchLogs: savedMatch
+                  ? [
+                      savedMatch,
+                      ...currentProfile.matchLogs.filter(
+                        (match) => match.id !== savedMatch.id,
+                      ),
+                    ]
+                  : currentProfile.matchLogs,
               };
+
+              cacheAuthenticatedPlayerProfile(updatedProfile);
+              return updatedProfile;
             });
           })
           .catch(() => {
-            // Ignore save failures; the modal still reflects the loaded profile state.
+            // Ignore background save failures; the optimistic UI keeps the flow responsive.
           });
       }
     }
@@ -200,16 +400,17 @@ export function useHomeController({ language }: HomeControllerOptions) {
     return () => {
       window.removeEventListener("message", handleGameMessage);
     };
-  }, []);
+  }, [clearPostMatchExitTimeout, finishPostMatchFlow]);
 
   const registerGameWindow = useCallback((gameWindow: Window | null) => {
     gameWindowRef.current = gameWindow;
   }, []);
 
-  const gameUrl = playerProfile ? createGameUrl(playerProfile, language) : null;
+  const nextGameUrl = playerProfile ? createGameUrl(playerProfile, language) : null;
+  const gameUrl = activeGameUrl ?? nextGameUrl;
   const canPlayGame =
     !isPlayerProfileLoading &&
-    gameUrl !== null &&
+    nextGameUrl !== null &&
     (playerProfile?.isGuest || !playerProfile?.needsUsername);
 
   return {
@@ -218,6 +419,8 @@ export function useHomeController({ language }: HomeControllerOptions) {
     chatError: dashboardSocket.error,
     isChatConnected: dashboardSocket.isConnected,
     isPlayerProfileLoading,
+    matchProgressAnimation,
+    clearMatchProgressAnimation,
     onlineCount: dashboardSocket.onlineCount,
     playerProfile,
     refreshPlayerProfile,
@@ -228,10 +431,31 @@ export function useHomeController({ language }: HomeControllerOptions) {
       const supabase = createSupabaseClient();
       await supabase.auth.signOut();
       await refreshPlayerProfile();
+      matchCompletionPendingRef.current = false;
+      setActiveGameUrl(null);
+      setShowGame(false);
+    },
+    deleteAccount: async () => {
+      clearPostMatchExitTimeout();
+      const currentProfile = playerProfileRef.current;
+      if (currentProfile && !currentProfile.isGuest) {
+        clearCachedAuthenticatedPlayerProfile(currentProfile.playerId);
+      }
+      const guestProfile = await deleteAuthenticatedPlayerAccount();
+      matchCompletionPendingRef.current = false;
+      loadedProfileDetailsKeyRef.current = null;
+      profileDetailsRequestIdRef.current += 1;
+      setMatchProgressAnimation(null);
+      setActiveGameUrl(null);
+      setPlayerProfile(guestProfile);
+      setIsPlayerProfileLoading(false);
       setShowGame(false);
     },
     playGame: () => {
-      if (canPlayGame) {
+      if (canPlayGame && nextGameUrl) {
+        matchCompletionPendingRef.current = false;
+        clearPostMatchExitTimeout();
+        setActiveGameUrl(nextGameUrl);
         setShowGame(true);
       }
     },

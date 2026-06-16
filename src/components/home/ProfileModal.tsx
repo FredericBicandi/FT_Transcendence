@@ -2,15 +2,19 @@ import { ChangeEvent, useEffect, useState } from "react";
 import {
   isUsernameTakenError,
   saveAuthenticatedPlayerProfile,
+  type MatchProgressUpdate,
   type PlayerProfile,
 } from "@/models/player/playerProfile.model";
 import type { HomeTranslations } from "@/views/home/homeTranslations";
 
 type ProfileModalProps = {
   onClose: () => void;
+  onDeleteAccount: () => Promise<void>;
   onLogout: () => Promise<void>;
+  onProgressAnimationSeen?: () => void;
   onProfileUpdated: () => Promise<void>;
   playerProfile: PlayerProfile | null;
+  progressAnimation?: (MatchProgressUpdate & { id: number }) | null;
   translations: HomeTranslations["profile"];
 };
 
@@ -138,9 +142,12 @@ function MatchLogIcon() {
 
 export function ProfileModal({
   onClose,
+  onDeleteAccount,
   onLogout,
+  onProgressAnimationSeen,
   onProfileUpdated,
   playerProfile,
+  progressAnimation,
   translations,
 }: ProfileModalProps) {
   const [playerName, setPlayerName] = useState(
@@ -151,16 +158,182 @@ export function ProfileModal({
   );
   const [avatarDataUrl, setAvatarDataUrl] = useState<string | undefined>();
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [progressAnimationToPlay] = useState(progressAnimation ?? null);
   const isAuthenticatedPlayer = playerProfile ? !playerProfile.isGuest : false;
   const normalizedPlayerName = playerName.trim();
   const hasPlayerNameChanged =
     normalizedPlayerName !== (playerProfile?.playerName.trim() ?? "");
   const hasAvatarChanged = avatarDataUrl !== undefined;
   const hasProfileChanges = hasPlayerNameChanged || hasAvatarChanged;
-  const level = playerProfile?.level ?? 0;
-  const expPercent = Math.min(playerProfile?.currentXp ?? 0, 100);
+  const [displayedProgress, setDisplayedProgress] = useState(() => ({
+    currentXp: playerProfile?.currentXp ?? 0,
+    level: playerProfile?.level ?? 0,
+    xpRequiredForNextLevel:
+      playerProfile?.xpRequiredForNextLevel ?? 100,
+  }));
+  const activeProgress = progressAnimationToPlay
+    ? displayedProgress
+    : {
+        currentXp: playerProfile?.currentXp ?? 0,
+        level: playerProfile?.level ?? 0,
+        xpRequiredForNextLevel:
+          playerProfile?.xpRequiredForNextLevel ?? 100,
+      };
+  const level = activeProgress.level;
+  const xpRequiredForNextLevel = Math.max(
+    1,
+    activeProgress.xpRequiredForNextLevel,
+  );
+  const expPercent = Math.min(
+    100,
+    Math.round((activeProgress.currentXp / xpRequiredForNextLevel) * 100),
+  );
   const matchLogs = playerProfile?.matchLogs ?? [];
+
+  useEffect(() => {
+    if (!progressAnimationToPlay) {
+      return;
+    }
+
+    const animation = progressAnimationToPlay;
+    onProgressAnimationSeen?.();
+
+    type ProgressSegment = {
+      durationMs: number;
+      endXp: number;
+      level: number;
+      startXp: number;
+      xpRequiredForNextLevel: number;
+    };
+
+    function getXpRequiredForAnimatedLevel(level: number) {
+      if (level === animation.previousLevel) {
+        return animation.previousXpRequiredForNextLevel;
+      }
+
+      if (level >= animation.level) {
+        return animation.xpRequiredForNextLevel;
+      }
+
+      return (
+        animation.previousXpRequiredForNextLevel +
+        (level - animation.previousLevel) * 100
+      );
+    }
+
+    const segments: ProgressSegment[] = [];
+    let animatedLevel = animation.previousLevel;
+    let animatedXp = animation.previousCurrentXp;
+    let remainingXp = animation.xpGained;
+
+    while (remainingXp > 0) {
+      const xpRequiredForNextLevel = Math.max(
+        1,
+        getXpRequiredForAnimatedLevel(animatedLevel),
+      );
+      const xpUntilNextLevel = Math.max(0, xpRequiredForNextLevel - animatedXp);
+      const segmentXp = Math.min(remainingXp, xpUntilNextLevel || remainingXp);
+      const endXp = Math.min(xpRequiredForNextLevel, animatedXp + segmentXp);
+
+      segments.push({
+        durationMs: Math.min(1400, Math.max(480, segmentXp * 8)),
+        endXp,
+        level: animatedLevel,
+        startXp: animatedXp,
+        xpRequiredForNextLevel,
+      });
+
+      remainingXp -= segmentXp;
+
+      if (endXp < xpRequiredForNextLevel || remainingXp <= 0) {
+        animatedXp = endXp;
+        break;
+      }
+
+      animatedLevel += 1;
+      animatedXp = 0;
+    }
+
+    if (segments.length === 0) {
+      segments.push({
+        durationMs: 480,
+        endXp: animation.currentXp,
+        level: animation.level,
+        startXp: animation.previousCurrentXp,
+        xpRequiredForNextLevel: animation.xpRequiredForNextLevel,
+      });
+    }
+
+    let animationFrameId = 0;
+    let segmentIndex = 0;
+    let segmentStartedAt: number | null = null;
+
+    function animateFrame(timestamp: number) {
+      const segment = segments[segmentIndex];
+
+      if (!segment) {
+        setDisplayedProgress({
+          currentXp: animation.currentXp,
+          level: animation.level,
+          xpRequiredForNextLevel: animation.xpRequiredForNextLevel,
+        });
+        return;
+      }
+
+      if (segmentStartedAt === null) {
+        segmentStartedAt = timestamp;
+      }
+
+      const progress = Math.min(
+        1,
+        (timestamp - segmentStartedAt) / segment.durationMs,
+      );
+      const easedProgress = 1 - Math.pow(1 - progress, 3);
+      const currentXp = Math.round(
+        segment.startXp +
+          (segment.endXp - segment.startXp) * easedProgress,
+      );
+
+      setDisplayedProgress({
+        currentXp,
+        level: segment.level,
+        xpRequiredForNextLevel: segment.xpRequiredForNextLevel,
+      });
+
+      if (progress < 1) {
+        animationFrameId = window.requestAnimationFrame(animateFrame);
+        return;
+      }
+
+      segmentIndex += 1;
+      segmentStartedAt = null;
+
+      if (segments[segmentIndex]) {
+        setDisplayedProgress({
+          currentXp: 0,
+          level: segments[segmentIndex].level,
+          xpRequiredForNextLevel:
+            segments[segmentIndex].xpRequiredForNextLevel,
+        });
+        animationFrameId = window.requestAnimationFrame(animateFrame);
+        return;
+      }
+
+      setDisplayedProgress({
+        currentXp: animation.currentXp,
+        level: animation.level,
+        xpRequiredForNextLevel: animation.xpRequiredForNextLevel,
+      });
+    }
+
+    animationFrameId = window.requestAnimationFrame(animateFrame);
+
+    return () => {
+      window.cancelAnimationFrame(animationFrameId);
+    };
+  }, [onProgressAnimationSeen, progressAnimationToPlay]);
 
   useEffect(() => {
     return () => {
@@ -238,6 +411,28 @@ export function ProfileModal({
   async function logout() {
     await onLogout();
     onClose();
+  }
+
+  async function deleteAccount() {
+    if (
+      !isAuthenticatedPlayer ||
+      isDeletingAccount ||
+      !window.confirm(translations.deleteAccountConfirm)
+    ) {
+      return;
+    }
+
+    setIsDeletingAccount(true);
+    setSaveStatus(null);
+
+    try {
+      await onDeleteAccount();
+      onClose();
+    } catch {
+      setSaveStatus(translations.saveFailed);
+    } finally {
+      setIsDeletingAccount(false);
+    }
   }
 
   return (
@@ -318,7 +513,7 @@ export function ProfileModal({
               />
             </div>
             <span className="col-start-2 text-right text-sm text-[#f5dfad]">
-              {expPercent}%
+              {activeProgress.currentXp} / {xpRequiredForNextLevel}
             </span>
           </div>
 
@@ -343,13 +538,26 @@ export function ProfileModal({
           )}
 
           {isAuthenticatedPlayer && (
-            <button
-              className="h-10 w-full max-w-sm bg-[#151819] text-sm uppercase text-[#f5dfad] shadow-[0_0_0_2px_#050302,inset_0_2px_0_#374041,inset_0_-2px_0_#050302] hover:bg-[#2a3031] active:translate-y-0.5"
-              onClick={logout}
-              type="button"
-            >
-              {translations.logout}
-            </button>
+            <div className="flex w-full max-w-sm flex-col gap-3">
+              <button
+                className="h-10 w-full bg-[#151819] text-sm uppercase text-[#f5dfad] shadow-[0_0_0_2px_#050302,inset_0_2px_0_#374041,inset_0_-2px_0_#050302] hover:bg-[#2a3031] active:translate-y-0.5 disabled:cursor-not-allowed disabled:text-[#8a8170]"
+                disabled={isDeletingAccount}
+                onClick={logout}
+                type="button"
+              >
+                {translations.logout}
+              </button>
+              <button
+                className="h-10 w-full bg-[#4b2323] text-sm uppercase text-[#f5dfad] shadow-[0_0_0_2px_#050302,inset_0_2px_0_#7a3434,inset_0_-2px_0_#250f0f] hover:bg-[#653030] active:translate-y-0.5 disabled:cursor-not-allowed disabled:bg-[#303536] disabled:text-[#8a8170] disabled:active:translate-y-0"
+                disabled={isDeletingAccount}
+                onClick={deleteAccount}
+                type="button"
+              >
+                {isDeletingAccount
+                  ? translations.deletingAccount
+                  : translations.deleteAccount}
+              </button>
+            </div>
           )}
         </div>
 

@@ -34,6 +34,9 @@ export type HomeTranslations = {
     close: string;
     confirm: string;
     dateTime: string;
+    deleteAccount: string;
+    deleteAccountConfirm: string;
+    deletingAccount: string;
     death: string;
     exp: string;
     kills: string;
@@ -93,6 +96,10 @@ export const homeTranslations: Record<HomeLanguage, HomeTranslations> = {
       close: "Close profile popup",
       confirm: "Confirm",
       dateTime: "Date / Time",
+      deleteAccount: "Delete account",
+      deleteAccountConfirm:
+        "Delete your account and all saved Pixel Fight data?",
+      deletingAccount: "Deleting...",
       death: "Death",
       exp: "Exp",
       kills: "Kills",
@@ -150,6 +157,10 @@ export const homeTranslations: Record<HomeLanguage, HomeTranslations> = {
       close: "Fermer le profil",
       confirm: "Confirmer",
       dateTime: "Date / Heure",
+      deleteAccount: "Supprimer le compte",
+      deleteAccountConfirm:
+        "Supprimer votre compte et toutes vos donnees Pixel Fight ?",
+      deletingAccount: "Suppression...",
       death: "Mort",
       exp: "Exp",
       kills: "Kills",
@@ -207,6 +218,9 @@ export const homeTranslations: Record<HomeLanguage, HomeTranslations> = {
       close: "اغلاق الملف الشخصي",
       confirm: "تاكيد",
       dateTime: "التاريخ / الوقت",
+      deleteAccount: "حذف الحساب",
+      deleteAccountConfirm: "حذف حسابك وكل بيانات Pixel Fight المحفوظة؟",
+      deletingAccount: "جاري الحذف...",
       death: "الموت",
       exp: "الخبرة",
       kills: "قتل",
