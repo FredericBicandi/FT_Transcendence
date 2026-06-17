@@ -134,6 +134,12 @@ func _process(delta: float) -> void:
 	timer_ui.call("set_remaining_seconds", remaining_match_seconds)
 	_update_cursor_reload_ring()
 
+func _input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_F11:
+		_request_browser_fullscreen()
+		get_viewport().set_input_as_handled()
+		return
+
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo and _is_enter_key(event):
 		if chat_is_open:
@@ -330,6 +336,56 @@ func _post_exit_game(reason: String = "manual", summary: Dictionary = {}) -> voi
 
 	JavaScriptBridge.eval(
 		"window.parent.postMessage(%s, window.location.origin); if (window.parent === window) { window.location.href = '%s'; }" % [JSON.stringify(payload), LOBBY_URL],
+		false
+	)
+
+func _request_browser_fullscreen() -> void:
+	if not OS.has_feature("web"):
+		return
+
+	JavaScriptBridge.eval(
+		"""(function() {
+			var ownDocument = window.document;
+			var parentDocument = null;
+			try {
+				if (window.parent && window.parent !== window && window.parent.document) {
+					parentDocument = window.parent.document;
+				}
+			} catch (error) {}
+
+			var targetDocument = parentDocument || ownDocument;
+			if (
+				ownDocument.fullscreenElement ||
+				ownDocument.webkitFullscreenElement ||
+				(targetDocument && (targetDocument.fullscreenElement || targetDocument.webkitFullscreenElement))
+			) {
+				var canvas = ownDocument.getElementById('canvas');
+				if (canvas) {
+					canvas.focus();
+				}
+				return;
+			}
+
+			var target = parentDocument ? parentDocument.documentElement : (ownDocument.getElementById('canvas') || ownDocument.documentElement);
+			var requestFullscreen = target.requestFullscreen || target.webkitRequestFullscreen || target.msRequestFullscreen;
+			if (requestFullscreen) {
+				var result = requestFullscreen.call(target);
+				if (result && result.catch) {
+					result.catch(function() {});
+				}
+			}
+
+			try {
+				window.parent.postMessage({ type: 'REQUEST_FULLSCREEN' }, window.location.origin);
+			} catch (error) {}
+
+			window.setTimeout(function() {
+				var canvas = ownDocument.getElementById('canvas');
+				if (canvas) {
+					canvas.focus();
+				}
+			}, 0);
+		})();""",
 		false
 	)
 

@@ -229,19 +229,18 @@ func _process(delta: float) -> void:
 
 	# Dead players wait for respawn; AI dummies keep attacking while alive
 	if is_dead:
-		if match_controls_enabled:
-			respawn_timer = maxf(respawn_timer - delta, 0.0)
-			if respawn_timer == 0.0:
-				if _uses_server_authoritative_health():
-					# Re-send the request periodically in case the server
-					# never acknowledges (dropped packet, server-side hiccup).
-					if has_requested_server_respawn:
-						server_respawn_retry_timer = maxf(server_respawn_retry_timer - delta, 0.0)
-						if server_respawn_retry_timer == 0.0:
-							has_requested_server_respawn = false
-					_request_server_respawn()
-				else:
-					respawn()
+		respawn_timer = maxf(respawn_timer - delta, 0.0)
+		if respawn_timer == 0.0:
+			if _uses_server_authoritative_health():
+				# Re-send the request periodically in case the server
+				# never acknowledges (dropped packet, server-side hiccup).
+				if has_requested_server_respawn:
+					server_respawn_retry_timer = maxf(server_respawn_retry_timer - delta, 0.0)
+					if server_respawn_retry_timer == 0.0:
+						has_requested_server_respawn = false
+				_request_server_respawn()
+			else:
+				respawn()
 	else:
 		if auto_attack_players and match_controls_enabled:
 			update_auto_attack()
