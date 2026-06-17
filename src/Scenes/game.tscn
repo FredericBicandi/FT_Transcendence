@@ -10,13 +10,7 @@
 [ext_resource type="Script" uid="uid://d2aph5sjogruv" path="res://src/Scripts/components/rmb_sniper_hint.gd" id="8_0plu0"]
 [ext_resource type="Texture2D" uid="uid://bjtgebt3i47yw" path="res://Assets/Textures/Guns/Sniper/rmb.png" id="9_mhgmy"]
 [ext_resource type="Script" uid="uid://bp3jqn5iodk7j" path="res://src/Scripts/rmb.gd" id="10_mhgmy"]
-
-[sub_resource type="GDScript" id="GDScript_jma1v"]
-script/source = "extends Node2D
-
-func _process(_delta: float) -> void:
-	global_position = get_global_mouse_position()
-"
+[ext_resource type="Script" uid="uid://jnay7jqv27jhq" path="res://src/Scripts/components/cursor_follow.gd" id="11_cursor_follow"]
 
 [node name="Game" type="Node2D" unique_id=1266203192]
 script = ExtResource("1_dc36d")
@@ -36,7 +30,7 @@ position = Vector2(173, -307)
 [node name="Leaderboard" parent="." unique_id=282059591 instance=ExtResource("7_0plu0")]
 
 [node name="Cursor" type="Node2D" parent="." unique_id=1106131925]
-script = SubResource("GDScript_jma1v")
+script = ExtResource("11_cursor_follow")
 
 [node name="RmbSniperHint" type="CanvasLayer" parent="." unique_id=1962533655]
 script = ExtResource("8_0plu0")

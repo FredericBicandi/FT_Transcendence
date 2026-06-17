@@ -15,17 +15,9 @@
 [ext_resource type="Script" uid="uid://b1obo84xmbm23" path="res://src/Scripts/Weapons/shotgun.gd" id="10_n6rxv"]
 [ext_resource type="Texture2D" uid="uid://chkavaxo7t14u" path="res://Assets/Textures/Guns/RocketLuncher/smoke.png" id="11_dr4xp"]
 [ext_resource type="Texture2D" uid="uid://c7ntoov3t655k" path="res://Assets/Textures/Guns/bullet2.png" id="15_dofc0"]
-
-[sub_resource type="GDScript" id="GDScript_ssn77"]
-resource_name = "Assult_Riifle"
-script/source = "# assault_rifle.gd
-class_name AssaultRifle
-extends WeaponSprite
-
-func _ready() -> void:
-	weapon_id = \"Assult rifle\"  # keep the exact string from weapon_data
-	super._ready()
-"
+[ext_resource type="Script" uid="uid://r37sm2yfzog37" path="res://src/Scripts/Weapons/assault_rifle.gd" id="18_assault_rifle"]
+[ext_resource type="Script" uid="uid://wkjn80uewn3t0" path="res://src/Scripts/Weapons/sniper_rifle.gd" id="19_sniper_rifle"]
+[ext_resource type="Script" uid="uid://40xvbohax40wb" path="res://src/Scripts/Weapons/rocket_launcher.gd" id="20_rocket_launcher"]
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_a0xt0"]
 atlas = ExtResource("3_jox2y")
@@ -91,17 +83,6 @@ animations = [{
 "speed": 5.0
 }]
 
-[sub_resource type="GDScript" id="GDScript_hh7td"]
-resource_name = "Sniper"
-script/source = "# sniper_rifle.gd
-class_name SniperRifle
-extends WeaponSprite
-
-func _ready() -> void:
-	weapon_id = \"Sniper\"
-	super._ready()
-"
-
 [sub_resource type="AtlasTexture" id="AtlasTexture_of6b7"]
 atlas = ExtResource("5_hh7td")
 region = Rect2(192, 0, 32, 32)
@@ -165,17 +146,6 @@ animations = [{
 "name": &"default",
 "speed": 5.0
 }]
-
-[sub_resource type="GDScript" id="GDScript_w4ncs"]
-resource_name = "Rocket_Laucnher"
-script/source = "# rocket_launcher.gd
-class_name RocketLauncher
-extends WeaponAnimated
-
-func _ready() -> void:
-	weapon_id = \"Rocket Launcher\"
-	super._ready()
-"
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_he2y2"]
 atlas = ExtResource("6_ssn77")
@@ -617,7 +587,7 @@ switch_sound_volume_db = null
 switch_sound_enabled = null
 
 [node name="Assult_rifle" type="Node2D" parent="." unique_id=993310818]
-script = SubResource("GDScript_ssn77")
+script = ExtResource("18_assault_rifle")
 
 [node name="AudioStreamPlayer2D" type="AudioStreamPlayer2D" parent="Assult_rifle" unique_id=303167151]
 stream = ExtResource("2_o8h48")
@@ -639,7 +609,7 @@ scale = Vector2(0.62561285, 0.4440001)
 texture = ExtResource("4_16nc3")
 
 [node name="Sniper" type="Node2D" parent="." unique_id=1353379110]
-script = SubResource("GDScript_hh7td")
+script = ExtResource("19_sniper_rifle")
 
 [node name="AudioStreamPlayer2D" type="AudioStreamPlayer2D" parent="Sniper" unique_id=1930238852]
 position = Vector2(-3.8146973e-06, 0)
@@ -662,7 +632,7 @@ scale = Vector2(1.0970148, 0.44843745)
 texture = ExtResource("4_16nc3")
 
 [node name="Rocket_Launcher" type="Node2D" parent="." unique_id=869868688]
-script = SubResource("GDScript_w4ncs")
+script = ExtResource("20_rocket_launcher")
 
 [node name="AudioStreamPlayer2D" type="AudioStreamPlayer2D" parent="Rocket_Launcher" unique_id=2113824659]
 stream = ExtResource("6_7eos3")

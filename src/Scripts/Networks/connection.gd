@@ -377,7 +377,7 @@ func _get_or_create_preview_remote_player(player_id: String, player_display_name
 	if remote_wrapper == null:
 		return null
 
-	remote_wrapper.name = "PreviewRemotePlayer_%s" % player_id
+	remote_wrapper.name = "PreviewRemotePlayer_%s" % player_id.validate_node_name()
 	var remote_body := remote_wrapper.get_node("CharacterBody2D") as Player
 	if remote_body == null:
 		remote_wrapper.queue_free()
@@ -482,28 +482,6 @@ func _get_local_player_stats() -> Dictionary:
 		"deaths": int(entry.get("deaths", 0)),
 		"score": int(entry.get("score", 0))
 	}
-
-func _cleanup_match_state() -> void:
-	_pause_player_play_timer()
-	is_room_ready = false
-	local_player_id = ""
-	_clear_preview_remote_players()
-	_set_room_ready_ui_visible(false)
-	if game_instance != null and is_instance_valid(game_instance):
-		game_instance.queue_free()
-
-	game_instance = null
-	has_started_game = false
-
-func _disconnect_multiplayer() -> void:
-	if network_client != null:
-		network_client.disconnect_multiplayer()
-
-func _reset_to_menu_or_lobby_state() -> void:
-	_set_background_visible(true)
-	_set_status_text(Localization.translate("disconnected"))
-	$CanvasLayer.visible = true
-	_show_lobby_cursor()
 
 func _reset_after_match_exit() -> void:
 	if game_instance != null and is_instance_valid(game_instance):

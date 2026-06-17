@@ -773,9 +773,6 @@ func _is_allowed_chat_codepoint(code: int) -> bool:
 
 	return false
 
-func _escape_chat_bbcode(text: String) -> String:
-	return text.replace("[", "(").replace("]", ")")
-
 func _get_chat_name_color(seed_text: String) -> Color:
 	var hash_value: int = 0
 	for index in seed_text.length():
@@ -1357,6 +1354,7 @@ func _build_match_saved_parent_payload(match_saved_message: Dictionary, match_en
 	return {
 		"type": "match_saved",
 		"match_id": match_id,
+		"room_id": room_id,
 		"score": int(player_result.get("score", 0)),
 		"kills": int(player_result.get("kills", 0)),
 		"deaths": int(player_result.get("deaths", 0)),
@@ -1499,7 +1497,7 @@ func _get_or_create_remote_player(player_id: String, player_display_name: String
 	if remote_wrapper == null:
 		return null
 
-	remote_wrapper.name = "RemotePlayer_%s" % player_id
+	remote_wrapper.name = "RemotePlayer_%s" % player_id.validate_node_name()
 	var remote_body := remote_wrapper.get_node("CharacterBody2D") as Player
 	if remote_body == null:
 		remote_wrapper.queue_free()

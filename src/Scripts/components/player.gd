@@ -107,8 +107,6 @@ var walk_dust_speed_scale: float = 1.0
 var walk_dust_z_index: int = 0
 var footstep_cooldown: float = 0.0
 var footstep_audio_player: AudioStreamPlayer2D
-var camera_focus_enabled := false
-var camera_focus_strength := 0.0
 var active_death_drop: Node2D
 
 @onready var head: AnimatedSprite2D = $Head
@@ -150,6 +148,7 @@ func _ready() -> void:
 	_configure_shoot_sound()
 	_configure_footstep_sound()
 	_validate_collision_shapes()
+	_configure_health_bar_direction()
 	get_viewport().size_changed.connect(_on_viewport_size_changed)
 
 	# Let scenes choose a starting weapon without duplicating weapon scenes
@@ -249,13 +248,6 @@ func _process(delta: float) -> void:
 	update_head_direction_from_weapon()
 	_update_overhead_ui()
 	
-	camera_focus_enabled = is_sniper_scope_active()
-
-	if camera_focus_enabled:
-		camera_focus_strength = 1.0
-	else:
-		camera_focus_strength = 0.
-
 func update_legs(direction: Vector2, delta: float) -> void:
 	# Pick the walk cycle that matches the movement direction
 	var frame_range := Vector2i(15, 21)
@@ -395,8 +387,15 @@ func update_hit_flash(delta: float) -> void:
 
 func update_health_bar() -> void:
 	# Keep the health bar in sync with real health
+	_configure_health_bar_direction()
 	health_bar.max_value = max_health
 	health_bar.value = health
+
+func _configure_health_bar_direction() -> void:
+	if health_bar == null:
+		return
+
+	health_bar.layout_direction = Control.LAYOUT_DIRECTION_LTR
 
 func _on_active_weapon_changed(active_weapon: BaseWeapon) -> void:
 	# Reapply input rules when a new weapon is equipped
@@ -1559,7 +1558,7 @@ func _get_angle_for_aim_frame(aim_frame: int) -> float:
 	return float(posmod(aim_frame, 8)) * 45.0
 
 func _report_angle_on_frame_change() -> void:
-	if not accepts_input or not match_controls_enabled or network_client == null or weapon == null:
+	if not accepts_input or not match_controls_enabled or is_dead or network_client == null or weapon == null:
 		return
 
 	var current_aim_frame := _get_current_aim_frame()

@@ -183,7 +183,7 @@ static func apply_readable_text_font(control: Control, text: String, preferred_f
 		control.add_theme_font_override("font", readable_font)
 
 	if is_arabic_language() or contains_arabic(text):
-		control.layout_direction = Control.LAYOUT_DIRECTION_RTL
+		control.layout_direction = Control.LAYOUT_DIRECTION_LTR if _should_preserve_ltr_layout(control) else Control.LAYOUT_DIRECTION_RTL
 
 static func apply_active_language_font(root: Node) -> void:
 	if root == null or not is_arabic_language():
@@ -221,7 +221,10 @@ static func _apply_arabic_font_recursive(node: Node) -> void:
 	var control := node as Control
 	if control != null:
 		control.add_theme_font_override("font", get_arabic_font())
-		control.layout_direction = Control.LAYOUT_DIRECTION_RTL
+		control.layout_direction = Control.LAYOUT_DIRECTION_LTR if _should_preserve_ltr_layout(control) else Control.LAYOUT_DIRECTION_RTL
 
 	for child in node.get_children():
 		_apply_arabic_font_recursive(child)
+
+static func _should_preserve_ltr_layout(control: Control) -> bool:
+	return control is ProgressBar
