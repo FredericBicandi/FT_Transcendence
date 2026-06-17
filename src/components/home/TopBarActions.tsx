@@ -172,13 +172,14 @@ export function TopBarActions({
       <button
         aria-label={isFullscreen ? translations.exit : translations.enter}
         aria-pressed={isFullscreen}
-        className="flex h-16 w-16 items-center justify-center shadow-[0_0_0_3px_#050302,0_4px_0_3px_#111515,inset_0_3px_0_#374041,inset_0_-3px_0_#151819] hover:brightness-110 hover:shadow-[0_0_0_3px_#050302,0_4px_0_3px_#111515,inset_0_3px_0_#465253,inset_0_-3px_0_#151819] active:translate-y-1 active:shadow-[0_0_0_3px_#050302,0_1px_0_3px_#111515,inset_0_2px_0_#374041,inset_0_-2px_0_#151819]"
+        className="flex h-16 min-w-24 flex-col items-center justify-center gap-1 px-3 shadow-[0_0_0_3px_#050302,0_4px_0_3px_#111515,inset_0_3px_0_#374041,inset_0_-3px_0_#151819] hover:brightness-110 hover:shadow-[0_0_0_3px_#050302,0_4px_0_3px_#111515,inset_0_3px_0_#465253,inset_0_-3px_0_#151819] active:translate-y-1 active:shadow-[0_0_0_3px_#050302,0_1px_0_3px_#111515,inset_0_2px_0_#374041,inset_0_-2px_0_#151819]"
         onClick={toggleFullscreen}
         style={brickWallStyle}
         title={isFullscreen ? translations.exit : translations.enter}
         type="button"
       >
         <FullscreenIcon isFullscreen={isFullscreen} />
+        <span className="text-xs text-[#d9b46b]">FullScreen</span>
       </button>
 
       <button

@@ -1,6 +1,15 @@
+import {
+  useRef,
+  useState,
+  type ClipboardEvent,
+  type FormEvent,
+  type KeyboardEvent,
+} from "react";
 import type { HomeTranslations } from "@/views/home/homeTranslations";
 import { getAuthCallbackUrl } from "@/models/app/appUrl.model";
 import { createSupabaseClient } from "@/models/supabase/client.model";
+
+const OTP_CODE_LENGTH = 6;
 
 type AuthModalProps = {
   onClose: () => void;
@@ -92,6 +101,27 @@ function MailIcon() {
 }
 
 export function AuthModal({ onClose, translations }: AuthModalProps) {
+  const [email, setEmail] = useState("");
+  const [otpCode, setOtpCode] = useState("");
+  const [hasSentOtp, setHasSentOtp] = useState(false);
+  const [sentOtpEmail, setSentOtpEmail] = useState("");
+  const [isEmailAuthLoading, setIsEmailAuthLoading] = useState(false);
+  const [emailAuthMessage, setEmailAuthMessage] = useState<string | null>(
+    null,
+  );
+  const isRequestingOtpRef = useRef(false);
+  const isVerifyingOtpRef = useRef(false);
+  const otpInputRefs = useRef<Array<HTMLInputElement | null>>([]);
+  const normalizedEmail = email.trim().toLowerCase();
+  const normalizedOtpCode = otpCode.replace(/\D/g, "").slice(
+    0,
+    OTP_CODE_LENGTH,
+  );
+  const otpDigits = Array.from(
+    { length: OTP_CODE_LENGTH },
+    (_, index) => normalizedOtpCode[index] ?? "",
+  );
+
   async function signInWithGoogle() {
     const supabase = createSupabaseClient();
 
@@ -101,6 +131,167 @@ export function AuthModal({ onClose, translations }: AuthModalProps) {
         redirectTo: getAuthCallbackUrl(),
       },
     });
+  }
+
+  async function signInWithGithub() {
+    const supabase = createSupabaseClient();
+
+    await supabase.auth.signInWithOAuth({
+      provider: "github",
+      options: {
+        redirectTo: getAuthCallbackUrl(),
+      },
+    });
+  }
+
+  async function requestEmailOtp() {
+    if (isRequestingOtpRef.current || isEmailAuthLoading || hasSentOtp) {
+      return;
+    }
+
+    if (!normalizedEmail) {
+      setEmailAuthMessage(translations.emailRequired);
+      return;
+    }
+
+    isRequestingOtpRef.current = true;
+    setIsEmailAuthLoading(true);
+    setEmailAuthMessage(null);
+    setOtpCode("");
+
+    try {
+      const supabase = createSupabaseClient();
+      const { error } = await supabase.auth.signInWithOtp({
+        email: normalizedEmail,
+      });
+
+      if (error) {
+        setEmailAuthMessage(error.message || translations.authFailed);
+        return;
+      }
+
+      setSentOtpEmail(normalizedEmail);
+      setHasSentOtp(true);
+      setEmailAuthMessage(translations.codeSent);
+    } catch {
+      setEmailAuthMessage(translations.authFailed);
+    } finally {
+      isRequestingOtpRef.current = false;
+      setIsEmailAuthLoading(false);
+    }
+  }
+
+  async function verifyEmailOtp() {
+    if (isVerifyingOtpRef.current || isEmailAuthLoading) {
+      return;
+    }
+
+    const emailToVerify = sentOtpEmail || normalizedEmail;
+
+    if (!emailToVerify) {
+      setEmailAuthMessage(translations.emailRequired);
+      return;
+    }
+
+    if (normalizedOtpCode.length < OTP_CODE_LENGTH) {
+      setEmailAuthMessage(translations.codeRequired);
+      return;
+    }
+
+    isVerifyingOtpRef.current = true;
+    setIsEmailAuthLoading(true);
+    setEmailAuthMessage(null);
+
+    try {
+      const supabase = createSupabaseClient();
+      const { error } = await supabase.auth.verifyOtp({
+        email: emailToVerify,
+        token: normalizedOtpCode,
+        type: "email",
+      });
+
+      if (error) {
+        setEmailAuthMessage(error.message || translations.authFailed);
+        return;
+      }
+
+      onClose();
+    } catch {
+      setEmailAuthMessage(translations.authFailed);
+    } finally {
+      isVerifyingOtpRef.current = false;
+      setIsEmailAuthLoading(false);
+    }
+  }
+
+  async function handleEmailAuthSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (hasSentOtp) {
+      await verifyEmailOtp();
+      return;
+    }
+
+    await requestEmailOtp();
+  }
+
+  function focusOtpInput(index: number) {
+    otpInputRefs.current[index]?.focus();
+    otpInputRefs.current[index]?.select();
+  }
+
+  function replaceOtpDigits(startIndex: number, value: string) {
+    const nextDigits = [...otpDigits];
+    const pastedDigits = value.replace(/\D/g, "").slice(
+      0,
+      OTP_CODE_LENGTH - startIndex,
+    );
+
+    if (!pastedDigits) {
+      return;
+    }
+
+    pastedDigits.split("").forEach((digit, digitIndex) => {
+      nextDigits[startIndex + digitIndex] = digit;
+    });
+
+    setOtpCode(nextDigits.join(""));
+    setEmailAuthMessage(null);
+    focusOtpInput(Math.min(startIndex + pastedDigits.length, OTP_CODE_LENGTH - 1));
+  }
+
+  function handleOtpChange(index: number, value: string) {
+    if (!value.replace(/\D/g, "")) {
+      const nextDigits = [...otpDigits];
+      nextDigits[index] = "";
+      setOtpCode(nextDigits.join(""));
+      setEmailAuthMessage(null);
+      return;
+    }
+
+    replaceOtpDigits(index, value);
+  }
+
+  function handleOtpKeyDown(
+    index: number,
+    event: KeyboardEvent<HTMLInputElement>,
+  ) {
+    if (event.key === "Backspace" && !otpDigits[index] && index > 0) {
+      event.preventDefault();
+      const nextDigits = [...otpDigits];
+      nextDigits[index - 1] = "";
+      setOtpCode(nextDigits.join(""));
+      setEmailAuthMessage(null);
+      focusOtpInput(index - 1);
+    }
+  }
+
+  function handleOtpPaste(
+    index: number,
+    event: ClipboardEvent<HTMLInputElement>,
+  ) {
+    event.preventDefault();
+    replaceOtpDigits(index, event.clipboardData.getData("text"));
   }
 
   return (
@@ -121,22 +312,72 @@ export function AuthModal({ onClose, translations }: AuthModalProps) {
           <CloseIcon />
         </button>
 
-        <label className="flex h-16 items-center gap-4 bg-[#151819] px-4 shadow-[inset_0_4px_0_#050302,inset_0_-4px_0_#374041] focus-within:shadow-[0_0_0_2px_#b8893b,inset_0_4px_0_#050302,inset_0_-4px_0_#374041]">
-          <MailIcon />
-          <input
-            aria-label={translations.email}
-            className="chat-font min-w-0 flex-1 bg-transparent text-[10px] text-[#f5dfad] outline-none placeholder:text-[#d9b46b]/70"
-            placeholder={translations.email}
-            type="email"
-          />
-        </label>
+        <form className="flex flex-col gap-4" onSubmit={handleEmailAuthSubmit}>
+          <label className="flex h-16 items-center gap-4 bg-[#151819] px-4 shadow-[inset_0_4px_0_#050302,inset_0_-4px_0_#374041] focus-within:shadow-[0_0_0_2px_#b8893b,inset_0_4px_0_#050302,inset_0_-4px_0_#374041]">
+            <MailIcon />
+            <input
+              aria-label={translations.email}
+              className="chat-font min-w-0 flex-1 bg-transparent text-[10px] text-[#f5dfad] outline-none placeholder:text-[#d9b46b]/70"
+              disabled={isEmailAuthLoading || hasSentOtp}
+              onChange={(event) => {
+                setEmail(event.target.value);
+                setEmailAuthMessage(null);
+              }}
+              placeholder={translations.email}
+              type="email"
+              value={email}
+            />
+          </label>
 
-        <button
-          className="h-16 bg-[#344326] text-base uppercase text-[#d9b46b] shadow-[0_0_0_3px_#050302,0_5px_0_3px_#172111,inset_0_4px_0_#53663a,inset_0_-4px_0_#202b17] hover:bg-[#40522d] hover:text-[#ead08a] active:translate-y-1 active:shadow-[0_0_0_3px_#050302,0_2px_0_3px_#172111,inset_0_3px_0_#53663a,inset_0_-3px_0_#202b17]"
-          type="button"
-        >
-          {translations.loginRegister}
-        </button>
+          {hasSentOtp && (
+            <div
+              aria-label={translations.code}
+              className="grid grid-cols-6 gap-2"
+              role="group"
+            >
+              {otpDigits.map((digit, index) => (
+                <input
+                  aria-label={`${translations.code} ${index + 1}`}
+                  className="h-12 min-w-0 bg-[#151819] text-center text-lg text-[#f5dfad] shadow-[inset_0_3px_0_#050302,inset_0_-3px_0_#374041] outline-none focus:shadow-[0_0_0_2px_#b8893b,inset_0_3px_0_#050302,inset_0_-3px_0_#374041] disabled:cursor-not-allowed disabled:text-[#8a8170]"
+                  disabled={isEmailAuthLoading}
+                  inputMode="numeric"
+                  key={index}
+                  maxLength={1}
+                  onChange={(event) =>
+                    handleOtpChange(index, event.target.value)
+                  }
+                  onKeyDown={(event) => handleOtpKeyDown(index, event)}
+                  onPaste={(event) => handleOtpPaste(index, event)}
+                  ref={(input) => {
+                    otpInputRefs.current[index] = input;
+                  }}
+                  type="text"
+                  value={digit}
+                />
+              ))}
+            </div>
+          )}
+
+          {emailAuthMessage && (
+            <p className="text-center text-[10px] uppercase leading-5 text-[#f5dfad]">
+              {emailAuthMessage}
+            </p>
+          )}
+
+          <button
+            className="h-16 bg-[#344326] px-3 text-base uppercase text-[#d9b46b] shadow-[0_0_0_3px_#050302,0_5px_0_3px_#172111,inset_0_4px_0_#53663a,inset_0_-4px_0_#202b17] hover:bg-[#40522d] hover:text-[#ead08a] active:translate-y-1 active:shadow-[0_0_0_3px_#050302,0_2px_0_3px_#172111,inset_0_3px_0_#53663a,inset_0_-3px_0_#202b17] disabled:cursor-not-allowed disabled:bg-[#303536] disabled:text-[#8a8170] disabled:shadow-[0_0_0_3px_#050302,0_5px_0_3px_#151819,inset_0_4px_0_#4a5051,inset_0_-4px_0_#202425]"
+            disabled={isEmailAuthLoading}
+            type="submit"
+          >
+            {isEmailAuthLoading
+              ? hasSentOtp
+                ? translations.verifyingCode
+                : translations.sendingCode
+              : hasSentOtp
+                ? translations.verifyCode
+                : translations.sendCode}
+          </button>
+        </form>
 
         <p className="text-center text-sm uppercase text-[#f5dfad]">
           {translations.connectVia}
@@ -153,6 +394,7 @@ export function AuthModal({ onClose, translations }: AuthModalProps) {
           </button>
           <button
             className="flex h-14 items-center justify-center gap-2 bg-[#151819] text-sm uppercase text-[#f5dfad] shadow-[0_0_0_2px_#050302,inset_0_3px_0_#374041,inset_0_-3px_0_#050302] hover:bg-[#2a3031] active:translate-y-0.5"
+            onClick={signInWithGithub}
             type="button"
           >
             <GithubIcon />

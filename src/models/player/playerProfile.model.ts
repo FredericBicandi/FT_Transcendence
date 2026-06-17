@@ -271,6 +271,34 @@ function getAuthenticatedProfileCacheKey(playerId: string) {
   return `${AUTHENTICATED_PROFILE_CACHE_KEY_PREFIX}${playerId}`;
 }
 
+function normalizeProfileProgress(
+  currentXp: number,
+  level: number,
+  progressRequirements: ProgressRequirement[],
+) {
+  let normalizedCurrentXp = currentXp;
+  let normalizedLevel = level;
+  let xpRequiredForNextLevel = Math.max(
+    1,
+    getXpRequiredForLevel(normalizedLevel, progressRequirements),
+  );
+
+  while (normalizedCurrentXp >= xpRequiredForNextLevel) {
+    normalizedCurrentXp -= xpRequiredForNextLevel;
+    normalizedLevel += 1;
+    xpRequiredForNextLevel = Math.max(
+      1,
+      getXpRequiredForLevel(normalizedLevel, progressRequirements),
+    );
+  }
+
+  return {
+    currentXp: normalizedCurrentXp,
+    level: normalizedLevel,
+    xpRequiredForNextLevel,
+  };
+}
+
 function loadCachedAuthenticatedPlayerProfile(playerId: string) {
   const cacheKey = getAuthenticatedProfileCacheKey(playerId);
   const savedProfile = localStorage.getItem(cacheKey);
@@ -283,12 +311,26 @@ function loadCachedAuthenticatedPlayerProfile(playerId: string) {
     const parsedProfile: unknown = JSON.parse(savedProfile);
 
     if (isPlayerProfile(parsedProfile) && !parsedProfile.isGuest) {
+      const xpRequiredForNextLevel =
+        typeof parsedProfile.xpRequiredForNextLevel === "number"
+          ? Math.max(1, parsedProfile.xpRequiredForNextLevel)
+          : DEFAULT_XP_REQUIRED_FOR_NEXT_LEVEL;
+      const normalizedProgress = normalizeProfileProgress(
+        normalizeCurrentXp(parsedProfile.currentXp),
+        normalizePlayerLevel(parsedProfile.level),
+        [
+          {
+            level: normalizePlayerLevel(parsedProfile.level),
+            xpRequired: xpRequiredForNextLevel,
+          },
+        ],
+      );
+
       return {
         ...parsedProfile,
-        xpRequiredForNextLevel:
-          typeof parsedProfile.xpRequiredForNextLevel === "number"
-            ? parsedProfile.xpRequiredForNextLevel
-            : DEFAULT_XP_REQUIRED_FOR_NEXT_LEVEL,
+        currentXp: normalizedProgress.currentXp,
+        level: normalizedProgress.level,
+        xpRequiredForNextLevel: normalizedProgress.xpRequiredForNextLevel,
         matchLogs: Array.isArray(parsedProfile.matchLogs)
           ? parsedProfile.matchLogs
           : [],
@@ -360,17 +402,19 @@ function createAuthenticatedPlayerProfile(
     profile?.level,
     NEW_AUTHENTICATED_PLAYER_LEVEL,
   );
+  const progress = normalizeProfileProgress(
+    normalizeCurrentXp(profile?.current_xp),
+    level,
+    progressRequirements,
+  );
 
   return {
     playerId: userId,
     playerName: playerName || "Player",
     avatarUrl: normalizeAvatarUrl(profile?.picture_url) ?? fallbackAvatarUrl,
-    currentXp: normalizeCurrentXp(profile?.current_xp),
-    xpRequiredForNextLevel: getXpRequiredForLevel(
-      level,
-      progressRequirements,
-    ),
-    level,
+    currentXp: progress.currentXp,
+    xpRequiredForNextLevel: progress.xpRequiredForNextLevel,
+    level: progress.level,
     isGuest: false,
     needsUsername: options.forceUsernameResolved ? false : !savedPlayerName,
     matchLogs,

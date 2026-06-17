@@ -40,10 +40,46 @@ Grade: -%.
    npm run dev
    ```
 
-For Google authentication, enable the Google provider in Supabase and add
-`http://localhost:3000/auth/callback` and the production callback URL to the
-allowed redirect URLs. Never place a Supabase secret key or service-role key in
-a `NEXT_PUBLIC_` variable.
+For Google and GitHub authentication, enable each provider in Supabase and add
+`http://localhost:3000/auth/callback` and `https://pixelfight.live/auth/callback`
+to the allowed redirect URLs. Never place a Supabase secret key or service-role
+key in a `NEXT_PUBLIC_` variable.
+
+For email login, enable the Email provider in Supabase. Configure SMTP in
+`Supabase Dashboard > Project Settings > Authentication > SMTP Settings`, then
+set the confirmation or magic-link email template to send an OTP token:
+
+```html
+<h2>🎮 Verify your PixelFight account</h2>
+
+<p>Welcome to PixelFight.</p>
+
+<p>Use the verification code below to continue:</p>
+
+<div style="text-align:center; margin:30px 0;">
+  <span style="
+    font-size:36px;
+    font-weight:bold;
+    letter-spacing:10px;
+    padding:12px 24px;
+    border:2px solid #3b82f6;
+    border-radius:8px;
+    display:inline-block;
+  ">
+    {{ .Token }}
+  </span>
+</div>
+
+<p>This code will expire in 10 minutes.</p>
+
+<p>If you did not request this code, you can safely ignore this email.</p>
+
+<hr>
+
+<p><strong>PixelFight Team</strong></p>
+
+<p>https://pixelfight.live</p>
+```
 
 ## Godot match callback
 

@@ -940,7 +940,10 @@ const engine = new Engine(GODOT_CONFIG);
 		engine.startGame({
 			"onProgress": function (current, total) {
 				if (current > 0 && total > 0) {
-					const percent = Math.floor((current / total) * 100);
+					const percent = Math.max(
+						0,
+						Math.min(100, Math.floor((current / total) * 100)),
+					);
 					loadingBar.style.width = percent + "%";
 					loadingPercent.textContent = percent + "%";
 				} else {

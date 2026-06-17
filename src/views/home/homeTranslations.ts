@@ -2,10 +2,18 @@ export type HomeLanguage = "english" | "french" | "arabic";
 
 export type HomeTranslations = {
   auth: {
+    authFailed: string;
     close: string;
+    code: string;
+    codeRequired: string;
+    codeSent: string;
     connectVia: string;
     email: string;
-    loginRegister: string;
+    emailRequired: string;
+    sendCode: string;
+    sendingCode: string;
+    verifyCode: string;
+    verifyingCode: string;
   };
   chat: {
     inputLabel: string;
@@ -60,10 +68,18 @@ export type HomeTranslations = {
 export const homeTranslations: Record<HomeLanguage, HomeTranslations> = {
   english: {
     auth: {
+      authFailed: "Could not complete email login",
       close: "Close login popup",
+      code: "Code",
+      codeRequired: "Enter the verification code",
+      codeSent: "Verification code sent",
       connectVia: "----Or Connect Via----",
       email: "email",
-      loginRegister: "Login / Register",
+      emailRequired: "Enter your email",
+      sendCode: "Send Code",
+      sendingCode: "Sending...",
+      verifyCode: "Verify Code",
+      verifyingCode: "Verifying...",
     },
     chat: {
       inputLabel: "Global chat message",
@@ -121,10 +137,18 @@ export const homeTranslations: Record<HomeLanguage, HomeTranslations> = {
   },
   french: {
     auth: {
+      authFailed: "Connexion email impossible",
       close: "Fermer la fenetre de connexion",
+      code: "Code",
+      codeRequired: "Entrez le code",
+      codeSent: "Code envoye",
       connectVia: "----Ou Connectez-Vous Via----",
       email: "email",
-      loginRegister: "Connexion / Inscription",
+      emailRequired: "Entrez votre email",
+      sendCode: "Envoyer Code",
+      sendingCode: "Envoi...",
+      verifyCode: "Verifier Code",
+      verifyingCode: "Verification...",
     },
     chat: {
       inputLabel: "Message du chat global",
@@ -182,10 +206,18 @@ export const homeTranslations: Record<HomeLanguage, HomeTranslations> = {
   },
   arabic: {
     auth: {
+      authFailed: "تعذر تسجيل الدخول بالبريد",
       close: "اغلاق نافذة الدخول",
+      code: "الرمز",
+      codeRequired: "ادخل رمز التحقق",
+      codeSent: "تم ارسال رمز التحقق",
       connectVia: "----او اتصل عبر----",
       email: "البريد",
-      loginRegister: "دخول / تسجيل",
+      emailRequired: "ادخل بريدك",
+      sendCode: "ارسال الرمز",
+      sendingCode: "جاري الارسال...",
+      verifyCode: "تحقق من الرمز",
+      verifyingCode: "جاري التحقق...",
     },
     chat: {
       inputLabel: "رسالة الدردشة العامة",

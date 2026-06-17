@@ -118,7 +118,11 @@ export function useHomeController({
   }, []);
 
   const finishPostMatchFlow = useCallback(() => {
-    const shouldOpenProfile = matchCompletionPendingRef.current;
+    const currentProfile = playerProfileRef.current;
+    const shouldOpenProfile =
+      matchCompletionPendingRef.current &&
+      currentProfile !== null &&
+      !currentProfile.isGuest;
     matchCompletionPendingRef.current = false;
     clearPostMatchExitTimeout();
     setActiveGameUrl(null);

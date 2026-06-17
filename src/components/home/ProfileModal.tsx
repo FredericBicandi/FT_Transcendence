@@ -247,13 +247,26 @@ export function ProfileModal({
 
       remainingXp -= segmentXp;
 
-      if (endXp < xpRequiredForNextLevel || remainingXp <= 0) {
+      if (endXp < xpRequiredForNextLevel) {
         animatedXp = endXp;
         break;
       }
 
       animatedLevel += 1;
       animatedXp = 0;
+
+      if (remainingXp <= 0) {
+        if (animation.level >= animatedLevel) {
+          segments.push({
+            durationMs: 320,
+            endXp: animation.currentXp,
+            level: animation.level,
+            startXp: 0,
+            xpRequiredForNextLevel: animation.xpRequiredForNextLevel,
+          });
+        }
+        break;
+      }
     }
 
     if (segments.length === 0) {

@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AuthModal } from "@/components/home/AuthModal";
 import { LoginSignupButton } from "@/components/home/LoginSignupButton";
 import { GlobalChat } from "@/components/home/GlobalChat";
@@ -17,12 +17,29 @@ import {
 } from "@/views/home/homeTranslations";
 
 const LANGUAGE_STORAGE_KEY = "homeLanguage";
+const FULLSCREEN_REQUEST_MESSAGE_TYPES = new Set([
+  "FULLSCREEN_REQUEST",
+  "REQUEST_FULLSCREEN",
+  "request_fullscreen",
+]);
 
 function isHomeLanguage(value: string | null): value is HomeLanguage {
   return value === "english" || value === "french" || value === "arabic";
 }
 
+function isFullscreenRequestMessage(value: unknown) {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "type" in value &&
+    typeof value.type === "string" &&
+    FULLSCREEN_REQUEST_MESSAGE_TYPES.has(value.type)
+  );
+}
+
 export function HomeView() {
+  const gameIframeRef = useRef<HTMLIFrameElement | null>(null);
+  const mainElementRef = useRef<HTMLElement | null>(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [language, setLanguage] = useState<HomeLanguage>("english");
@@ -56,6 +73,13 @@ export function HomeView() {
     playerProfile !== null &&
     !playerProfile.isGuest &&
     playerProfile.needsUsername;
+  const handleGameFrameRef = useCallback(
+    (frame: HTMLIFrameElement | null) => {
+      gameIframeRef.current = frame;
+      registerGameWindow(frame?.contentWindow ?? null);
+    },
+    [registerGameWindow],
+  );
 
   useEffect(() => {
     const savedLanguage = window.localStorage.getItem(LANGUAGE_STORAGE_KEY);
@@ -69,6 +93,52 @@ export function HomeView() {
     window.localStorage.setItem(LANGUAGE_STORAGE_KEY, language);
   }, [language]);
 
+  useEffect(() => {
+    function focusGameIframe() {
+      const frame = gameIframeRef.current;
+
+      frame?.focus();
+      frame?.contentWindow?.focus();
+    }
+
+    async function requestGameFullscreen() {
+      const fullscreenTarget =
+        gameIframeRef.current ?? mainElementRef.current ?? document.documentElement;
+
+      try {
+        if (!document.fullscreenElement) {
+          await fullscreenTarget.requestFullscreen();
+        }
+      } catch {
+        try {
+          await document.documentElement.requestFullscreen();
+        } catch {
+          // Fullscreen can be unavailable or blocked by browser policy.
+        }
+      } finally {
+        window.requestAnimationFrame(focusGameIframe);
+      }
+    }
+
+    function handleGameFullscreenMessage(event: MessageEvent<unknown>) {
+      if (
+        event.origin !== window.location.origin ||
+        event.source !== gameIframeRef.current?.contentWindow ||
+        !isFullscreenRequestMessage(event.data)
+      ) {
+        return;
+      }
+
+      void requestGameFullscreen();
+    }
+
+    window.addEventListener("message", handleGameFullscreenMessage);
+
+    return () => {
+      window.removeEventListener("message", handleGameFullscreenMessage);
+    };
+  }, []);
+
   function handlePlayGame() {
     setShowProfileModal(false);
     playGame();
@@ -76,6 +146,7 @@ export function HomeView() {
 
   return (
     <main
+      ref={mainElementRef}
       className="relative h-screen w-screen overflow-hidden bg-black"
       dir={language === "arabic" ? "rtl" : "ltr"}
       lang={language === "arabic" ? "ar" : language === "french" ? "fr" : "en"}
@@ -201,8 +272,9 @@ export function HomeView() {
       {gameUrl && !needsUsernameSetup && (
         <iframe
           title="PixelFight game"
-          ref={(frame) => registerGameWindow(frame?.contentWindow ?? null)}
+          ref={handleGameFrameRef}
           src={gameUrl}
+          allow="fullscreen"
           className={`absolute inset-0 z-20 h-full w-full border-0 ${
             showGame ? "visible" : "invisible pointer-events-none"
           }`}
