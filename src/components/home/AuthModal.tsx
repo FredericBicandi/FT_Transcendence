@@ -10,6 +10,7 @@ import { getAuthCallbackUrl } from "@/models/app/appUrl.model";
 import { createSupabaseClient } from "@/models/supabase/client.model";
 
 const OTP_CODE_LENGTH = 6;
+type OAuthProvider = "github" | "google";
 
 type AuthModalProps = {
   onClose: () => void;
@@ -117,31 +118,38 @@ export function AuthModal({ onClose, translations }: AuthModalProps) {
     0,
     OTP_CODE_LENGTH,
   );
+  // Store OTP as one string, but render it as six small inputs.
   const otpDigits = Array.from(
     { length: OTP_CODE_LENGTH },
     (_, index) => normalizedOtpCode[index] ?? "",
   );
 
-  async function signInWithGoogle() {
-    const supabase = createSupabaseClient();
+  async function signInWithProvider(provider: OAuthProvider) {
+    setEmailAuthMessage(null);
 
-    await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: getAuthCallbackUrl(),
-      },
-    });
+    try {
+      const supabase = createSupabaseClient();
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider,
+        options: {
+          redirectTo: getAuthCallbackUrl(),
+        },
+      });
+
+      if (error) {
+        setEmailAuthMessage(error.message || translations.authFailed);
+      }
+    } catch {
+      setEmailAuthMessage(translations.authFailed);
+    }
+  }
+
+  async function signInWithGoogle() {
+    await signInWithProvider("google");
   }
 
   async function signInWithGithub() {
-    const supabase = createSupabaseClient();
-
-    await supabase.auth.signInWithOAuth({
-      provider: "github",
-      options: {
-        redirectTo: getAuthCallbackUrl(),
-      },
-    });
+    await signInWithProvider("github");
   }
 
   async function requestEmailOtp() {
@@ -242,6 +250,7 @@ export function AuthModal({ onClose, translations }: AuthModalProps) {
 
   function replaceOtpDigits(startIndex: number, value: string) {
     const nextDigits = [...otpDigits];
+    // Paste can fill the rest of the OTP from any digit-only text.
     const pastedDigits = value.replace(/\D/g, "").slice(
       0,
       OTP_CODE_LENGTH - startIndex,
@@ -277,6 +286,7 @@ export function AuthModal({ onClose, translations }: AuthModalProps) {
     event: KeyboardEvent<HTMLInputElement>,
   ) {
     if (event.key === "Backspace" && !otpDigits[index] && index > 0) {
+      // Backspace should feel like one connected OTP input.
       event.preventDefault();
       const nextDigits = [...otpDigits];
       nextDigits[index - 1] = "";

@@ -3,6 +3,8 @@ node_modules
 .git
 .agents
 .codex
+*.tsbuildinfo
+next-env.d.ts
 npm-debug.log*
 Dockerfile
 dockerfile

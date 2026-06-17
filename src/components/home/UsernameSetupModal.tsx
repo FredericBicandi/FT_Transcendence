@@ -35,6 +35,7 @@ export function UsernameSetupModal({
     setErrorMessage(null);
 
     try {
+      // Force authenticated players to pick a real username before playing.
       await saveAuthenticatedPlayerProfile({
         avatarUrl: playerProfile.avatarUrl,
         playerId: playerProfile.playerId,

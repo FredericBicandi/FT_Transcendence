@@ -1,5 +1,3 @@
-// src/app/layout.tsx
-
 import type { Metadata } from "next";
 import "./globals.css";
 
@@ -19,6 +17,7 @@ export default function RootLayout({
   return (
     <html lang="en">  
       <head>
+        {/* Warm up the game export so pressing Play starts faster. */}
         <link rel="prefetch" href="/Game/index.js" as="script" />
         <link
           rel="prefetch"

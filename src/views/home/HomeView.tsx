@@ -76,6 +76,7 @@ export function HomeView() {
   const handleGameFrameRef = useCallback(
     (frame: HTMLIFrameElement | null) => {
       gameIframeRef.current = frame;
+      // Keep the controller pointed at the active iframe window.
       registerGameWindow(frame?.contentWindow ?? null);
     },
     [registerGameWindow],
@@ -85,6 +86,7 @@ export function HomeView() {
     const savedLanguage = window.localStorage.getItem(LANGUAGE_STORAGE_KEY);
 
     if (isHomeLanguage(savedLanguage)) {
+      // Delay this so hydration starts from the same default language.
       window.setTimeout(() => setLanguage(savedLanguage), 0);
     }
   }, []);
@@ -116,6 +118,7 @@ export function HomeView() {
           // Fullscreen can be unavailable or blocked by browser policy.
         }
       } finally {
+        // Fullscreen changes can steal focus from the game iframe.
         window.requestAnimationFrame(focusGameIframe);
       }
     }
@@ -129,6 +132,7 @@ export function HomeView() {
         return;
       }
 
+      // Let the Godot iframe ask the parent page for fullscreen.
       void requestGameFullscreen();
     }
 
@@ -179,7 +183,10 @@ export function HomeView() {
       )}
 
       {!showGame && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center gap-8 px-4">
+        <div
+          className="absolute inset-0 z-10 flex items-center justify-center gap-8 px-4"
+          dir="ltr"
+        >
           <div className="hidden w-[28rem] lg:block" aria-hidden="true" />
 
           <div className="flex flex-col items-center gap-6">
@@ -203,6 +210,9 @@ export function HomeView() {
                   </span>
                   <span className="h-[3px] w-12 bg-[#f5dfad]/40 shadow-[0_1px_0_#050302]" />
                 </div>
+                <span className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#f5dfad]/65 [text-shadow:0_2px_0_#050302] sm:text-xs">
+                  v2.0.1
+                </span>
               </div>
             </div>
 
@@ -237,6 +247,7 @@ export function HomeView() {
             messages={chatMessages}
             onSendMessage={sendChatMessage}
             playerProfile={playerProfile}
+            textDirection={language === "arabic" ? "rtl" : "ltr"}
             translations={translations.chat}
           />
         </div>

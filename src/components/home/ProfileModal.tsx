@@ -1,5 +1,6 @@
-import { ChangeEvent, useEffect, useState } from "react";
+import { useEffect, useState, type ChangeEvent } from "react";
 import {
+  getXpRequiredForPlayerLevel,
   isUsernameTakenError,
   saveAuthenticatedPlayerProfile,
   type MatchProgressUpdate,
@@ -209,6 +210,7 @@ export function ProfileModal({
     };
 
     function getXpRequiredForAnimatedLevel(level: number) {
+      // Use the exact old/new requirements so level-up animation stays honest.
       if (level === animation.previousLevel) {
         return animation.previousXpRequiredForNextLevel;
       }
@@ -217,10 +219,7 @@ export function ProfileModal({
         return animation.xpRequiredForNextLevel;
       }
 
-      return (
-        animation.previousXpRequiredForNextLevel +
-        (level - animation.previousLevel) * 100
-      );
+      return getXpRequiredForPlayerLevel(level);
     }
 
     const segments: ProgressSegment[] = [];
@@ -228,6 +227,7 @@ export function ProfileModal({
     let animatedXp = animation.previousCurrentXp;
     let remainingXp = animation.xpGained;
 
+    // Split XP gain into one segment per level bar.
     while (remainingXp > 0) {
       const xpRequiredForNextLevel = Math.max(
         1,
@@ -270,6 +270,7 @@ export function ProfileModal({
     }
 
     if (segments.length === 0) {
+      // Still animate a tiny update so the profile modal does not look frozen.
       segments.push({
         durationMs: 480,
         endXp: animation.currentXp,
@@ -351,6 +352,7 @@ export function ProfileModal({
   useEffect(() => {
     return () => {
       if (avatarPreviewUrl?.startsWith("blob:")) {
+        // Release preview blobs when the user picks a new image or closes.
         URL.revokeObjectURL(avatarPreviewUrl);
       }
     };
@@ -371,6 +373,7 @@ export function ProfileModal({
     setSaveStatus(null);
     setAvatarPreviewUrl((currentUrl) => {
       if (currentUrl?.startsWith("blob:")) {
+        // Avoid leaking object URLs while previewing multiple files.
         URL.revokeObjectURL(currentUrl);
       }
 

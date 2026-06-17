@@ -74,9 +74,11 @@ select:disabled,
 }
 
 .chat-font {
+  /* Use the smaller pixel font where long chat/profile text needs room. */
   font-family: "PFRondaSeven", "Courier New", monospace;
 }
 
 :lang(ar) .chat-font {
+  /* Arabic needs fallback fonts with proper shaping. */
   font-family: "PFRondaSeven", Tahoma, Arial, sans-serif;
 }

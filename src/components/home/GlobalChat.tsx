@@ -9,6 +9,7 @@ type GlobalChatProps = {
   messages: DashboardChatMessage[];
   onSendMessage: (content: string, playerProfile: PlayerProfile) => boolean;
   playerProfile: PlayerProfile | null;
+  textDirection: "ltr" | "rtl";
   translations: HomeTranslations["chat"];
 };
 
@@ -26,6 +27,7 @@ const usernameColors = [
 function getUsernameColor(username: string) {
   let hash = 0;
 
+  // Keep a player's chat color stable without storing extra data.
   for (let index = 0; index < username.length; index += 1) {
     hash = (hash + username.charCodeAt(index) * (index + 1)) % 997;
   }
@@ -47,12 +49,17 @@ function formatSentAt(sentAt: string) {
   }).format(date);
 }
 
+function isRtlMessage(content: string) {
+  return /[\u0591-\u08FF\uFB1D-\uFDFD\uFE70-\uFEFC]/.test(content);
+}
+
 export function GlobalChat({
   errorMessage,
   isConnected,
   messages,
   onSendMessage,
   playerProfile,
+  textDirection,
   translations,
 }: GlobalChatProps) {
   const [draftMessage, setDraftMessage] = useState("");
@@ -64,6 +71,7 @@ export function GlobalChat({
         ...message,
         sentAtLabel: formatSentAt(message.sentAt),
         usernameColor: getUsernameColor(message.playerName),
+        isRtl: isRtlMessage(message.content),
       })),
     [messages],
   );
@@ -87,20 +95,55 @@ export function GlobalChat({
   }
 
   function updateDraftMessage(value: string) {
+    // Count real characters, not UTF-16 units, so Arabic/emoji behave better.
     setDraftMessage(Array.from(value).slice(0, 140).join(""));
   }
 
   return (
-    <section className="chat-font hidden w-[28rem] flex-col bg-black/55 shadow-[0_0_0_3px_#050302,0_4px_0_3px_rgba(0,0,0,0.55),inset_0_3px_0_rgba(255,255,255,0.08)] backdrop-blur-[2px] lg:flex" style={{ height: "28rem" }}>
+    <section
+      className="chat-font hidden w-[28rem] flex-col bg-black/55 shadow-[0_0_0_3px_#050302,0_4px_0_3px_rgba(0,0,0,0.55),inset_0_3px_0_rgba(255,255,255,0.08)] backdrop-blur-[2px] lg:flex"
+      dir={textDirection}
+      style={{ height: "28rem" }}
+    >
       <div className="flex-1 overflow-y-auto px-4 py-3 text-xs leading-6 [scrollbar-color:#b8893b_rgba(0,0,0,0.35)]">
         {coloredMessages.map((message) => (
-          <p key={message.messageId} className="text-[#f5dfad]/90">
-            <span className="text-[#d9b46b]/80">{message.sentAtLabel}</span>{" "}
-            <span style={{ color: message.usernameColor }}>
-              {message.playerName}:
-            </span>{" "}
-            <span>{message.content}</span>
-          </p>
+          <div
+            key={message.messageId}
+            className="flex w-full min-w-0 flex-nowrap gap-2 text-[#f5dfad]/90"
+            dir={message.isRtl ? "rtl" : "ltr"}
+          >
+            {message.isRtl ? (
+              <>
+                <span className="min-w-0 flex-1 text-right [unicode-bidi:plaintext]">
+                  {message.content}
+                </span>
+                <span
+                  className="shrink-0 [unicode-bidi:isolate]"
+                  style={{ color: message.usernameColor }}
+                >
+                  {message.playerName}:
+                </span>
+                <span className="shrink-0 text-[#d9b46b]/80 [unicode-bidi:isolate]">
+                  {message.sentAtLabel}
+                </span>
+              </>
+            ) : (
+              <>
+                <span className="shrink-0 text-[#d9b46b]/80 [unicode-bidi:isolate]">
+                  {message.sentAtLabel}
+                </span>
+                <span
+                  className="shrink-0 [unicode-bidi:isolate]"
+                  style={{ color: message.usernameColor }}
+                >
+                  {message.playerName}:
+                </span>
+                <span className="min-w-0 flex-1 text-left [unicode-bidi:plaintext]">
+                  {message.content}
+                </span>
+              </>
+            )}
+          </div>
         ))}
       </div>
 

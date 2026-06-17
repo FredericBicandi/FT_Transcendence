@@ -135,6 +135,7 @@ export function TopBarActions({
     }
 
     function handlePointerDown(event: PointerEvent) {
+      // Close the menu when the user clicks outside it.
       if (
         event.target instanceof Node &&
         languageMenuRef.current?.contains(event.target)
@@ -179,7 +180,9 @@ export function TopBarActions({
         type="button"
       >
         <FullscreenIcon isFullscreen={isFullscreen} />
-        <span className="text-xs text-[#d9b46b]">FullScreen</span>
+        <span className="max-w-28 text-center text-[10px] uppercase leading-tight text-[#d9b46b]">
+          {isFullscreen ? translations.exit : translations.enter}
+        </span>
       </button>
 
       <button

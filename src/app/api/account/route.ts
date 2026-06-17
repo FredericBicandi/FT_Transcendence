@@ -5,6 +5,7 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
 const supabaseCookieOptions = {
+  // Keep Supabase cookies compatible with the SSR helper.
   encode: "tokens-only",
 } satisfies Pick<CookieMethodsServer, "encode">;
 
@@ -32,7 +33,7 @@ export async function DELETE() {
           return cookieStore.getAll();
         },
         setAll() {
-          // The client signs out after a successful deletion response.
+          // The client signs out after account deletion succeeds.
         },
       },
     },
@@ -46,6 +47,7 @@ export async function DELETE() {
     return createErrorResponse("Not authenticated.", 401);
   }
 
+  // Use the service role only after proving the request owns this session.
   const adminSupabase = createClient(supabaseUrl, supabaseServiceRoleKey, {
     auth: {
       autoRefreshToken: false,

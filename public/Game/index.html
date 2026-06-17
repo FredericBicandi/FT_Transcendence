@@ -791,7 +791,7 @@ Your browser does not support JavaScript.
 			<div class="hud-label-row">
 				<div class="hud-label-left">
 					<span class="hud-icon"></span>
-					<span class="hud-label">Loading files</span>
+					<span class="hud-label" id="loading-label">Loading files</span>
 				</div>
 				<div class="hud-percent-wrap">
 					<span id="loading-percent">0%</span>
@@ -818,7 +818,7 @@ const GODOT_CONFIG = {
 	"executable": "index",
 	"experimentalVK": false,
 	"fileSizes": {
-		"index.pck": 628644,
+		"index.pck": 1089640,
 		"index.wasm": 37685705
 	},
 	"focusCanvas": true,
@@ -832,9 +832,32 @@ const engine = new Engine(GODOT_CONFIG);
 (function () {
 	const statusOverlay = document.getElementById("status");
 	const loader = document.getElementById("loader");
+	const loadingLabel = document.getElementById("loading-label");
 	const loadingBar = document.getElementById("loading-bar");
 	const loadingPercent = document.getElementById("loading-percent");
 	const statusNotice = document.getElementById("status-notice");
+	const loaderTranslations = {
+		english: {
+			loadingFiles: "Loading files",
+			loading: "Loading...",
+		},
+		french: {
+			loadingFiles: "Chargement des fichiers",
+			loading: "Chargement...",
+		},
+		arabic: {
+			loadingFiles: "جاري تحميل الملفات",
+			loading: "جاري التحميل...",
+		},
+	};
+	const language = new URLSearchParams(window.location.search).get("language");
+	const loaderText = loaderTranslations[language] || loaderTranslations.english;
+
+	// Match the loader language to the dashboard-selected language.
+	document.documentElement.lang =
+		language === "arabic" ? "ar" : language === "french" ? "fr" : "en";
+	document.documentElement.dir = language === "arabic" ? "rtl" : "ltr";
+	loadingLabel.textContent = loaderText.loadingFiles;
 
 	let initializing = true;
 	let statusMode = "";
@@ -948,7 +971,7 @@ const engine = new Engine(GODOT_CONFIG);
 					loadingPercent.textContent = percent + "%";
 				} else {
 					loadingBar.style.width = "18%";
-					loadingPercent.textContent = "Loading...";
+					loadingPercent.textContent = loaderText.loading;
 				}
 			},
 		}).then(() => {

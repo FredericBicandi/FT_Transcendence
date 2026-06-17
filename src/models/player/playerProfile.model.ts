@@ -93,6 +93,7 @@ type LoadPlayerProfileOptions = {
 };
 
 function normalizePlayerName(value: unknown, fallback: string) {
+  // Supabase rows can be null or malformed, so normalize before UI uses them.
   if (typeof value !== "string") {
     return fallback;
   }
@@ -100,6 +101,12 @@ function normalizePlayerName(value: unknown, fallback: string) {
   const normalizedName = value.trim();
 
   return normalizedName.length > 0 ? normalizedName : fallback;
+}
+
+function normalizeUsername(value: unknown, fallback: string) {
+  const normalizedName = normalizePlayerName(value, fallback);
+
+  return normalizedName ? normalizedName.toLowerCase() : fallback;
 }
 
 function normalizePlayerLevel(value: unknown, fallback = 0) {
@@ -171,6 +178,7 @@ function parseIntervalSeconds(value: unknown) {
     return Math.max(0, Math.floor(normalizeFiniteNumber(value)));
   }
 
+  // Supabase intervals may come back as "1 day 00:00:00" strings.
   const match = value
     .trim()
     .match(/^(?:(\d+)\s+days?\s+)?(\d+):(\d{2}):(\d{2}(?:\.\d+)?)$/i);
@@ -215,6 +223,7 @@ function getUserAvatarUrl(userMetadata: Record<string, unknown> | undefined) {
 }
 
 function getUserDisplayName(userMetadata: Record<string, unknown> | undefined) {
+  // OAuth providers do not agree on one display-name field.
   return (
     normalizePlayerName(userMetadata?.preferred_username, "") ||
     normalizePlayerName(userMetadata?.user_name, "") ||
@@ -250,6 +259,7 @@ export function resetGuestPlayerProfile(): PlayerProfile {
 }
 
 function isPlayerProfile(value: unknown): value is PlayerProfile {
+  // Keep localStorage from crashing the app after old or corrupted data.
   if (typeof value !== "object" || value === null) {
     return false;
   }
@@ -283,6 +293,7 @@ function normalizeProfileProgress(
     getXpRequiredForLevel(normalizedLevel, progressRequirements),
   );
 
+  // Roll extra XP forward if cached/server progress crosses a level boundary.
   while (normalizedCurrentXp >= xpRequiredForNextLevel) {
     normalizedCurrentXp -= xpRequiredForNextLevel;
     normalizedLevel += 1;
@@ -319,10 +330,12 @@ function loadCachedAuthenticatedPlayerProfile(playerId: string) {
         normalizeCurrentXp(parsedProfile.currentXp),
         normalizePlayerLevel(parsedProfile.level),
         [
+          // Prefer the cached requirement first so offline reloads stay consistent.
           {
             level: normalizePlayerLevel(parsedProfile.level),
             xpRequired: xpRequiredForNextLevel,
           },
+          ...FALLBACK_PROGRESS_REQUIREMENTS,
         ],
       );
 
@@ -367,6 +380,7 @@ function loadGuestPlayerProfile(): PlayerProfile {
       const parsedProfile: unknown = JSON.parse(savedProfile);
 
       if (isPlayerProfile(parsedProfile)) {
+        // Older cached guests may not have every newer profile field.
         return {
           ...parsedProfile,
           xpRequiredForNextLevel:
@@ -397,7 +411,8 @@ function createAuthenticatedPlayerProfile(
 ) {
   const savedPlayerName = normalizePlayerName(profile?.username, "");
   const playerName =
-    savedPlayerName || normalizePlayerName(fallbackPlayerName, "");
+    normalizeUsername(savedPlayerName, "") ||
+    normalizeUsername(fallbackPlayerName, "");
   const level = normalizePlayerLevel(
     profile?.level,
     NEW_AUTHENTICATED_PLAYER_LEVEL,
@@ -408,6 +423,7 @@ function createAuthenticatedPlayerProfile(
     progressRequirements,
   );
 
+  // Build one profile shape for both new and existing authenticated users.
   return {
     playerId: userId,
     playerName: playerName || "Player",
@@ -422,6 +438,7 @@ function createAuthenticatedPlayerProfile(
 }
 
 async function loadProgressRequirements() {
+  // Keep level rules local until the database table is needed.
   return FALLBACK_PROGRESS_REQUIREMENTS;
 }
 
@@ -429,23 +446,54 @@ function getXpRequiredForLevel(
   level: number,
   progressRequirements: ProgressRequirement[],
 ) {
+  const normalizedLevel = normalizePlayerLevel(level);
   const requirement = progressRequirements.find(
-    (progressRequirement) => progressRequirement.level === level,
+    (progressRequirement) => progressRequirement.level === normalizedLevel,
   );
 
-  if (requirement) {
-    return requirement.xpRequired;
+  if (
+    requirement &&
+    Number.isFinite(requirement.xpRequired) &&
+    requirement.xpRequired > 0
+  ) {
+    return Math.floor(requirement.xpRequired);
   }
 
-  const highestKnownRequirement = progressRequirements.at(-1);
+  const highestKnownRequirement = progressRequirements.reduce<
+    ProgressRequirement | null
+  >((highestRequirement, progressRequirement) => {
+    if (
+      !Number.isFinite(progressRequirement.xpRequired) ||
+      progressRequirement.xpRequired <= 0
+    ) {
+      return highestRequirement;
+    }
+
+    if (
+      highestRequirement === null ||
+      progressRequirement.level > highestRequirement.level
+    ) {
+      return progressRequirement;
+    }
+
+    return highestRequirement;
+  }, null);
 
   if (!highestKnownRequirement) {
     return DEFAULT_XP_REQUIRED_FOR_NEXT_LEVEL;
   }
 
-  const levelDelta = Math.max(0, level - highestKnownRequirement.level);
+  // Let high levels keep scaling even beyond the hardcoded table.
+  const levelDelta = Math.max(0, normalizedLevel - highestKnownRequirement.level);
 
-  return highestKnownRequirement.xpRequired + levelDelta * 100;
+  return Math.max(
+    1,
+    Math.floor(highestKnownRequirement.xpRequired + levelDelta * 100),
+  );
+}
+
+export function getXpRequiredForPlayerLevel(level: number) {
+  return getXpRequiredForLevel(level, FALLBACK_PROGRESS_REQUIREMENTS);
 }
 
 function calculateMatchProgressUpdate({
@@ -467,8 +515,9 @@ function calculateMatchProgressUpdate({
   );
   let nextLevel = previousLevel;
   let nextCurrentXp = previousCurrentXp + Math.max(0, Math.floor(score));
-  let nextXpRequiredForNextLevel = previousXpRequiredForNextLevel;
+  let nextXpRequiredForNextLevel = Math.max(1, previousXpRequiredForNextLevel);
 
+  // Apply score as XP and carry it across as many levels as needed.
   while (nextCurrentXp >= nextXpRequiredForNextLevel) {
     nextCurrentXp -= nextXpRequiredForNextLevel;
     nextLevel += 1;
@@ -493,6 +542,7 @@ function createMatchLog(row: PlayedMatchRow): MatchLog | null {
   const matchId = typeof row.match_id === "string" ? row.match_id : "";
 
   if (!matchId) {
+    // Ignore bad rows instead of showing broken history.
     return null;
   }
 
@@ -521,6 +571,7 @@ async function loadAuthenticatedPlayerMatchLogs(playerId: string) {
     .order("created_at", { ascending: false });
 
   if (error || !data) {
+    // History is optional; the main profile should still load.
     return [];
   }
 
@@ -563,6 +614,7 @@ export async function saveAuthenticatedMatchLog({
   } = await supabase.auth.getUser();
 
   if (!user) {
+    // Guests can finish matches, but only signed-in users persist logs.
     return null;
   }
 
@@ -600,6 +652,7 @@ export function createOptimisticMatchProgressUpdate(
         level: playerProfile.level,
         xpRequired: playerProfile.xpRequiredForNextLevel,
       },
+      ...FALLBACK_PROGRESS_REQUIREMENTS,
     ],
     score,
   });
@@ -662,6 +715,7 @@ export async function loadPlayerProfile({
       const { data, error } = profileResult;
 
       if (error) {
+        // If profile lookup fails, use auth metadata so login still works.
         const fallbackProfile = createAuthenticatedPlayerProfile(
           userAvatarUrl,
           userDisplayName,
@@ -701,21 +755,6 @@ export async function loadPlayerProfile({
   return loadGuestPlayerProfile();
 }
 
-async function profileExists(playerId: string) {
-  const supabase = createSupabaseClient();
-  const { data, error } = await supabase
-    .from("profiles")
-    .select("id")
-    .eq("id", playerId)
-    .maybeSingle<{ id: string }>();
-
-  if (error) {
-    throw error;
-  }
-
-  return data !== null;
-}
-
 async function upsertProfileDetails({
   avatarUrl,
   playerId,
@@ -726,28 +765,15 @@ async function upsertProfileDetails({
   playerName: string;
 }) {
   const supabase = createSupabaseClient();
-
-  if (await profileExists(playerId)) {
-    const { error } = await supabase
-      .from("profiles")
-      .update({
-        username: playerName,
-        picture_url: avatarUrl ?? null,
-      })
-      .eq("id", playerId);
-
-    if (error) {
-      throw error;
-    }
-
-    return;
-  }
-
-  const { error } = await supabase.from("profiles").insert({
-    id: playerId,
-    username: playerName,
-    picture_url: avatarUrl ?? null,
-  });
+  // Use upsert because profile setup can run before the row exists.
+  const { error } = await supabase.from("profiles").upsert(
+    {
+      id: playerId,
+      username: playerName,
+      picture_url: avatarUrl ?? null,
+    },
+    { onConflict: "id" },
+  );
 
   if (error) {
     throw error;
@@ -755,16 +781,17 @@ async function upsertProfileDetails({
 }
 
 export function createPlayerProfileSearchParams(playerProfile: PlayerProfile) {
+  // The game reads identity from the URL because it runs inside a static export.
   return new URLSearchParams({
     playerId: playerProfile.playerId,
-    playerName: playerProfile.playerName,
+    playerName: normalizeUsername(playerProfile.playerName, playerProfile.playerName),
     level: String(playerProfile.level),
     currentXp: String(playerProfile.currentXp),
   });
 }
 
 export async function isUsernameTaken(username: string, playerId: string) {
-  const normalizedUsername = normalizePlayerName(username, "");
+  const normalizedUsername = normalizeUsername(username, "");
 
   if (!normalizedUsername) {
     return false;
@@ -794,13 +821,14 @@ export async function saveAuthenticatedPlayerProfile({
   playerId: string;
   playerName: string;
 }) {
-  const normalizedPlayerName = normalizePlayerName(playerName, "");
+  const normalizedPlayerName = normalizeUsername(playerName, "");
 
   if (!normalizedPlayerName) {
     throw new Error("USERNAME_REQUIRED");
   }
 
   if (await isUsernameTaken(normalizedPlayerName, playerId)) {
+    // Surface a stable app error instead of leaking database details to the UI.
     throw new Error(USERNAME_TAKEN_ERROR);
   }
 

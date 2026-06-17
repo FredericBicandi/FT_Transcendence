@@ -5,6 +5,7 @@ import { NextResponse } from "next/server";
 import { getAppUrl } from "@/models/app/appUrl.model";
 
 const supabaseCookieOptions = {
+  // Match the cookie format expected by the Supabase SSR client.
   encode: "tokens-only",
 } satisfies Pick<CookieMethodsServer, "encode">;
 
@@ -24,10 +25,18 @@ export async function GET(request: Request) {
   const redirectResponse = NextResponse.redirect(getRedirectUrl());
 
   if (code) {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabasePublishableKey =
+      process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+
+    if (!supabaseUrl || !supabasePublishableKey) {
+      return NextResponse.redirect(getRedirectUrl("config"));
+    }
+
     const cookieStore = await cookies();
     const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
+      supabaseUrl,
+      supabasePublishableKey,
       {
         cookies: {
           ...supabaseCookieOptions,
@@ -35,6 +44,7 @@ export async function GET(request: Request) {
             return cookieStore.getAll();
           },
           setAll(cookiesToSet, headers) {
+            // Store the new auth cookies on the redirect response itself.
             cookiesToSet.forEach(({ name, value, options }) => {
               redirectResponse.cookies.set(name, value, options);
             });

@@ -55,6 +55,7 @@ type MatchSavedMessage = {
 };
 
 function isMatchSavedMessage(value: unknown): value is MatchSavedMessage {
+  // Validate the game iframe packet before saving anything.
   return (
     isRecord(value) &&
     value.type === MATCH_SAVED_MESSAGE_TYPE &&
@@ -75,6 +76,7 @@ function createGameUrl(playerProfile: PlayerProfile, language: string) {
   const searchParams = createPlayerProfileSearchParams(playerProfile);
   searchParams.set("language", language);
 
+  // Pass only the fields the Godot game needs to identify this player.
   return `/Game/index.html?${searchParams.toString()}`;
 }
 
@@ -128,6 +130,7 @@ export function useHomeController({
     setActiveGameUrl(null);
     setShowGame(false);
     if (shouldOpenProfile) {
+      // Show saved progress only after a real completed authenticated match.
       onMatchComplete?.();
     }
   }, [clearPostMatchExitTimeout, onMatchComplete]);
@@ -148,6 +151,7 @@ export function useHomeController({
 
     const detailsKey = `${playerProfile.playerId}:${playerProfile.level}`;
 
+    // Avoid reloading history for the same profile/level pair.
     if (
       loadedProfileDetailsKeyRef.current === detailsKey ||
       playerProfile.matchLogs.length > 0
@@ -224,6 +228,8 @@ export function useHomeController({
   }, []);
 
   useEffect(() => {
+    isMountedRef.current = true;
+
     const requestId = profileRequestIdRef.current + 1;
     profileRequestIdRef.current = requestId;
 
@@ -258,7 +264,14 @@ export function useHomeController({
   }, [clearPostMatchExitTimeout, refreshPlayerProfile]);
 
   useEffect(() => {
-    const supabase = createSupabaseClient();
+    let supabase: ReturnType<typeof createSupabaseClient>;
+
+    try {
+      supabase = createSupabaseClient();
+    } catch {
+      return;
+    }
+
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(() => {
@@ -295,6 +308,7 @@ export function useHomeController({
     }
 
     function handleGameMessage(event: MessageEvent<unknown>) {
+      // Only trust messages from the iframe we opened.
       if (
         event.origin !== window.location.origin ||
         event.source !== gameWindowRef.current
@@ -304,6 +318,7 @@ export function useHomeController({
 
       if (isExitGameMessage(event.data)) {
         if (isMatchEndExitGameMessage(event.data)) {
+          // The match ended normally, so the profile modal can show progress.
           matchCompletionPendingRef.current = true;
         }
         finishPostMatchFlow();
@@ -321,6 +336,7 @@ export function useHomeController({
 
         clearPostMatchExitTimeout();
         matchCompletionPendingRef.current = true;
+        // If the game never sends EXIT_GAME, still return to the dashboard.
         postMatchExitTimeoutRef.current = window.setTimeout(
           finishPostMatchFlow,
           POST_MATCH_EXIT_FALLBACK_MS,
@@ -337,6 +353,7 @@ export function useHomeController({
 
         if (currentProfile && progressUpdate) {
           progressAnimationIdRef.current += 1;
+          // Update locally first so the UI does not wait on Supabase.
           setMatchProgressAnimation({
             ...progressUpdate,
             id: progressAnimationIdRef.current,
@@ -369,6 +386,7 @@ export function useHomeController({
                 return currentProfile;
               }
 
+              // Replace optimistic progress with the confirmed server save.
               const updatedProfile = {
                 ...currentProfile,
                 ...(savedProgress

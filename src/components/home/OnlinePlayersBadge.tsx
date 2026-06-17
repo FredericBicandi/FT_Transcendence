@@ -9,6 +9,7 @@ export function OnlinePlayersBadge({
 }: OnlinePlayersBadgeProps) {
   return (
     <div className="flex items-center gap-3 rounded border border-emerald-900/40 bg-black/45 px-4 py-2">
+      {/* Draw the status dot as pixels so it matches the game art. */}
       <span className="grid h-[10px] w-[10px] grid-cols-5 grid-rows-5 [image-rendering:pixelated]">
         <span className="col-start-2 row-start-1 bg-[#1a6b1a]" />
         <span className="col-start-3 row-start-1 bg-[#1a6b1a]" />

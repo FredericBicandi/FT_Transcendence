@@ -1,5 +1,6 @@
 export type HomeLanguage = "english" | "french" | "arabic";
 
+// Keep all dashboard copy in one place so language switches do not touch UI logic.
 export type HomeTranslations = {
   auth: {
     authFailed: string;
@@ -240,7 +241,7 @@ export const homeTranslations: Record<HomeLanguage, HomeTranslations> = {
       options: {
         english: "English",
         french: "French",
-        arabic: "Arabic",
+        arabic: "العربية",
       },
     },
     profile: {

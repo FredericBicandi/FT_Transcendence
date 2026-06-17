@@ -41,6 +41,7 @@ export function getAppUrl() {
     process.env.NODE_ENV === "production" &&
     LOCAL_HOSTNAMES.has(appUrl.hostname)
   ) {
+    // Never send production auth callbacks back to localhost by mistake.
     return CANONICAL_APP_URL;
   }
 

@@ -6,6 +6,7 @@ import type { PlayerProfile } from "@/models/player/playerProfile.model";
 const MAX_CHAT_MESSAGES = 100;
 const MAX_RECONNECT_DELAY_MS = 15_000;
 const INITIAL_RECONNECT_DELAY_MS = 1_000;
+const DASHBOARD_PRESENCE_STORAGE_KEY = "dashboardPresenceId";
 
 export type DashboardChatMessage = {
   messageId: string;
@@ -55,6 +56,7 @@ function parseServerMessage(value: string): DashboardServerMessage | null {
     return null;
   }
 
+  // Only accept message shapes the dashboard UI knows how to handle.
   if (!isRecord(parsedValue) || typeof parsedValue.type !== "string") {
     return null;
   }
@@ -125,9 +127,42 @@ function createDashboardSocketUrl() {
       return null;
     }
 
+    // Send a stable browser session so one tab refresh is not counted twice.
+    socketUrl.searchParams.set("session_id", getDashboardPresenceId());
+
     return socketUrl.toString();
   } catch {
     return null;
+  }
+}
+
+function createDashboardPresenceId() {
+  if (typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+
+  return `presence-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function getDashboardPresenceId() {
+  try {
+    const savedPresenceId = window.localStorage.getItem(
+      DASHBOARD_PRESENCE_STORAGE_KEY,
+    );
+
+    if (savedPresenceId) {
+      return savedPresenceId;
+    }
+
+    // Keep this id in localStorage so reloads reuse the same online presence.
+    const nextPresenceId = createDashboardPresenceId();
+    window.localStorage.setItem(
+      DASHBOARD_PRESENCE_STORAGE_KEY,
+      nextPresenceId,
+    );
+    return nextPresenceId;
+  } catch {
+    return createDashboardPresenceId();
   }
 }
 
@@ -160,6 +195,8 @@ export function useDashboardSocket() {
       const socketUrl = createDashboardSocketUrl();
 
       if (!socketUrl) {
+        // Do not keep showing the last count when the socket cannot start.
+        setOnlineCount(0);
         return;
       }
 
@@ -177,6 +214,13 @@ export function useDashboardSocket() {
         reconnectAttempt = 0;
         setError(null);
         setIsConnected(true);
+        // Also send presence in the first message for older server paths.
+        socket.send(
+          JSON.stringify({
+            type: "presence",
+            session_id: getDashboardPresenceId(),
+          }),
+        );
       });
 
       socket.addEventListener("message", (event: MessageEvent<unknown>) => {
@@ -197,6 +241,7 @@ export function useDashboardSocket() {
 
         if (message.type === "ping") {
           if (socket.readyState === WebSocket.OPEN) {
+            // Keep the server heartbeat alive so stale tabs get cleaned up.
             socket.send(JSON.stringify({ type: "pong" }));
           }
           return;
@@ -211,6 +256,7 @@ export function useDashboardSocket() {
         }
 
         setChatMessages((currentMessages) => {
+          // Ignore duplicates from reconnects or repeated broadcasts.
           if (
             currentMessages.some(
               (currentMessage) =>
@@ -231,6 +277,8 @@ export function useDashboardSocket() {
 
         socketRef.current = null;
         setIsConnected(false);
+        // Reset stale online count while the socket reconnects.
+        setOnlineCount(0);
 
         const reconnectDelay = Math.min(
           INITIAL_RECONNECT_DELAY_MS * 2 ** reconnectAttempt,
