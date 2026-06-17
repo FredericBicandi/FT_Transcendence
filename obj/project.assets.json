@@ -13,11 +13,11 @@
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "/home/freddy/FT_Transcendence/FT_Transcendence.csproj",
+      "projectUniqueName": "/home/freddy/server/FT_Transcendence.csproj",
       "projectName": "FT_Transcendence",
-      "projectPath": "/home/freddy/FT_Transcendence/FT_Transcendence.csproj",
+      "projectPath": "/home/freddy/server/FT_Transcendence.csproj",
       "packagesPath": "/home/freddy/.nuget/packages/",
-      "outputPath": "/home/freddy/FT_Transcendence/obj/",
+      "outputPath": "/home/freddy/server/obj/",
       "projectStyle": "PackageReference",
       "configFilePaths": [
         "/home/freddy/.nuget/NuGet/NuGet.Config"
@@ -62,7 +62,7 @@
             "privateAssets": "all"
           }
         },
-        "runtimeIdentifierGraphPath": "/usr/lib/dotnet/sdk/8.0.126/PortableRuntimeIdentifierGraph.json"
+        "runtimeIdentifierGraphPath": "/usr/lib/dotnet/sdk/8.0.128/PortableRuntimeIdentifierGraph.json"
       }
     }
   }

@@ -8,12 +8,13 @@ public sealed class DashboardWebSocketOptions
     public int MaxMessageBytes { get; init; } = 4 * 1024;
     public int MaxPlayerIdLength { get; init; } = 128;
     public int MaxPlayerNameLength { get; init; } = 64;
+    public int MaxPresenceIdLength { get; init; } = 128;
     public int MaxChatContentLength { get; init; } = 140;
     public int MaxChatHistoryMessages { get; init; } = 50;
     public int RateLimitMessages { get; init; } = 5;
     public TimeSpan RateLimitWindow { get; init; } = TimeSpan.FromSeconds(10);
-    public TimeSpan HeartbeatInterval { get; init; } = TimeSpan.FromSeconds(20);
-    public TimeSpan HeartbeatTimeout { get; init; } = TimeSpan.FromSeconds(60);
+    public TimeSpan HeartbeatInterval { get; init; } = TimeSpan.FromSeconds(5);
+    public TimeSpan HeartbeatTimeout { get; init; } = TimeSpan.FromSeconds(15);
     public TimeSpan SendTimeout { get; init; } = TimeSpan.FromSeconds(2);
     public TimeSpan CloseTimeout { get; init; } = TimeSpan.FromSeconds(2);
 }
@@ -56,7 +57,12 @@ public sealed class DashboardWebSocketHub
         this.timeProvider = timeProvider ?? TimeProvider.System;
     }
 
-    public int ActiveConnectionCount => connections.Count;
+    public int ActiveConnectionCount =>
+        connections.Values.Count(connection =>
+            connection.Socket.State == WebSocketState.Open
+        );
+
+    public int ActivePresenceCount => GetOnlineCount();
 
     public async Task RunWebSocketApp(HttpContext context)
     {
@@ -67,21 +73,54 @@ public sealed class DashboardWebSocketHub
             return;
         }
 
+        var presenceId = ReadPresenceIdFromQuery(context);
+
+        if (presenceId is null)
+        {
+            logger.LogWarning(
+                "Rejected dashboard socket without session_id: remoteIp={RemoteIp}; forwardedFor={ForwardedFor}; realIp={RealIp}; userAgent={UserAgent}",
+                context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                context.Request.Headers["X-Forwarded-For"].ToString(),
+                context.Request.Headers["X-Real-IP"].ToString(),
+                context.Request.Headers.UserAgent.ToString()
+            );
+            context.Response.StatusCode = StatusCodes.Status400BadRequest;
+            await context.Response.WriteAsync("Missing dashboard session_id");
+            return;
+        }
+
+        var metadata = new DashboardConnectionMetadata(
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            context.Request.Headers["X-Forwarded-For"].ToString(),
+            context.Request.Headers["X-Real-IP"].ToString(),
+            context.Request.Headers.UserAgent.ToString(),
+            presenceId
+        );
         var socket = await context.WebSockets.AcceptWebSocketAsync();
-        await RunConnectionAsync(socket, context.RequestAborted);
+        await RunConnectionAsync(
+            socket,
+            context.RequestAborted,
+            presenceId,
+            metadata
+        );
     }
 
     public async Task RunConnectionAsync(
         WebSocket socket,
-        CancellationToken cancellationToken = default
+        CancellationToken cancellationToken = default,
+        string? presenceId = null,
+        DashboardConnectionMetadata? metadata = null
     )
     {
         var connection = new DashboardConnection(
             Helper.GetConnectionId(),
             socket,
             options,
-            timeProvider
+            timeProvider,
+            metadata ?? DashboardConnectionMetadata.Empty
         );
+        if (presenceId is not null)
+            connection.SetPresenceId(presenceId);
 
         await chatOrderLock.WaitAsync(cancellationToken);
         try
@@ -101,11 +140,6 @@ public sealed class DashboardWebSocketHub
             chatOrderLock.Release();
         }
 
-        logger.LogInformation(
-            "Dashboard socket connected: {ConnectionId}",
-            connection.ConnectionId
-        );
-
         using var connectionLifetime =
             CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var heartbeatTask = MonitorHeartbeatAsync(
@@ -114,6 +148,16 @@ public sealed class DashboardWebSocketHub
         );
 
         await BroadcastOnlineCountAsync();
+        logger.LogInformation(
+            "Dashboard socket connected: {ConnectionId}; session={SessionId}; remoteIp={RemoteIp}; forwardedFor={ForwardedFor}; realIp={RealIp}; userAgent={UserAgent}; online={OnlineCount}",
+            connection.ConnectionId,
+            connection.SessionIdForLog,
+            connection.Metadata.RemoteIp,
+            connection.Metadata.ForwardedFor,
+            connection.Metadata.RealIp,
+            connection.Metadata.UserAgent,
+            GetOnlineCount()
+        );
 
         try
         {
@@ -144,8 +188,13 @@ public sealed class DashboardWebSocketHub
         catch (Exception ex) when (IsExpectedDisconnect(ex))
         {
             logger.LogInformation(
-                "Dashboard socket disconnected unexpectedly: {ConnectionId}",
-                connection.ConnectionId
+                "Dashboard socket disconnected unexpectedly: {ConnectionId}; session={SessionId}; remoteIp={RemoteIp}; forwardedFor={ForwardedFor}; realIp={RealIp}; userAgent={UserAgent}",
+                connection.ConnectionId,
+                connection.SessionIdForLog,
+                connection.Metadata.RemoteIp,
+                connection.Metadata.ForwardedFor,
+                connection.Metadata.RealIp,
+                connection.Metadata.UserAgent
             );
         }
         catch (Exception ex)
@@ -164,12 +213,7 @@ public sealed class DashboardWebSocketHub
         finally
         {
             connectionLifetime.Cancel();
-            connections.TryRemove(
-                new KeyValuePair<string, DashboardConnection>(
-                    connection.ConnectionId,
-                    connection
-                )
-            );
+            RemoveConnection(connection);
 
             try
             {
@@ -187,8 +231,14 @@ public sealed class DashboardWebSocketHub
             socket.Dispose();
 
             logger.LogInformation(
-                "Dashboard socket disconnected: {ConnectionId}",
-                connection.ConnectionId
+                "Dashboard socket disconnected: {ConnectionId}; session={SessionId}; remoteIp={RemoteIp}; forwardedFor={ForwardedFor}; realIp={RealIp}; userAgent={UserAgent}; online={OnlineCount}",
+                connection.ConnectionId,
+                connection.SessionIdForLog,
+                connection.Metadata.RemoteIp,
+                connection.Metadata.ForwardedFor,
+                connection.Metadata.RealIp,
+                connection.Metadata.UserAgent,
+                GetOnlineCount()
             );
             await BroadcastOnlineCountAsync();
         }
@@ -242,6 +292,12 @@ public sealed class DashboardWebSocketHub
                 return;
             }
 
+            if (type == "presence")
+            {
+                await HandlePresenceAsync(connection, root);
+                return;
+            }
+
             if (type != "global_chat")
             {
                 await SendErrorAsync(
@@ -253,6 +309,42 @@ public sealed class DashboardWebSocketHub
             }
 
             await HandleGlobalChatAsync(connection, root);
+        }
+    }
+
+    private async Task HandlePresenceAsync(
+        DashboardConnection connection,
+        JsonElement root
+    )
+    {
+        var presenceId = ReadChatField(
+            root,
+            "session_id",
+            options.MaxPresenceIdLength
+        );
+
+        if (!presenceId.IsValid)
+        {
+            await SendErrorAsync(
+                connection,
+                "INVALID_SESSION_ID",
+                presenceId.Error!
+            );
+            return;
+        }
+
+        if (connection.SetPresenceId(presenceId.Value!))
+        {
+            logger.LogInformation(
+                "Dashboard presence updated: {ConnectionId}; session={SessionId}; remoteIp={RemoteIp}; forwardedFor={ForwardedFor}; realIp={RealIp}; userAgent={UserAgent}",
+                connection.ConnectionId,
+                connection.SessionIdForLog,
+                connection.Metadata.RemoteIp,
+                connection.Metadata.ForwardedFor,
+                connection.Metadata.RealIp,
+                connection.Metadata.UserAgent
+            );
+            await BroadcastOnlineCountAsync();
         }
     }
 
@@ -359,24 +451,53 @@ public sealed class DashboardWebSocketHub
         return ChatField.Valid(value);
     }
 
-    private Task BroadcastOnlineCountAsync() =>
-        BroadcastAsync(new
+    private async Task BroadcastOnlineCountAsync()
+    {
+        PruneClosedConnections();
+
+        var removedDuringBroadcast = await BroadcastAsync(new
         {
             type = "online_count",
-            count = connections.Count
+            count = GetOnlineCount()
         });
 
-    private async Task BroadcastAsync(object payload)
-    {
-        var bytes = JsonSerializer.SerializeToUtf8Bytes(payload);
-        var recipients = connections.Values.ToArray();
-
-        await Task.WhenAll(
-            recipients.Select(connection => SendBytesAsync(connection, bytes))
-        );
+        if (removedDuringBroadcast)
+        {
+            PruneClosedConnections();
+            await BroadcastAsync(new
+            {
+                type = "online_count",
+                count = GetOnlineCount()
+            });
+        }
     }
 
-    private Task SendJsonAsync(DashboardConnection connection, object payload) =>
+    private int GetOnlineCount()
+    {
+        PruneClosedConnections();
+
+        return connections.Values
+            .Where(connection => connection.Socket.State == WebSocketState.Open)
+            .Select(connection => connection.PresenceKey)
+            .Distinct(StringComparer.Ordinal)
+            .Count();
+    }
+
+    private async Task<bool> BroadcastAsync(object payload)
+    {
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(payload);
+        var recipients = connections.Values
+            .Where(connection => connection.Socket.State == WebSocketState.Open)
+            .ToArray();
+
+        var sendResults = await Task.WhenAll(
+            recipients.Select(connection => SendBytesAsync(connection, bytes))
+        );
+
+        return sendResults.Any(sent => !sent);
+    }
+
+    private Task<bool> SendJsonAsync(DashboardConnection connection, object payload) =>
         SendBytesAsync(connection, JsonSerializer.SerializeToUtf8Bytes(payload));
 
     private Task SendErrorAsync(
@@ -391,13 +512,16 @@ public sealed class DashboardWebSocketHub
             message
         });
 
-    private async Task SendBytesAsync(
+    private async Task<bool> SendBytesAsync(
         DashboardConnection connection,
         byte[] bytes
     )
     {
         if (connection.Socket.State != WebSocketState.Open)
-            return;
+        {
+            RemoveConnection(connection);
+            return false;
+        }
 
         var hasSendLock = false;
 
@@ -406,13 +530,17 @@ public sealed class DashboardWebSocketHub
             if (!await connection.SendLock.WaitAsync(options.SendTimeout))
             {
                 AbortSocket(connection, "send queue timeout");
-                return;
+                RemoveConnection(connection);
+                return false;
             }
 
             hasSendLock = true;
 
             if (connection.Socket.State != WebSocketState.Open)
-                return;
+            {
+                RemoveConnection(connection);
+                return false;
+            }
 
             using var sendTimeout = new CancellationTokenSource(options.SendTimeout);
             await connection.Socket.SendAsync(
@@ -421,6 +549,7 @@ public sealed class DashboardWebSocketHub
                 true,
                 sendTimeout.Token
             );
+            return true;
         }
         catch (Exception ex) when (IsExpectedDisconnect(ex))
         {
@@ -429,6 +558,8 @@ public sealed class DashboardWebSocketHub
                 connection.ConnectionId
             );
             AbortSocket(connection, "send failure");
+            RemoveConnection(connection);
+            return false;
         }
         catch (Exception ex)
         {
@@ -438,12 +569,46 @@ public sealed class DashboardWebSocketHub
                 connection.ConnectionId
             );
             AbortSocket(connection, "unexpected send failure");
+            RemoveConnection(connection);
+            return false;
         }
         finally
         {
             if (hasSendLock)
                 connection.SendLock.Release();
         }
+    }
+
+    private void PruneClosedConnections()
+    {
+        foreach (var connection in connections.Values.ToArray())
+        {
+            if (connection.Socket.State != WebSocketState.Open)
+                RemoveConnection(connection);
+        }
+    }
+
+    private bool RemoveConnection(DashboardConnection connection) =>
+        connections.TryRemove(
+            new KeyValuePair<string, DashboardConnection>(
+                connection.ConnectionId,
+                connection
+            )
+        );
+
+    private string? ReadPresenceIdFromQuery(HttpContext context)
+    {
+        if (!context.Request.Query.TryGetValue("session_id", out var values))
+            return null;
+
+        var value = values.FirstOrDefault()?.Trim();
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        if (value.EnumerateRunes().Count() > options.MaxPresenceIdLength)
+            return null;
+
+        return value;
     }
 
     private async Task MonitorHeartbeatAsync(
@@ -456,7 +621,11 @@ public sealed class DashboardWebSocketHub
         while (await timer.WaitForNextTickAsync(cancellationToken))
         {
             if (connection.Socket.State != WebSocketState.Open)
+            {
+                if (RemoveConnection(connection))
+                    await BroadcastOnlineCountAsync();
                 return;
+            }
 
             var inactiveDuration =
                 timeProvider.GetUtcNow() - connection.LastActivityUtc;
@@ -475,7 +644,8 @@ public sealed class DashboardWebSocketHub
                 return;
             }
 
-            await SendJsonAsync(connection, new { type = "ping" });
+            if (!await SendJsonAsync(connection, new { type = "ping" }))
+                await BroadcastOnlineCountAsync();
         }
     }
 
@@ -583,29 +753,56 @@ public sealed class DashboardWebSocketHub
 
 internal sealed class DashboardConnection
 {
+    private readonly object presenceLock = new();
     private readonly object rateLimitLock = new();
     private readonly Queue<DateTimeOffset> recentChatMessages = new();
     private readonly DashboardWebSocketOptions options;
     private readonly TimeProvider timeProvider;
     private long lastActivityUtcTicks;
+    private string? presenceId;
 
     public DashboardConnection(
         string connectionId,
         WebSocket socket,
         DashboardWebSocketOptions options,
-        TimeProvider timeProvider
+        TimeProvider timeProvider,
+        DashboardConnectionMetadata metadata
     )
     {
         ConnectionId = connectionId;
         Socket = socket;
         this.options = options;
         this.timeProvider = timeProvider;
+        Metadata = metadata;
         lastActivityUtcTicks = timeProvider.GetUtcNow().UtcTicks;
     }
 
     public string ConnectionId { get; }
+    public DashboardConnectionMetadata Metadata { get; }
     public WebSocket Socket { get; }
     public SemaphoreSlim SendLock { get; } = new(1, 1);
+
+    public string SessionIdForLog
+    {
+        get
+        {
+            lock (presenceLock)
+            {
+                return presenceId ?? Metadata.InitialSessionId ?? "(none)";
+            }
+        }
+    }
+
+    public string PresenceKey
+    {
+        get
+        {
+            lock (presenceLock)
+            {
+                return presenceId ?? ConnectionId;
+            }
+        }
+    }
 
     public DateTimeOffset LastActivityUtc =>
         new(Interlocked.Read(ref lastActivityUtcTicks), TimeSpan.Zero);
@@ -615,6 +812,18 @@ internal sealed class DashboardConnection
             ref lastActivityUtcTicks,
             timeProvider.GetUtcNow().UtcTicks
         );
+
+    public bool SetPresenceId(string value)
+    {
+        lock (presenceLock)
+        {
+            if (presenceId == value)
+                return false;
+
+            presenceId = value;
+            return true;
+        }
+    }
 
     public bool TryConsumeChatAllowance()
     {
@@ -633,6 +842,18 @@ internal sealed class DashboardConnection
             return true;
         }
     }
+}
+
+public sealed record DashboardConnectionMetadata(
+    string RemoteIp,
+    string ForwardedFor,
+    string RealIp,
+    string UserAgent,
+    string? InitialSessionId
+)
+{
+    public static DashboardConnectionMetadata Empty { get; } =
+        new("test", "", "", "", null);
 }
 
 internal sealed record ChatField(string? Value, string? Error)

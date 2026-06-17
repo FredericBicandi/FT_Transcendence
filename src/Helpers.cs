@@ -35,7 +35,7 @@ public static class Helper
 
     public static string GetConnectionId() =>
         Guid.NewGuid().ToString("N");
-    
+
     public static ClientConnection AcceptPlayer(string connectionId, WebSocket clientSocket)
     {
         return new ClientConnection(
@@ -43,7 +43,7 @@ public static class Helper
             clientSocket
         );
     }
-    
+
     public static void RemovePlayer(ConcurrentDictionary<string, ClientConnection> players, string playerId) =>
         players.TryRemove(playerId, out _);
 }

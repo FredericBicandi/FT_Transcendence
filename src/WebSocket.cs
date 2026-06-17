@@ -11,6 +11,8 @@ public sealed class Ws
     private static readonly TimeSpan SendLockTimeout = TimeSpan.FromSeconds(2);
     private static readonly TimeSpan SendTimeout = TimeSpan.FromSeconds(2);
     private static readonly TimeSpan CloseTimeout = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan DefaultClientTimeout = TimeSpan.FromMinutes(1);
+    private static readonly TimeSpan DefaultClientTimeoutCheckInterval = TimeSpan.FromSeconds(5);
     private const double MinAimAngleDegrees = 0.0;
     private const double MaxAimAngleDegrees = 360.0;
     private const int MaxMessageBytes = 16 * 1024;
@@ -29,6 +31,7 @@ public sealed class Ws
     private const double MaxRocketLauncherDamage = 80.0;
     private const string MedkitHealRequest = "medkit_heal";
     private const string MedkitSource = "medkit";
+    private const string AssaultRifleWeaponType = "Assault rifle";
     private const string AssultRifleWeaponType = "Assult rifle";
     private const string SniperWeaponType = "Sniper";
     private const string RocketLauncherWeaponType = "Rocket Launcher";
@@ -37,17 +40,18 @@ public sealed class Ws
     private static readonly IReadOnlyDictionary<string, string> AcceptedWeaponTypes =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
+            [AssaultRifleWeaponType] = AssultRifleWeaponType,
             [AssultRifleWeaponType] = AssultRifleWeaponType,
             [SniperWeaponType] = SniperWeaponType,
             [RocketLauncherWeaponType] = RocketLauncherWeaponType,
             [ShotgunWeaponType] = ShotgunWeaponType
         };
 
-    private static readonly IReadOnlyDictionary<string, double> ServerWeaponDamage =
-        new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
-
     private readonly ConcurrentDictionary<string, ClientConnection> clients;
     private readonly IMatchRepository matchRepository;
+    private readonly TimeProvider timeProvider;
+    private readonly TimeSpan clientTimeout;
+    private readonly TimeSpan clientTimeoutCheckInterval;
 
     // Active match rooms keyed by room id. Ended rooms are retained briefly for final client packets.
     private readonly ConcurrentDictionary<string, GameRoom> rooms = new();
@@ -65,10 +69,50 @@ public sealed class Ws
         ConcurrentDictionary<string, ClientConnection> clients,
         IMatchRepository matchRepository
     )
+        : this(
+            clients,
+            matchRepository,
+            DefaultClientTimeout,
+            DefaultClientTimeoutCheckInterval,
+            TimeProvider.System)
     {
+    }
+
+    public Ws(
+        ConcurrentDictionary<string, ClientConnection> clients,
+        TimeSpan clientTimeout,
+        TimeSpan clientTimeoutCheckInterval
+    )
+        : this(
+            clients,
+            NullMatchRepository.Instance,
+            clientTimeout,
+            clientTimeoutCheckInterval,
+            TimeProvider.System)
+    {
+    }
+
+    public Ws(
+        ConcurrentDictionary<string, ClientConnection> clients,
+        IMatchRepository matchRepository,
+        TimeSpan clientTimeout,
+        TimeSpan clientTimeoutCheckInterval,
+        TimeProvider? timeProvider = null
+    )
+    {
+        if (clientTimeout <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(clientTimeout));
+
+        if (clientTimeoutCheckInterval <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(clientTimeoutCheckInterval));
+
         this.clients = clients;
         this.matchRepository = matchRepository;
+        this.clientTimeout = clientTimeout;
+        this.clientTimeoutCheckInterval = clientTimeoutCheckInterval;
+        this.timeProvider = timeProvider ?? TimeProvider.System;
         _ = RunRoomTimersAsync();
+        _ = RunClientTimeoutsAsync();
     }
 
     // Handles one upgraded /ws connection from connect to cleanup.
@@ -107,20 +151,79 @@ public sealed class Ws
         }
         finally
         {
-            // Remove the disconnected socket from global and room-level state.
             connectionLifetime.Cancel();
-            if (client.HasPlayerId)
-                Helper.RemovePlayer(clients, client.PlayerId);
-            var disconnectedRoom = RemovePlayerFromRoom(client);
-
-            await CloseSocketAsync(client, WebSocketCloseStatus.NormalClosure, "Closing");
-
-            socket.Dispose();
-            Console.WriteLine($"Client disconnected: {client.LogId}");
-
-            if (disconnectedRoom is not null && client.HasJoinedGame)
-                await BroadcastPlayerLeftAsync(disconnectedRoom, client.PlayerId);
+            await DisconnectClientAsync(
+                client,
+                WebSocketCloseStatus.NormalClosure,
+                "Closing",
+                disposeSocket: true);
         }
+    }
+
+    private async Task RunClientTimeoutsAsync()
+    {
+        using var timer = new PeriodicTimer(clientTimeoutCheckInterval);
+
+        while (await timer.WaitForNextTickAsync())
+        {
+            var now = timeProvider.GetUtcNow();
+
+            foreach (var client in clients.Values.ToArray())
+            {
+                try
+                {
+                    if (now - client.LastActivityUtc < clientTimeout)
+                        continue;
+
+                    Console.WriteLine(
+                        $"Disconnecting inactive game client {client.LogId} after {clientTimeout.TotalSeconds:F1}s"
+                    );
+                    await DisconnectClientAsync(
+                        client,
+                        WebSocketCloseStatus.PolicyViolation,
+                        "Inactivity timeout",
+                        disposeSocket: false);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Client timeout cleanup failed for {client.LogId}: {ex.Message}");
+                }
+            }
+        }
+    }
+
+    private async Task DisconnectClientAsync(
+        ClientConnection client,
+        WebSocketCloseStatus closeStatus,
+        string reason,
+        bool disposeSocket)
+    {
+        var shouldCleanup = client.TryBeginDisconnect();
+
+        if (shouldCleanup)
+        {
+            var playerId = client.PlayerId;
+            var hadJoined = client.HasJoinedGame;
+
+            if (client.HasPlayerId)
+                Helper.RemovePlayer(clients, playerId);
+
+            var disconnectedRoom = RemovePlayerFromRoom(client);
+            client.LeaveRoom();
+
+            await CloseSocketAsync(client, closeStatus, reason);
+            Console.WriteLine($"Client disconnected: {playerId}, reason={reason}");
+
+            if (disconnectedRoom is not null && hadJoined)
+                await BroadcastPlayerLeftAsync(disconnectedRoom, playerId);
+        }
+        else
+        {
+            await CloseSocketAsync(client, closeStatus, reason);
+        }
+
+        if (disposeSocket)
+            client.Socket.Dispose();
     }
 
     private GameRoom AssignRoom(string playerId)
@@ -502,6 +605,8 @@ public sealed class Ws
     // Applies the current client message protocol.
     public async Task HandleMessageAsync(ClientConnection client, string message)
     {
+        client.MarkActivity(timeProvider.GetUtcNow());
+
         JsonDocument document;
 
         try
@@ -523,6 +628,9 @@ public sealed class Ws
                 Console.WriteLine($"Message missing type from {client.LogId}: {message}");
                 return;
             }
+
+            if (type is "ping" or "heartbeat")
+                return;
 
             if (type == "on_connect")
             {
@@ -1269,9 +1377,6 @@ public sealed class Ws
         if (IsRocketLauncher(weaponType))
             return Math.Clamp(requestedDamage, MinRocketLauncherDamage, MaxRocketLauncherDamage);
 
-        if (ServerWeaponDamage.TryGetValue(weaponType, out var configuredDamage))
-            return configuredDamage;
-
         return Math.Clamp(requestedDamage, 0, MaxHitDamage);
     }
 
@@ -1679,6 +1784,12 @@ public sealed class Ws
             return false;
         }
 
+        if (targetPlayerId.Length > MaxPlayerIdLength)
+        {
+            Console.WriteLine($"Hit target too long from {playerId}: {message}");
+            return false;
+        }
+
         if (!TryReadWeapon(root, message, playerId, "hit", out var weapon))
             return false;
 
@@ -1686,6 +1797,14 @@ public sealed class Ws
             !double.IsFinite(damage))
         {
             Console.WriteLine($"Invalid hit damage from {playerId}: {message}");
+            return false;
+        }
+
+        if (IsRocketLauncher(weapon) &&
+            (damage < MinRocketLauncherDamage ||
+             damage > MaxRocketLauncherDamage))
+        {
+            Console.WriteLine($"Invalid rocket hit damage from {playerId}: {message}");
             return false;
         }
 
@@ -1966,7 +2085,6 @@ public sealed class GameRoom
     public DateTime? EndedAtUtc { get; private set; }
     public int DurationSeconds { get; } = 300;
     public GameRoomState State { get; private set; } = GameRoomState.Waiting;
-    public IReadOnlyCollection<string> Players => playerIds.Keys.ToArray();
 
     // Calculated from the authoritative server end time once the first player joins.
     public int RemainingSeconds =>
@@ -2275,7 +2393,7 @@ public readonly record struct DeathResult(
     double Damage,
     bool BecameDead);
 
-public readonly record struct HealResult(double Health, double Heal, double PreviousHealth, bool IsDead);
+public readonly record struct HealResult(double Health, double Heal, bool IsDead);
 
 public readonly record struct PlayerState(
     double X,
@@ -2342,6 +2460,8 @@ public sealed class ClientConnection
     public string ConnectionId { get; }
     public WebSocket Socket { get; }
     private readonly object stateLock = new();
+    private long lastActivityUtcTicks = DateTimeOffset.UtcNow.UtcTicks;
+    private int disconnectStarted;
     private bool hasState;
     private string? playerId;
     private string? roomId;
@@ -2355,6 +2475,15 @@ public sealed class ClientConnection
     public string LogId => playerId ?? ConnectionId;
     public bool HasPlayerId => playerId is not null;
     public bool HasRoom => roomId is not null;
+
+    public DateTimeOffset LastActivityUtc =>
+        new(Interlocked.Read(ref lastActivityUtcTicks), TimeSpan.Zero);
+
+    public void MarkActivity(DateTimeOffset now) =>
+        Interlocked.Exchange(ref lastActivityUtcTicks, now.UtcTicks);
+
+    public bool TryBeginDisconnect() =>
+        Interlocked.Exchange(ref disconnectStarted, 1) == 0;
 
     public bool HasJoinedGame
     {
@@ -2562,12 +2691,12 @@ public sealed class ClientConnection
         lock (stateLock)
         {
             if (!hasState || isDead || amount <= 0)
-                return new HealResult(health, 0, health, isDead);
+                return new HealResult(health, 0, isDead);
 
             var previousHealth = health;
             health = Math.Clamp(health + amount, 0, 100.0);
 
-            return new HealResult(health, health - previousHealth, previousHealth, isDead);
+            return new HealResult(health, health - previousHealth, isDead);
         }
     }
 

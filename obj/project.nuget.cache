@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "JXMUe0aSuXpxb0oW8LIa82eZvYb1cKxWpaq44nzu5YGk8YvzabLdoWycPnKVWWecdNvEv3KWfh15iyCFnaGOHg==",
+  "dgSpecHash": "SzstOO1CxWt+nMJaUrOS+qIgWAS5dbKSj1rqALSkymIGDkEz7rEZINfCNpYGN7ga+wlkRkNrndNqq5grW75rEw==",
   "success": true,
-  "projectFilePath": "/home/freddy/FT_Transcendence/FT_Transcendence.csproj",
+  "projectFilePath": "/home/freddy/server/FT_Transcendence.csproj",
   "expectedPackageFiles": [],
   "logs": []
 }
