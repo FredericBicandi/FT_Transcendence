@@ -1,25 +1,157 @@
-# FT_Transcendence
+*This project has been created as part of the 42 curriculum by fbicandy, dawwad.*
 
-<p align="center">
-  <img src="https://github.com/FreddyBicandy50/FreddyBicandy50/blob/main/42_badges/ft_transcendencee.png" alt="ft_transcendencee 42 project badge"/>
-</p>
+# FT Transcendence - PixelFight
 
-## Status
-Started: 04/03/2026.
+## Description
 
-Finished: -.
+PixelFight is a full-stack multiplayer web game built for ft_transcendence. The project combines a Next.js dashboard, a Godot web game export, a Godot source project, a .NET 8 WebSocket server, and Supabase-backed authentication and persistence.
 
-Grade: -%.
+Key features:
 
-## Project Idea
- Design, develop, and organize a full-stack web application with complete creative freedom. Choose your project concept, select from a wide range of technical modules, and make key architectural decisions. This highly flexible project allows you to explore modern web     development while demonstrating your technical skills and creativity through a modular approach. 
+- Browser dashboard with guest play, authenticated profiles, OAuth login, account deletion, avatar/name setup, XP, levels, and match history.
+- Embedded Godot web export served from `public/Game`.
+- Source Godot project in `game/` for gameplay iteration and re-export.
+- .NET 8 WebSocket server in `server/` for matchmaking, game rooms, live dashboard presence, global chat, authoritative combat events, leaderboard updates, match timers, and Supabase match persistence.
+- Multiplayer 2D shooter gameplay with movement, weapons, projectiles, health, medkits, deaths, respawns, kill feed, scoreboard, custom cursor, sound, map work, and chat support.
 
-## Usage
---
-## Guides
+## Instructions
 
-The most interesting part of any project is the research that goes behind it. If you are a student, please don't miss out on that opportunity by simply following guides such as these. In any case, they should under no circumstances be your only source of information about this project. Try things, fail, research, try again and succeed! And maybe write your own guide about it. Writing really is the best way to learn.
+Prerequisites:
 
----
-fbicandy@student.42.fr | LinkedIn: [fbicandy](https://www.linkedin.com/in/freddy-bicandy/)
+- Node.js 22 or compatible with Next.js 16.
+- npm.
+- .NET SDK 8.0.
+- Docker, if using the Makefile Docker targets.
+- Godot 4.6, if editing or exporting the game source in `game/`.
+- A Supabase project with the tables described below.
 
+Environment variables for the web app:
+
+```env
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your-publishable-key
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+NEXT_PUBLIC_DASHBOARD_WS_URL=ws://localhost:5000/ws/dashboard
+```
+
+Environment variables for the server:
+
+```env
+Supabase__Url=https://your-project.supabase.co
+Supabase__PublishableKey=your-publishable-key
+```
+
+Run locally without Docker:
+
+```sh
+npm install
+npm run dev
+dotnet run --project server/FT_Transcendence.csproj
+```
+
+The web dashboard runs on `http://localhost:3000`. The server exposes the game socket at `ws://localhost:5000/ws` and the dashboard socket at `ws://localhost:5000/ws/dashboard`.
+
+Run with Makefile/Docker:
+
+```sh
+make build
+make run
+make logs
+make stop
+```
+
+Useful scoped targets:
+
+```sh
+make web-build
+make web-run
+make server-build
+make server-run
+make server-logs
+```
+
+Open the editable game project with Godot from `game/project.godot`. The exported web build used by the dashboard is committed under `public/Game`.
+
+## Team Information
+
+- `fbicandy`: product owner, project manager, tech lead, full-stack developer. Responsible for repository organization, web dashboard, Supabase integration, authentication/profile flows, .NET WebSocket server, dashboard/game socket contracts, deployment workflow, and large parts of gameplay integration.
+- `dawwad`: developer. Responsible for Godot gameplay and asset work reflected in history, including map work, spawn points, weapon additions, projectile behavior, sprites, sounds, cursor/game feel improvements, and balancing support.
+
+## Project Management
+
+- Work was split by component: web dashboard, WebSocket server, Godot gameplay, and deployment/export integration.
+- Git branches were used for parallel work: `web`, `server`, and `game`, then merged into `main` with preserved history.
+- Progress was organized through regular team communication, iterative commits, local testing, and feature-focused branch updates.
+- Communication happened through direct team discussion and online chat/voice channels.
+
+## Technical Stack
+
+- Frontend: Next.js 16, React 19, TypeScript, Tailwind CSS 4, Supabase SSR/client libraries.
+- Game: Godot 4.6 source project and Godot web export.
+- Backend: .NET 8 ASP.NET Core minimal app using native WebSockets and `HttpClient`.
+- Database/auth: Supabase Auth and Supabase Postgres.
+- Runtime/deployment: Dockerfiles for web and server, Makefile targets for build/run/cleanup.
+
+Supabase was chosen because it provides hosted Postgres, authentication, OAuth support, REST access, and browser/server SDKs with a small amount of infrastructure code. The .NET server owns real-time gameplay because authoritative room and combat state needs long-running WebSocket handling. The Godot export is embedded in Next.js so the dashboard can pass player identity and profile state into the game.
+
+## Database Schema
+
+Expected Supabase tables:
+
+- `profiles`: `id uuid primary key`, `username text`, `picture_url text`, `current_xp integer`, `level integer`, `updated_at timestamptz`. Stores authenticated player profile and progression data.
+- `matches`: `id uuid primary key`, `started_at timestamptz`, `ended_at timestamptz`, `duration_seconds integer`. Stores completed match sessions written by the server.
+- `played_matches`: `id bigint generated by default as identity primary key`, `match_id uuid`, `user_id uuid`, `score integer`, `kills integer`, `deaths integer`, `time_played interval`, `created_at timestamptz`. Stores per-player match history shown in the dashboard.
+- Supabase Auth `users`: referenced by profile and played-match rows through the authenticated user id.
+
+Relationship summary: one auth user has one profile, one match can have many played-match rows, and one auth user can have many played-match rows.
+
+## Features List
+
+- Web dashboard and UI shell: `fbicandy`, provides the main browser experience, game iframe, profile modals, auth modals, and navigation.
+- Guest and authenticated player profiles: `fbicandy`, supports local guest profiles and Supabase-backed user profiles.
+- OAuth and account lifecycle: `fbicandy`, supports Supabase login callback handling and account deletion through a server route.
+- XP, levels, and match history: `fbicandy`, persists authenticated player progress and shows played matches.
+- Dashboard WebSocket presence and global chat: `fbicandy`, shows online counts and real-time lobby chat.
+- Game WebSocket server: `fbicandy`, manages matchmaking, rooms, game state messages, leaderboard updates, timers, and persistence.
+- Godot multiplayer game: `fbicandy`, `dawwad`, implements movement, combat, weapons, map, HUD, chat, sounds, cursor, kill feed, and web export integration.
+- Weapon and map/game-feel work: `dawwad`, includes map changes, spawn points, sniper/rocket launcher/shotgun work, projectile updates, sounds, sprites, and balancing.
+
+## Modules
+
+Chosen module set:
+
+- Major - Real-time multiplayer gameplay, 2 pts: implemented with .NET WebSockets, Godot client messages, room state, matchmaking, and live leaderboard updates. Contributors: `fbicandy`, `dawwad`.
+- Major - User management, 2 pts: implemented with Supabase Auth, OAuth callback handling, profile setup, account deletion, guest fallback, and cached authenticated profiles. Contributor: `fbicandy`.
+- Major - Persistent data and match history, 2 pts: implemented with Supabase tables for profiles, matches, and played matches. Contributor: `fbicandy`.
+- Major - Server-authoritative gameplay logic, 2 pts: implemented in the .NET server for hit/death/medkit/projectile/score events and room lifecycle. Contributor: `fbicandy`.
+- Major - Web dashboard integration, 2 pts: implemented with Next.js, embedded Godot export, dashboard WebSocket presence, global chat, and profile UI. Contributor: `fbicandy`.
+- Minor - Accessibility and internationalization support, 1 pt: implemented with multilingual/dashboard and game text support plus additional fonts. Contributors: `fbicandy`, `dawwad`.
+- Minor - Game user experience polish, 1 pt: implemented with custom cursor, sounds, HUD feedback, kill feed, scoreboard, weapon effects, and map polish. Contributors: `fbicandy`, `dawwad`.
+- Minor - Containerized build/run workflow, 1 pt: implemented with Dockerfiles and Makefile targets for web and server. Contributor: `fbicandy`.
+- Minor - Deployment/export integration, 1 pt: implemented by keeping the Godot web export in `public/Game` and wiring dashboard-to-game player data. Contributor: `fbicandy`.
+
+Total: 14 points.
+
+## Individual Contributions
+
+`fbicandy` contributed the web application, Supabase client/server integration, authentication and account flows, profile/progression models, .NET WebSocket server, dashboard socket, match persistence, deployment files, repository restructuring, and many game/client integration updates.
+
+`dawwad` contributed Godot gameplay and asset work including map creation and fixes, spawn points, sniper and rocket launcher additions, shotgun implementation, projectile behavior changes, gun/player sprites, sounds, cursor/game-feel improvements, and balancing.
+
+Main challenges included keeping the Godot export synchronized with the dashboard, maintaining a stable WebSocket protocol across client/server changes, avoiding duplicate online presence across reconnects, handling guest versus authenticated profiles, and preserving branch history while consolidating the final repository structure.
+
+## Resources
+
+- Next.js documentation: https://nextjs.org/docs
+- React documentation: https://react.dev
+- Supabase documentation: https://supabase.com/docs
+- ASP.NET Core WebSockets documentation: https://learn.microsoft.com/aspnet/core/fundamentals/websockets
+- Godot documentation: https://docs.godotengine.org
+- Docker documentation: https://docs.docker.com
+
+AI usage: AI assistance was used during development for debugging, code review, protocol edge-case analysis, refactoring suggestions, comments, README preparation, and repository integration planning. The team reviewed and integrated the resulting changes manually in the project codebase.
+
+## License
+
+See `LICENSE`.
