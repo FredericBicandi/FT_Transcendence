@@ -2,6 +2,10 @@
 
 # FT Transcendence - PixelFight
 
+<p align="center">
+  <img src="https://github.com/FreddyBicandy50/FreddyBicandy50/blob/main/42_badges/ft_transcendencee.png" alt="ft_transcendencee 42 project badge"/>
+</p>
+
 ## Description
 
 PixelFight is a full-stack multiplayer web game built for ft_transcendence. The project combines a Next.js dashboard, a Godot web game export, a Godot source project, a .NET 8 WebSocket server, and Supabase-backed authentication and persistence.
