@@ -4,6 +4,12 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text;
 
+// Game WebSocket hub for the Godot client.
+// Receives JSON messages such as on_connect, on_join, move, shoot, hit, heal,
+// respawn, chat, and leave_match. Sends room reservations, player state,
+// authoritative health/death/leaderboard updates, medkit events, and match timers.
+// Change room membership, health/death handling, and socket send paths carefully:
+// they are shared by client receive loops, timer tasks, and disconnect cleanup.
 public sealed class Ws
 {
     private static readonly TimeSpan TimeSyncInterval = TimeSpan.FromSeconds(5);
@@ -53,6 +59,8 @@ public sealed class Ws
     private readonly TimeSpan clientTimeout;
     private readonly TimeSpan clientTimeoutCheckInterval;
 
+    // Room membership is touched by request handlers and background timer cleanup.
+    // ConcurrentDictionary covers lookup/removal races; roomsLock covers matchmaking.
     // Active match rooms keyed by room id. Ended rooms are retained briefly for final client packets.
     private readonly ConcurrentDictionary<string, GameRoom> rooms = new();
 
@@ -115,7 +123,8 @@ public sealed class Ws
         _ = RunClientTimeoutsAsync();
     }
 
-    // Handles one upgraded /ws connection from connect to cleanup.
+    // Handles one upgraded /ws connection from connect to cleanup. Registration is
+    // delayed until the client proves a stable player_id with on_connect.
     public async Task RunWebSocketApp(HttpContext context)
     {
         if (!context.WebSockets.IsWebSocketRequest)
@@ -198,6 +207,8 @@ public sealed class Ws
         string reason,
         bool disposeSocket)
     {
+        // The receive loop, inactivity monitor, and send failures can all try to
+        // disconnect the same socket. Only the first path removes room/client state.
         var shouldCleanup = client.TryBeginDisconnect();
 
         if (shouldCleanup)
@@ -208,6 +219,8 @@ public sealed class Ws
             if (client.HasPlayerId)
                 Helper.RemovePlayer(clients, playerId);
 
+            // Remove the room membership before broadcasting so recipients are only
+            // the players still in the match.
             var disconnectedRoom = RemovePlayerFromRoom(client);
             client.LeaveRoom();
 
@@ -637,6 +650,8 @@ public sealed class Ws
                 if (!TryReadConnect(root, message, client.LogId, out var playerId, out var playerName, out var level))
                     return;
 
+                // player_id is the stable key in the global clients map; allowing it
+                // to change would let one socket impersonate or evict another player.
                 if (client.HasPlayerId && client.PlayerId != playerId)
                 {
                     Console.WriteLine($"Rejected player id change from {client.PlayerId} to {playerId}");
@@ -645,6 +660,8 @@ public sealed class Ws
 
                 if (!client.HasPlayerId)
                 {
+                    // Reject duplicate player_id instead of replacing the old socket:
+                    // the old connection may still own authoritative health and room state.
                     if (!clients.TryAdd(playerId, client))
                     {
                         Console.WriteLine($"Rejected duplicate player id on_connect: {playerId}");
@@ -836,6 +853,8 @@ public sealed class Ws
                 if (!TryReadMove(root, message, client.PlayerId, out var x, out var y, out var angle, out var aimFrame))
                     return;
 
+                // Movement remains client-reported, but only for an alive joined player
+                // in a running room and with validated finite coordinates/aim frame.
                 client.MarkMovement(x, y, angle, aimFrame);
 
                 await BroadcastToRoomAsync(client.RoomId, new
@@ -907,6 +926,8 @@ public sealed class Ws
                     return;
                 }
 
+                // Medkit consumption is authoritative and atomic inside GameRoom so
+                // two clients cannot heal from the same dropped medkit.
                 if (!room.TryConsumeMedkit(
                         heal.MedkitId,
                         heal.X,
@@ -966,6 +987,8 @@ public sealed class Ws
                     return;
                 }
 
+                // Client can report environmental/self death, but the server decides
+                // whether this transition is new and whether it affects deaths/medkits.
                 if (!rooms.TryGetValue(client.RoomId, out var room))
                     return;
 
@@ -1007,6 +1030,8 @@ public sealed class Ws
 
             if (type == "health_update")
             {
+                // Health is server-owned. Clients must describe events such as hit,
+                // heal, death, or respawn rather than setting health directly.
                 Console.WriteLine($"Rejected client-authoritative health update from {client.PlayerId}: {message}");
 
                 return;
@@ -1125,6 +1150,8 @@ public sealed class Ws
                     return;
                 }
 
+                // shoot only broadcasts projectile visuals. Damage is applied later
+                // through hit after target/room/weapon/damage validation.
                 var bulletSpawn = new Dictionary<string, object>
                 {
                     ["type"] = "bullet_spawn",
@@ -1292,6 +1319,8 @@ public sealed class Ws
         var isSelfHit = hit.TargetPlayerId == shooter.PlayerId;
         var isRocket = IsRocketLauncher(hit.WeaponType);
 
+        // Only rockets may self-hit; regular weapons cannot be used to farm deaths
+        // or force unexpected health changes on the shooter.
         if (isSelfHit && !isRocket)
         {
             Console.WriteLine($"Rejected self-hit from {shooter.PlayerId}");
@@ -1314,6 +1343,7 @@ public sealed class Ws
         var damage = ResolveDamage(hit.WeaponType, hit.Damage);
         var result = target.ApplyDamage(damage);
         var isSelfKill = isSelfHit && result.IsDead;
+        // Self-damage can record a death, but only opponent damage grants score/kills.
         var shouldUpdateLeaderboard = result.Damage > 0 && !isSelfHit;
 
         if (shouldUpdateLeaderboard)
@@ -1661,6 +1691,8 @@ public sealed class Ws
         string message,
         ClientConnection client)
     {
+        // Most Godot messages include redundant identity fields. Treat mismatches as
+        // suspicious instead of trusting the per-message player_id or room_id.
         if (root.TryGetProperty("player_id", out _) &&
             (!Helper.TryGetString(root, "player_id", out var playerId) ||
              playerId != client.PlayerId))
@@ -2001,6 +2033,8 @@ public sealed class Ws
         angle = default;
         aimFrame = default;
 
+        // Godot sends eight discrete aim frames; require angle to match the frame
+        // instead of accepting arbitrary client-provided rotation.
         if (!Helper.TryGetNumber(root, "angle", out angle) ||
             !double.IsFinite(angle) ||
             !TryReadInt(root, "aim_frame", out aimFrame) ||
@@ -2068,7 +2102,9 @@ public sealed class GameRoom
     // Reserved sockets are assigned a room; joined players are visible in-game.
     private readonly ConcurrentDictionary<string, byte> playerIds = new();
     private readonly ConcurrentDictionary<string, byte> joinedPlayerIds = new();
+    // Leaderboard updates can happen from hit resolution while snapshots are being broadcast.
     private readonly ConcurrentDictionary<string, LeaderboardEntry> leaderboard = new();
+    // Medkits need lock-protected check-and-remove semantics, so a plain Dictionary is used.
     private readonly Dictionary<string, MedkitState> medkits = new(StringComparer.Ordinal);
 
     private GameRoom(string roomId)
@@ -2134,6 +2170,8 @@ public sealed class GameRoom
 
             if (State == GameRoomState.Waiting)
             {
+                // The first real join starts the authoritative match clock; on_connect
+                // only reserves capacity and should not burn match time.
                 var startTimeUtc = DateTime.UtcNow;
                 StartTimeUtc = startTimeUtc;
                 EndTimeUtc = startTimeUtc.AddSeconds(DurationSeconds);
@@ -2243,6 +2281,8 @@ public sealed class GameRoom
 
     public void RecordHit(string shooterPlayerId, string targetPlayerId, double damage, bool killed)
     {
+        // Score is damage dealt. Kill/death counters are derived from the health
+        // transition that ResolveHitAsync accepted for this target.
         leaderboard.AddOrUpdate(
             shooterPlayerId,
             LeaderboardEntry.Empty(shooterPlayerId).WithDamage(damage, killed),
@@ -2459,6 +2499,8 @@ public sealed class ClientConnection
     public SemaphoreSlim SendLock { get; } = new(1, 1);
     public string ConnectionId { get; }
     public WebSocket Socket { get; }
+    // Guards player identity, room assignment, authoritative health/state, and
+    // per-shot dedupe because sends, receives, timers, and disconnects can overlap.
     private readonly object stateLock = new();
     private long lastActivityUtcTicks = DateTimeOffset.UtcNow.UtcTicks;
     private int disconnectStarted;
@@ -2504,6 +2546,8 @@ public sealed class ClientConnection
     private double health = 100.0;
     private bool isDead;
     private bool deathMedkitClaimed;
+    // Optional shot_id dedupe is per shooter/target so one pellet/explosion cannot
+    // report the same target repeatedly while still allowing multi-target explosions.
     private readonly HashSet<ShotTargetKey> processedShotHits = new();
 
     public void Identify(string playerId, string playerName, int level)
@@ -2729,6 +2773,8 @@ public sealed class ClientConnection
             this.aimFrame = aimFrame;
             this.weapon = weapon;
             deathMedkitClaimed = false;
+            // Respawn starts a fresh damage window; old shot ids should not suppress
+            // legitimate hits after the player returns.
             processedShotHits.Clear();
 
             return new RespawnResult(

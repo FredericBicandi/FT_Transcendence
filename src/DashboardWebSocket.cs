@@ -3,6 +3,11 @@ using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
 
+// Dashboard WebSocket hub for lobby presence and global chat.
+// Receives JSON ping, presence, and global_chat messages. Sends pong, errors,
+// online_count, and global_chat history/broadcasts. Be careful changing presence
+// counting, chat history ordering, or send cleanup because they run across many
+// sockets concurrently.
 public sealed class DashboardWebSocketOptions
 {
     public int MaxMessageBytes { get; init; } = 4 * 1024;
@@ -21,9 +26,11 @@ public sealed class DashboardWebSocketOptions
 
 public sealed class DashboardWebSocketHub
 {
+    // Connections are added/removed by independent socket loops and heartbeat tasks.
     private readonly ConcurrentDictionary<string, DashboardConnection> connections =
         new();
     private readonly Queue<DashboardChatMessage> chatHistory = new();
+    // Keeps chat history and broadcasts in the same order clients should display them.
     private readonly SemaphoreSlim chatOrderLock = new(1, 1);
     private readonly ILogger<DashboardWebSocketHub> logger;
     private readonly DashboardWebSocketOptions options;
@@ -132,6 +139,8 @@ public sealed class DashboardWebSocketHub
                 return;
             }
 
+            // New dashboard clients receive retained chat before online_count updates
+            // so the UI can hydrate history before live messages arrive.
             foreach (var message in chatHistory)
                 await SendJsonAsync(connection, message);
         }
@@ -403,6 +412,8 @@ public sealed class DashboardWebSocketHub
         await chatOrderLock.WaitAsync();
         try
         {
+            // The server assigns message_id/sent_at after validation so clients cannot
+            // spoof ordering metadata or replay someone else's message id.
             var payload = new DashboardChatMessage(
                 type: "global_chat",
                 message_id: Guid.NewGuid().ToString(),
@@ -485,6 +496,8 @@ public sealed class DashboardWebSocketHub
 
     private async Task<bool> BroadcastAsync(object payload)
     {
+        // Encode once per broadcast. Each socket still uses its own SendLock because
+        // WebSocket.SendAsync does not support concurrent sends on the same instance.
         var bytes = JsonSerializer.SerializeToUtf8Bytes(payload);
         var recipients = connections.Values
             .Where(connection => connection.Socket.State == WebSocketState.Open)
@@ -753,6 +766,7 @@ public sealed class DashboardWebSocketHub
 
 internal sealed class DashboardConnection
 {
+    // Presence and rate-limit state are updated by receive and heartbeat paths.
     private readonly object presenceLock = new();
     private readonly object rateLimitLock = new();
     private readonly Queue<DateTimeOffset> recentChatMessages = new();
