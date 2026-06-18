@@ -1,0 +1,21 @@
+# Build outputs
+bin/
+obj/
+**/bin/
+**/obj/
+build/
+coverage/
+
+# Local tool/cache output
+.dotnet-home/
+*.lscache
+.vs/
+.vscode/
+
+# Local environment and secrets
+.env
+.env.*
+*.pem
+
+# OS/editor noise
+.DS_Store

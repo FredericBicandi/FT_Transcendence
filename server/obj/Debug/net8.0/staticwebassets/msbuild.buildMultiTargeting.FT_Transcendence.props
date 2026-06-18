@@ -1,0 +1,3 @@
+﻿<Project>
+  <Import Project="../build/FT_Transcendence.props" />
+</Project>
