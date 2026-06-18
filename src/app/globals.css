@@ -1,0 +1,84 @@
+@import "tailwindcss";
+
+@font-face {
+  font-family: "Upheaval";
+  src: url("/font/upheavtt.ttf") format("truetype");
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Dogica";
+  src: url("/font/dogica.ttf") format("truetype");
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "PFRondaSeven";
+  src: url("/font/pf_ronda_seven.woff2") format("woff2");
+  font-display: swap;
+}
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: "Upheaval", monospace;
+  --font-mono: "Upheaval", monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  cursor: url("/images/cursor.cur") 0 0, auto;
+  font-family: "Upheaval", monospace;
+  letter-spacing: 0;
+}
+
+button,
+a,
+input,
+textarea,
+select,
+label,
+[role="button"] {
+  cursor: url("/images/cursor.cur") 0 0, auto;
+}
+
+button:disabled,
+input:disabled,
+textarea:disabled,
+select:disabled,
+[aria-disabled="true"] {
+  cursor: url("/images/cursor.cur") 0 0, not-allowed;
+}
+
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+.chat-font {
+  /* Use the smaller pixel font where long chat/profile text needs room. */
+  font-family: "PFRondaSeven", "Courier New", monospace;
+}
+
+:lang(ar) .chat-font {
+  /* Arabic needs fallback fonts with proper shaping. */
+  font-family: "PFRondaSeven", Tahoma, Arial, sans-serif;
+}
