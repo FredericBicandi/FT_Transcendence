@@ -1,5 +1,9 @@
 extends Node
 
+# Lobby/connection controller. It owns the pre-match room preview, starts the
+# gameplay scene without closing the socket, and posts exit/results messages to
+# the Web dashboard when exported.
+
 const Localization = preload("res://src/Scripts/components/localization.gd")
 const GAME_SCENE: PackedScene = preload("res://src/Scenes/game.tscn")
 const PLAYER_SCENE: PackedScene = preload("res://src/Objects/player.tscn")
@@ -179,7 +183,8 @@ func _start_game() -> void:
 	_set_background_visible(false)
 	_clear_preview_remote_players()
 
-	# Keep the socket alive while swapping from lobby preview to gameplay
+	# Keep NetworkClient alive across the scene swap; game.gd will reuse cached
+	# room/player snapshots that arrived while the lobby preview was visible.
 	game_instance = GAME_SCENE.instantiate()
 	add_child(game_instance)
 	$CanvasLayer.visible = false
@@ -308,7 +313,8 @@ func _apply_preview_remote_player_state(message: Dictionary) -> void:
 	if player_id == "" or player_id == local_player_id:
 		return
 
-	# Do not create preview players until the server gives us a position
+	# Preview remote players use the same proxy smoothing as the match scene, but
+	# do not create them until the server gives us a position.
 	var remote_body := _get_preview_remote_player(player_id)
 	var has_position := NetworkClient.has_finite_vector2(message, "x", "y")
 	if remote_body == null and not has_position:
@@ -433,6 +439,8 @@ func _exit_to_dashboard(reason: String, should_notify_server: bool = true) -> vo
 	_reset_after_match_exit()
 
 	if OS.has_feature("web"):
+		# Same parent-message contract as game.gd, used when leaving from lobby
+		# or before the gameplay scene has taken over.
 		var payload := {
 			"type": "EXIT_GAME",
 			"reason": reason

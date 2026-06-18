@@ -1,6 +1,10 @@
 class_name BaseWeapon
 extends Node2D
 
+# Shared weapon controller for aiming, ammo/reload, bullet spawning, projectile
+# ticking, and hit reporting. Subclasses mostly provide visuals/templates; keep
+# shot_fired semantics stable because Player uses it to send shoot packets.
+
 const WeaponData = preload("res://src/Scripts/Weapons/weapon_data.gd")
 const Projectile = preload("res://src/Scripts/Weapons/projectile.gd")
 const TargetArcIndicatorScript = preload("res://src/Scripts/Weapons/target_arc_indicator.gd")
@@ -253,6 +257,8 @@ func shoot() -> void:
 	var raw_shot_target: Vector2 = aim_target_override if has_aim_target_override else get_global_mouse_position()
 	update_aim(raw_shot_target)
 
+	# Local shot flow: spend ammo -> spawn local bullet -> emit shot_fired so
+	# Player can tell the server how to replay this shot remotely.
 	fire_cooldown = config.get("fire_rate", 0.2)
 	current_ammo -= 1
 	emit_ammo_changed()
@@ -282,6 +288,8 @@ func spawn_remote_bullet(angle_radians: float, target_position: Variant = null, 
 	if start_position is Vector2:
 		shot_start_position = start_position as Vector2
 
+	# Remote replay uses server-provided muzzle/target data when available; this
+	# keeps bullet visuals aligned across clients without enabling input.
 	var has_target_position := target_position is Vector2
 	var aim_target := shot_start_position + Vector2.RIGHT.rotated(angle_radians) * 32.0
 	if has_target_position:
@@ -377,6 +385,8 @@ func update_bullets(delta: float) -> void:
 		var pass_over_layers: Array[String] = _to_string_array(bullet_data.get("pass_over_layers", []))
 		var hit: Dictionary = {}
 		if should_collide and collision_mask != 0:
+			# Raycast between frames so fast bullets cannot tunnel through walls
+			# or players between physics ticks.
 			hit = raycast_bullet(space_state, collision_start_position, collision_end_position, collision_mask, pass_over_layers)
 
 		if not hit.is_empty():
@@ -514,6 +524,8 @@ func apply_bullet_hit(hit: Dictionary, damage: int) -> void:
 	var collider := _resolve_damage_target(hit.get("collider"))
 	var explosion_radius := float(get_weapon_config().get("explosion_radius", 0.0))
 	if explosion_radius > 0.0:
+		# Explosive weapons may damage targets found by radius even when the
+		# raycast hit the floor instead of a player.
 		apply_explosion_damage(hit.get("position", Vector2.ZERO), explosion_radius, damage, collider)
 		return
 
@@ -522,6 +534,7 @@ func apply_bullet_hit(hit: Dictionary, damage: int) -> void:
 
 	var owner_body := find_owner_body()
 	if owner_body != null and owner_body.has_method("report_authoritative_hit"):
+		# Multiplayer path: report the hit and wait for server health packets.
 		if bool(owner_body.call("report_authoritative_hit", collider, damage, hit.get("position", Vector2.ZERO), self)):
 			return
 
@@ -785,6 +798,8 @@ func keep_muzzle_out_of_walls(config: Dictionary) -> void:
 	var safe_muzzle := get_safe_muzzle_position(config, desired_muzzle)
 	if safe_muzzle == desired_muzzle:
 		return
+	# Pull the gun back when the muzzle would start inside a wall; changing this
+	# affects both shot origin and the wall-blocked visual scale.
 	has_safe_muzzle_position = true
 	safe_muzzle_position = safe_muzzle
 	var full_delta := to_local(safe_muzzle) - to_local(desired_muzzle)
@@ -851,6 +866,8 @@ func _spawn_bullet(direction: Vector2, start_position: Vector2, should_collide: 
 	var bullet_lifetime: float = float(config.get("bullet_lifetime", 1.0))
 	var pass_over_layers: Array[String] = get_pass_over_tilemap_layers()
 
+	# Bullet nodes are visuals; runtime dictionaries hold movement, collision,
+	# damage, and arc state so Projectile can tick every weapon consistently.
 	var bullet := _create_bullet_node()
 	_configure_spawned_bullet(bullet, direction, start_position)
 

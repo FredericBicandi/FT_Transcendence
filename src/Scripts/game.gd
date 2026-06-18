@@ -1,5 +1,9 @@
 extends Node2D
 
+# Main match coordinator for gameplay state, remote player proxies, HUD, chat,
+# server snapshots, and Web dashboard handoff. Most server packets are partial,
+# so message handlers must preserve cached state instead of assuming full data.
+
 const Localization = preload("res://src/Scripts/components/localization.gd")
 const PLAYER_SCENE: PackedScene = preload("res://src/Objects/player.tscn")
 const DEFAULT_CURSOR_TEXTURE: Texture2D = null
@@ -319,6 +323,8 @@ func _post_exit_game(reason: String = "manual", summary: Dictionary = {}) -> voi
 		get_tree().quit()
 		return
 
+	# Web export contract: the dashboard listens for EXIT_GAME/match_summary
+	# from the iframe and handles navigation plus stat persistence.
 	var payload := {
 		"type": "EXIT_GAME",
 		"reason": reason
@@ -956,6 +962,8 @@ func _connect_network_signals() -> void:
 	if network_client == null:
 		return
 
+	# NetworkClient parses websocket packets and emits typed signals; this scene
+	# decides whether each packet updates the local player, a remote proxy, or UI.
 	# Guard connects because this scene can be recreated after a match
 	if not network_client.room_joined.is_connected(_on_room_joined):
 		network_client.room_joined.connect(_on_room_joined)
@@ -1039,6 +1047,8 @@ func _on_room_joined(message: Dictionary) -> void:
 	match_end_sound_played = false
 	player_body.set_match_controls_enabled(true)
 	pending_remote_player_states.clear()
+	# Join flow: server assigns room/player ids, then the Player sends on_join
+	# with spawn, aim frame, and weapon so other clients can build our proxy.
 	_apply_leaderboard_snapshot(message)
 	_apply_local_player_state(message, false)
 	_apply_initial_remote_players(message)
@@ -1071,6 +1081,8 @@ func _on_player_move_received(message: Dictionary) -> void:
 	if player_id == "" or player_id == local_player_id:
 		return
 
+	# Remote player flow: receive server move -> merge partial state -> flush
+	# once per frame into the proxy interpolation queue.
 	_queue_remote_player_state_message(player_id, message)
 
 func _on_player_left_received(player_id: String) -> void:
@@ -1112,6 +1124,7 @@ func _on_player_health_received(message: Dictionary) -> void:
 		return
 
 	if player_id == local_player_id:
+		# Health/death/respawn is server-authoritative even for the local player.
 		_apply_local_player_state(message, NetworkClient.is_respawn_state(message))
 		return
 
@@ -1230,6 +1243,8 @@ func _on_match_ended(message: Dictionary) -> void:
 	if room_id != "" and ended_room_id != "" and ended_room_id != room_id:
 		return
 
+	# Freeze gameplay before showing final results so late movement or bullet
+	# packets cannot change what the player sees on the match-end leaderboard.
 	var ended_match_id := str(message.get("match_id", ""))
 	if ended_match_id != "":
 		pending_match_ended_messages[ended_match_id] = message.duplicate(true)
@@ -1257,6 +1272,8 @@ func _on_match_saved(message: Dictionary) -> void:
 	if bool(processed_match_saved_ids.get(match_id, false)):
 		return
 
+	# match_saved confirms persistence; pair it with the earlier match_ended
+	# snapshot before posting final stats back to the Web dashboard.
 	var ended_message_variant: Variant = pending_match_ended_messages.get(match_id, {})
 	if typeof(ended_message_variant) != TYPE_DICTIONARY:
 		return
@@ -1428,6 +1445,8 @@ func _on_bullet_spawn_received(message: Dictionary) -> void:
 	if player_id == "" or player_id == local_player_id:
 		return
 
+	# Local shots are spawned immediately by weapons; bullet_spawn is only used
+	# to replay remote shots with the server's start/target coordinates.
 	var remote_body := _get_remote_player(player_id)
 	if remote_body == null:
 		remote_body = _get_or_create_remote_player(player_id)
@@ -1575,6 +1594,8 @@ func _apply_remote_player_state(message: Dictionary) -> void:
 	if player_id == "" or player_id == local_player_id:
 		return
 
+	# Remote bodies are visual proxies. Do not read local input here; position,
+	# aim, weapon, health, death, and respawn all come from server snapshots.
 	var remote_body := _get_remote_player(player_id)
 	var has_position := NetworkClient.has_finite_vector2(message, "x", "y")
 	if remote_body == null and not has_position:
@@ -1618,6 +1639,7 @@ func _apply_remote_player_state(message: Dictionary) -> void:
 
 	var aim_angle_degrees := NAN
 	if message.has("aim_frame") and NetworkClient.is_valid_aim_frame(message["aim_frame"]):
+		# Prefer the compact 8-way aim frame because it matches sprite frames.
 		aim_angle_degrees = float(int(message["aim_frame"])) * 45.0
 	elif message.has("angle"):
 		aim_angle_degrees = NetworkClient.get_finite_float(message["angle"], NAN)
@@ -1653,6 +1675,7 @@ func _apply_leaderboard_snapshot(message: Dictionary) -> void:
 	if message.is_empty() or not message.has("leaderboard"):
 		return
 
+	# Leaderboard packets may also be the newest source of display names.
 	var leaderboard_variant: Variant = message.get("leaderboard", [])
 	if leaderboard_variant is Array:
 		leaderboard_ui.call("apply_server_leaderboard_snapshot", leaderboard_variant)

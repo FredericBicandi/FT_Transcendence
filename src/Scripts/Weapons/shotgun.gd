@@ -1,6 +1,10 @@
 class_name Shotgun
 extends WeaponSprite
 
+# Shotgun overrides BaseWeapon because one trigger pull spawns several pellets
+# and reloads shells one at a time. The generation counter invalidates pending
+# timers when reload is cancelled or the weapon is holstered.
+
 const PELLET_COUNT := 8
 const PELLET_SPREAD := 0.25
 const TOTAL_DAMAGE := 72
@@ -63,6 +67,8 @@ func _load_next_shell() -> void:
 		reload_audio_player.stream = reload_sound
 		reload_audio_player.play()
 	get_tree().create_timer(shell_reload_time).timeout.connect(func():
+		# Timers cannot be cancelled directly, so stale callbacks check the
+		# generation before adding ammo.
 		if not is_inside_tree() or not shell_reloading or reload_generation != shell_reload_generation:
 			return
 		current_ammo += 1

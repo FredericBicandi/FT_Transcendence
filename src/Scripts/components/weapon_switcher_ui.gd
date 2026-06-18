@@ -1,5 +1,8 @@
 extends Node
 
+# Weapon HUD fed by WeaponsManager/BaseWeapon signals. It displays active weapon
+# and ammo only; switching logic stays in WeaponsManager.
+
 const Localization = preload("res://src/Scripts/components/localization.gd")
 const SLOT_SIZE := Vector2(190.0, 76.0)
 const ICON_SIZE := Vector2(92.0, 32.0)

@@ -1,6 +1,9 @@
 class_name WeaponSprite
 extends BaseWeapon
 
+# Static bullet visual adapter. The marker child is only a template; it is
+# removed on ready and cloned as lightweight Sprite2D bullets when shots spawn.
+
 var bullet_texture: Texture2D
 var bullet_scale_stored: Vector2 = Vector2.ONE
 

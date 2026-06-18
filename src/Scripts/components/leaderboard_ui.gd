@@ -1,5 +1,9 @@
 extends Node
 
+# Leaderboard HUD backed by server snapshots. It normalizes player names/stats,
+# highlights the local player, and defers row rebuilds so rapid network updates
+# do not recreate UI multiple times in one frame.
+
 const Localization = preload("res://src/Scripts/components/localization.gd")
 const LEADERBOARD_GOLD := Color(1, 0.862745, 0.486275, 1)
 const LEADERBOARD_WHITE := Color(1, 1, 1, 1)
@@ -78,6 +82,7 @@ func set_leaderboard_entries(entries: Array) -> void:
 
 
 func apply_server_leaderboard_snapshot(entries: Array) -> void:
+	# Server snapshots replace the local ordering; clients only format/display.
 	set_leaderboard_entries(entries)
 
 func get_entry_for_player(player_id: String) -> Dictionary:

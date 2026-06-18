@@ -1,6 +1,11 @@
 class_name Player
 extends CharacterBody2D
 
+# Player body used by both the controlled local player and remote proxies.
+# Local instances read input and send movement/shot messages; remote instances
+# consume server snapshots for smoothing. Be careful around health and respawn:
+# those are server-authoritative during multiplayer matches.
+
 const Localization = preload("res://src/Scripts/components/localization.gd")
 const DEATH_SCENE_TEXTURE: Texture2D = preload("res://Assets/Textures/Character/dead.png")
 const FOOTSTEP_SOUND: AudioStream = preload("res://Assets/Audio/footSteps.ogg")
@@ -197,6 +202,7 @@ func _physics_process(delta: float) -> void:
 		return
 
 	if is_remote_proxy:
+		# Remote players are replayed from server snapshots, not simulated input.
 		_process_remote_movement(delta)
 		return
 
@@ -846,7 +852,7 @@ func is_valid_attack_target(target: Node) -> bool:
 	return not bool(target.get("is_dead"))
 
 func _report_position_sync(previous_position: Vector2, delta: float) -> void:
-	# Only the local player reports movement to the server
+	# Local movement flow: input -> Godot physics -> throttled move/idle packet.
 	if not accepts_input or not match_controls_enabled or network_client == null:
 		return
 
@@ -916,6 +922,8 @@ func _on_weapon_shot_fired(angle_radians: float, weapon_type: String, start_posi
 	if is_remote_proxy or not accepts_input or not match_controls_enabled or network_client == null:
 		return
 
+	# Weapon already spawned the local bullet; this packet asks the server to
+	# replay the shot for other clients.
 	network_client.send_shoot(angle_radians, weapon_type, global_position, start_position, target_position)
 
 func _schedule_join_state_sync() -> void:
@@ -996,6 +1004,7 @@ func _send_full_player_state() -> bool:
 
 	var aim_frame := _get_current_aim_frame()
 	last_sent_angle = _get_angle_for_aim_frame(aim_frame)
+	# Initial presence packet: position, 8-way aim frame, and current weapon.
 	network_client.send_on_join(
 		global_position.x,
 		global_position.y,
@@ -1034,7 +1043,8 @@ func configure_as_remote_proxy() -> void:
 	enable_player_camera = false
 	register_as_player_target = false
 	add_to_group(DAMAGEABLE_PLAYER_GROUP)
-	# Let bullets hit remote proxies without making them block movement
+	# Remote proxies need hitboxes for client-side bullet tests, but they should
+	# never push the local player through physics collision.
 	collision_layer = 2
 	collision_mask = 0
 	velocity = Vector2.ZERO
@@ -1114,7 +1124,8 @@ func report_authoritative_hit(target: Node, damage: int, hit_position: Vector2, 
 	if network_client == null or is_remote_proxy or not accepts_input or damage <= 0:
 		return false
 
-	# Only report hits against players the server can identify
+	# Client detects the hit for responsiveness, but only the server-identified
+	# target id is trusted for the authoritative health update.
 	if target == null or not is_instance_valid(target) or not target.has_method("get_network_player_id"):
 		return false
 
@@ -1182,6 +1193,7 @@ func apply_authoritative_health_state(new_health: int, authoritative_is_dead: bo
 		# Do not let late health packets cancel a local respawn countdown
 		return
 
+	# All multiplayer damage, healing, death, and respawn corrections enter here.
 	var previous_health := health
 	var clamped_health := clampi(new_health, 0, max_health)
 	var took_damage := clamped_health < health
@@ -1427,6 +1439,8 @@ func spawn_remote_bullet_from_server(position: Vector2, angle_radians: float, we
 		active_weapon.spawn_remote_bullet(angle_radians, target_position, start_position)
 
 func _process_remote_movement(delta: float) -> void:
+	# Snapshot smoothing: consume server positions in order and move toward the
+	# next one at normal move speed so remote players do not teleport every tick.
 	while _get_remote_snapshot_count() > 0:
 		var queued_snapshot := _get_next_remote_snapshot()
 		if queued_snapshot.is_empty():

@@ -1,6 +1,10 @@
 class_name Projectile
 extends RefCounted
 
+# Stateless projectile math shared by every weapon. It owns runtime movement,
+# raycast filtering, ballistic/target arcs, and sprite-frame direction mapping;
+# weapon scripts decide when to spawn and apply damage.
+
 const RAYCAST_IGNORE_NONE := ""
 const RAYCAST_IGNORE_EXCLUDE_RID := "exclude_rid"
 const RAYCAST_IGNORE_ADVANCE := "advance"
@@ -52,7 +56,8 @@ static func raycast(space_state: PhysicsDirectSpaceState2D, from: Vector2, to: V
 	var ray_direction := ray_delta / ray_distance
 
 	for _step in range(MAX_RAYCAST_IGNORE_STEPS):
-		# Keep raycasting past layers that this projectile is allowed to fly over
+		# Some map layers are visual cover only. Continue past them until the
+		# projectile hits a real blocker/player or exceeds the skip limit.
 		var query := PhysicsRayQueryParameters2D.create(ray_from, to, collision_mask, local_excluded_rids)
 		query.collide_with_areas = collide_with_areas
 		query.collide_with_bodies = true

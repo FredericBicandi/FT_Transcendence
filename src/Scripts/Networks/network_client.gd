@@ -1,6 +1,11 @@
 class_name NetworkClient
 extends Node
 
+# WebSocket gateway for the match server. It validates outbound payloads,
+# normalizes inbound packets, caches partial room/player state, and emits typed
+# signals for gameplay/UI scripts. Keep message field names snake_case; _send_json
+# rejects anything else to match the server contract.
+
 const Localization = preload("res://src/Scripts/components/localization.gd")
 
 signal connection_established
@@ -140,6 +145,8 @@ func send_move(x: float, y: float, angle: float, aim_frame: int) -> void:
 
 	_send_json(
 		{
+			# High-frequency local movement update; aim_frame keeps animation in
+			# sync without requiring every client to infer direction from angle.
 			"type": "move",
 			"x": x,
 			"y": y,
@@ -156,6 +163,7 @@ func send_idle(x: float, y: float, angle: float, aim_frame: int) -> void:
 
 	_send_json(
 		{
+			# Low-frequency heartbeat for stationary players and late joiners.
 			"type": "idle",
 			"x": x,
 			"y": y,
@@ -185,6 +193,7 @@ func send_on_connect() -> void:
 	_prepare_player_profile()
 	_send_json(
 		{
+			# First packet after socket open; server replies with room_reserved.
 			"type": "on_connect",
 			"player_id": player_id,
 			"player_name": player_name,
@@ -209,6 +218,7 @@ func send_on_join(x: float, y: float, angle: float, aim_frame: int, weapon_type:
 
 	_send_json(
 		{
+			# Sent when gameplay starts so other clients can create our proxy.
 			"type": "on_join",
 			"x": x,
 			"y": y,
@@ -241,6 +251,8 @@ func send_respawn(x: float, y: float, angle: float, aim_frame: int, weapon_type:
 
 	_send_json(
 		{
+			# Respawn is a request; the authoritative health/state comes back in
+			# a respawn/player_health packet before the client fully trusts it.
 			"type": "respawn",
 			"x": x,
 			"y": y,
@@ -303,6 +315,7 @@ func send_hit(target_player_id: String, weapon_type: String, damage: int, shot_i
 		return
 
 	var payload := {
+		# Client reports candidate hits; server validates and broadcasts health.
 		"type": "hit",
 		"target_player_id": normalized_target_player_id,
 		"weapon_type": normalized_weapon_type,
@@ -345,6 +358,8 @@ func send_shoot(angle_radians: float, weapon_type: String, shooter_position: Vec
 		return
 
 	var payload := {
+		# Shot visual replay data for remote clients. Damage is reported
+		# separately by send_hit so projectile visuals and health stay decoupled.
 		"type": "shoot",
 		"angle": angle,
 		"weapon_type": normalized_weapon_type,
@@ -467,6 +482,8 @@ func _handle_message(message: Dictionary) -> void:
 	var message_type := str(message.get("type", ""))
 	var request_type := str(message.get("request", ""))
 
+	# Incoming packet flow: sanitize numeric fields, cache partial state when
+	# useful, then emit one typed signal for the gameplay scene to apply.
 	if request_type == "message" or message_type == "message" or message_type == "chat_message":
 		chat_message_received.emit(message)
 		return
@@ -542,6 +559,7 @@ func _send_json(payload: Dictionary) -> void:
 		push_error("NetworkClient: refused websocket payload with non-snake-case key: %s" % invalid_key)
 		return
 
+	# All outbound server messages pass through this gate.
 	var data := JSON.stringify(payload)
 	var error := socket.send_text(data)
 	if error != OK:
@@ -875,6 +893,8 @@ func _apply_web_player_profile_overrides() -> void:
 	if not OS.has_feature("web"):
 		return
 
+	# Web export gets identity/localization from the iframe URL instead of
+	# inspector defaults.
 	player_id = get_url_param("playerId", player_id)
 	player_name = get_url_param("playerName", player_name)
 	player_level = int(get_url_param("level", str(player_level)))
@@ -950,7 +970,9 @@ func _store_remote_player_snapshot(message: Dictionary) -> void:
 	if player_id == "":
 		return
 
-	# Merge partial updates so new scenes can rebuild remote players later
+	# Merge partial updates so recreated scenes can rebuild remote proxies later.
+	# Health packets may describe the attacker weapon, so those ambiguous weapon
+	# fields are intentionally not cached as the target player's equipped weapon.
 	var existing_snapshot_variant: Variant = remote_player_snapshots.get(player_id, {})
 	var existing_snapshot: Dictionary = {}
 	if typeof(existing_snapshot_variant) == TYPE_DICTIONARY:

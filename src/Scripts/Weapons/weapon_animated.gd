@@ -1,6 +1,9 @@
 class_name WeaponAnimated
 extends BaseWeapon
 
+# Animated bullet/impact visual adapter. Scene children are templates only; they
+# are cached once, removed, and replayed for projectile and impact effects.
+
 var bullet_frames: SpriteFrames
 var bullet_scale_stored: Vector2 = Vector2.ONE
 var impact_frames: SpriteFrames

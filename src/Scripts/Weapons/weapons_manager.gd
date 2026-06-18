@@ -1,6 +1,10 @@
 class_name WeaponsManager
 extends Node2D
 
+# Owns equipped weapon state for a Player. It routes input-based switching,
+# keeps only one weapon active, and emits active_weapon_changed for HUD and
+# network reporting.
+
 const SWITCH_WEAPON_SOUND: AudioStream = preload("res://Assets/Audio/Weapons/switch_weapon.ogg")
 
 # Let HUD and networking know when the active weapon changes
@@ -69,6 +73,7 @@ func equip_weapon(weapon_key: StringName) -> bool:
 	active_weapon.set_active(true)
 	active_weapon.set_input_enabled(input_enabled)
 	if input_enabled and Input.is_action_pressed("click"):
+		# Prevent holding fire through a weapon switch from instantly shooting.
 		active_weapon.lock_fire_until_click_released()
 	active_weapon_changed.emit(active_weapon)
 	if previous_weapon != null:
