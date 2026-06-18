@@ -1,3 +1,7 @@
+// Auth callback exchanges OAuth codes into Supabase cookies and returns users to the app.
+// It communicates with Supabase SSR auth, Next redirect responses, and the canonical app URL helper.
+// Do not casually change cookie propagation or redirect URL validation.
+
 import { createServerClient } from "@supabase/ssr";
 import type { CookieMethodsServer } from "@supabase/ssr";
 import { cookies } from "next/headers";

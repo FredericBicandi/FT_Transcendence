@@ -1,3 +1,7 @@
+// Account API owns authenticated account deletion.
+// It communicates with Supabase SSR auth cookies and the Supabase admin client.
+// Do not casually change the session proof before service-role deletion.
+
 import { createServerClient } from "@supabase/ssr";
 import type { CookieMethodsServer } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";

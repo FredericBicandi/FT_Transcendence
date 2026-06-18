@@ -1,3 +1,7 @@
+// ProfileModal owns authenticated profile editing, account actions, match history, and XP animation display.
+// It communicates with playerProfile.model, HomeView refresh callbacks, and post-match progress animation state.
+// Do not casually change the progress animation snapshot or destructive account action flow.
+
 import { useEffect, useState, type ChangeEvent } from "react";
 import {
   getXpRequiredForPlayerLevel,
@@ -161,6 +165,7 @@ export function ProfileModal({
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  // Snapshot once so a profile refresh does not restart or skip the post-match animation.
   const [progressAnimationToPlay] = useState(progressAnimation ?? null);
   const isAuthenticatedPlayer = playerProfile ? !playerProfile.isGuest : false;
   const normalizedPlayerName = playerName.trim();

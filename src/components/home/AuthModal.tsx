@@ -1,3 +1,7 @@
+// AuthModal owns OAuth and email OTP sign-in UI.
+// It communicates with Supabase auth, the auth callback URL helper, and HomeView modal state.
+// Do not casually change OTP guards, callback URLs, or duplicate-submit protection.
+
 import {
   useRef,
   useState,
@@ -118,7 +122,7 @@ export function AuthModal({ onClose, translations }: AuthModalProps) {
     0,
     OTP_CODE_LENGTH,
   );
-  // Store OTP as one string, but render it as six small inputs.
+  // Store OTP as one value so paste/backspace logic stays consistent across all boxes.
   const otpDigits = Array.from(
     { length: OTP_CODE_LENGTH },
     (_, index) => normalizedOtpCode[index] ?? "",

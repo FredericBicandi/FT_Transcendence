@@ -1,5 +1,9 @@
 "use client";
 
+// HomeView owns the dashboard shell and embedded Godot iframe.
+// It communicates with useHomeController, browser fullscreen APIs, localStorage, and postMessage.
+// Do not casually change iframe origin checks, hydration timing, or fullscreen focus behavior.
+
 import Image from "next/image";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AuthModal } from "@/components/home/AuthModal";
@@ -86,7 +90,7 @@ export function HomeView() {
     const savedLanguage = window.localStorage.getItem(LANGUAGE_STORAGE_KEY);
 
     if (isHomeLanguage(savedLanguage)) {
-      // Delay this so hydration starts from the same default language.
+      // Defer localStorage state so server and first client render use the same language.
       window.setTimeout(() => setLanguage(savedLanguage), 0);
     }
   }, []);
@@ -132,7 +136,7 @@ export function HomeView() {
         return;
       }
 
-      // Let the Godot iframe ask the parent page for fullscreen.
+      // The static game cannot fullscreen the parent shell directly from inside the iframe.
       void requestGameFullscreen();
     }
 

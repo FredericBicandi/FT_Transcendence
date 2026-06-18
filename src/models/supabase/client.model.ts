@@ -1,3 +1,7 @@
+// Supabase browser client factory centralizes public config, cookie format, and REST headers.
+// It communicates with Supabase auth/storage cookies and browser-side model/controller code.
+// Do not casually change cookie encoding or the apikey header behavior.
+
 import { createBrowserClient } from "@supabase/ssr";
 import type { CookieMethodsBrowser } from "@supabase/ssr";
 

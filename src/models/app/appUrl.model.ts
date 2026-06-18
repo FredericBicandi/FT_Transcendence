@@ -1,3 +1,7 @@
+// appUrl.model resolves the public app URL used by auth redirects.
+// It communicates with environment configuration and Supabase OAuth redirect flows.
+// Do not casually allow production redirects to localhost or non-HTTP schemes.
+
 const CANONICAL_APP_URL = "https://pixelfight.live";
 const LOCAL_HOSTNAMES = new Set(["localhost", "127.0.0.1", "0.0.0.0"]);
 

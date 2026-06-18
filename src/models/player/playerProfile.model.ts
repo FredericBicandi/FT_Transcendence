@@ -1,5 +1,9 @@
 "use client";
 
+// playerProfile.model owns guest/authenticated profile normalization, XP math, match logs, and account mutations.
+// It communicates with Supabase auth/tables, localStorage caches, the account API, and the static game URL contract.
+// Do not casually change cache keys, username normalization, XP rollover, or fields passed into the game.
+
 import { createSupabaseClient } from "@/models/supabase/client.model";
 
 export type PlayerProfile = {
@@ -668,6 +672,7 @@ export async function saveAuthenticatedMatchProgress(
     return null;
   }
 
+  // Persist the already-computed result so optimistic UI and server state use the same XP step.
   const { error } = await supabase
     .from("profiles")
     .update({
@@ -698,6 +703,7 @@ export async function loadPlayerProfile({
         const cachedProfile = loadCachedAuthenticatedPlayerProfile(user.id);
 
         if (cachedProfile) {
+          // Return cached core profile first; the controller enriches logs after initial render.
           return cachedProfile;
         }
       }

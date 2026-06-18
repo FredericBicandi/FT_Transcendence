@@ -1,5 +1,9 @@
 "use client";
 
+// useHomeController coordinates player identity, Godot iframe messages, match persistence, and dashboard socket state.
+// It communicates with Supabase-backed profile models, useDashboardSocket, and the iframe through postMessage.
+// Do not casually change message validation, request sequencing, optimistic progress, or post-match exit handling.
+
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   cacheAuthenticatedPlayerProfile,
@@ -162,6 +166,7 @@ export function useHomeController({
     const requestId = profileDetailsRequestIdRef.current + 1;
     profileDetailsRequestIdRef.current = requestId;
 
+    // Later profile refreshes can finish before this details request; ignore stale completions.
     void loadAuthenticatedPlayerProfileDetails({
       level: playerProfile.level,
       playerId: playerProfile.playerId,
@@ -204,6 +209,7 @@ export function useHomeController({
     const requestId = profileRequestIdRef.current + 1;
     profileRequestIdRef.current = requestId;
     loadedProfileDetailsKeyRef.current = null;
+    // Invalidate any in-flight details request tied to the previous profile snapshot.
     profileDetailsRequestIdRef.current += 1;
     setIsPlayerProfileLoading(true);
 
@@ -275,6 +281,7 @@ export function useHomeController({
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(() => {
+      // Auth changes can invalidate both the iframe URL and pending match completion.
       matchCompletionPendingRef.current = false;
       setActiveGameUrl(null);
       setShowGame(false);
@@ -336,7 +343,7 @@ export function useHomeController({
 
         clearPostMatchExitTimeout();
         matchCompletionPendingRef.current = true;
-        // If the game never sends EXIT_GAME, still return to the dashboard.
+        // Some game builds save stats before the exit packet; avoid trapping players in the iframe.
         postMatchExitTimeoutRef.current = window.setTimeout(
           finishPostMatchFlow,
           POST_MATCH_EXIT_FALLBACK_MS,

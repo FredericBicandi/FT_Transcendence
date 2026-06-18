@@ -1,3 +1,7 @@
+// UsernameSetupModal blocks authenticated players until their required profile username is saved.
+// It communicates with playerProfile.model and HomeView's profile refresh callback.
+// Do not casually bypass this gate; the game URL depends on a resolved player name.
+
 import { FormEvent, useState } from "react";
 import {
   isUsernameTakenError,

@@ -1,5 +1,9 @@
 "use client";
 
+// useDashboardSocket owns the live dashboard WebSocket for online count and global chat.
+// It communicates with the dashboard WS endpoint, localStorage presence IDs, and useHomeController.
+// Do not casually change message parsing, presence identity, reconnect timing, or chat length limits.
+
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { PlayerProfile } from "@/models/player/playerProfile.model";
 
@@ -56,7 +60,7 @@ function parseServerMessage(value: string): DashboardServerMessage | null {
     return null;
   }
 
-  // Only accept message shapes the dashboard UI knows how to handle.
+  // Treat socket payloads as untrusted; only accepted shapes reach React state.
   if (!isRecord(parsedValue) || typeof parsedValue.type !== "string") {
     return null;
   }
