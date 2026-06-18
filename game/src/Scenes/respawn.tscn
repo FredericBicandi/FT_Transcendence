@@ -1,0 +1,53 @@
+[gd_scene format=3 uid="uid://daaxgnf8jlf6p"]
+
+[ext_resource type="Script" uid="uid://csk4yjtmq18or" path="res://src/Scripts/components/respawn_ui.gd" id="1_respawn_ui"]
+
+[sub_resource type="LabelSettings" id="LabelSettings_84mpq"]
+font_size = 28
+outline_size = 4
+outline_color = Color(0, 0, 0, 0.75)
+
+[sub_resource type="LabelSettings" id="LabelSettings_1hhyo"]
+font_size = 22
+font_color = Color(0.862745, 0.921569, 1, 1)
+outline_size = 4
+outline_color = Color(0, 0, 0, 0.75)
+
+[node name="respawn" type="Node" unique_id=106679232]
+script = ExtResource("1_respawn_ui")
+
+[node name="CanvasLayer" type="CanvasLayer" parent="." unique_id=1376626428]
+
+[node name="RespawnOverlay" type="ColorRect" parent="CanvasLayer" unique_id=2075540213]
+visible = false
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0, 0, 0, 0.45)
+
+[node name="CenterContainer" type="CenterContainer" parent="CanvasLayer/RespawnOverlay" unique_id=1625156400]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="VBoxContainer" type="VBoxContainer" parent="CanvasLayer/RespawnOverlay/CenterContainer" unique_id=975362614]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="RespawnMessage" type="Label" parent="CanvasLayer/RespawnOverlay/CenterContainer/VBoxContainer" unique_id=216959380]
+layout_mode = 2
+text = "Respawning"
+label_settings = SubResource("LabelSettings_84mpq")
+horizontal_alignment = 1
+
+[node name="RespawnCountdown" type="Label" parent="CanvasLayer/RespawnOverlay/CenterContainer/VBoxContainer" unique_id=1704727912]
+layout_mode = 2
+text = "5.0"
+label_settings = SubResource("LabelSettings_1hhyo")
+horizontal_alignment = 1

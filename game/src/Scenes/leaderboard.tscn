@@ -1,0 +1,145 @@
+[gd_scene format=3 uid="uid://e3lcnmeh7xhk"]
+
+[ext_resource type="Script" uid="uid://d3gtrxsamwkyr" path="res://src/Scripts/components/leaderboard_ui.gd" id="1_leaderboard_ui"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_4ih41"]
+bg_color = Color(0, 0, 0, 0.72)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.513725, 0.364706, 0.184314, 0.5)
+corner_radius_top_left = 18
+corner_radius_top_right = 18
+corner_radius_bottom_right = 18
+corner_radius_bottom_left = 18
+shadow_color = Color(0, 0, 0, 0.3)
+shadow_size = 8
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_l1awt"]
+bg_color = Color(0.321569, 0.227451, 0.117647, 0.72)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_0fxj7"]
+bg_color = Color(0.513725, 0.364706, 0.184314, 0.04)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+
+[node name="Leaderboard" type="Node" unique_id=282059591]
+script = ExtResource("1_leaderboard_ui")
+
+[node name="CanvasLayer" type="CanvasLayer" parent="." unique_id=1859324710]
+layer = 10
+
+[node name="LeaderboardOverlay" type="ColorRect" parent="CanvasLayer" unique_id=69118451]
+visible = false
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0, 0, 0, 0)
+
+[node name="CenterContainer" type="CenterContainer" parent="CanvasLayer/LeaderboardOverlay" unique_id=307223279]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="LeaderboardPanel" type="PanelContainer" parent="CanvasLayer/LeaderboardOverlay/CenterContainer" unique_id=995161385]
+custom_minimum_size = Vector2(820, 560)
+layout_mode = 2
+size_flags_horizontal = 4
+theme_override_styles/panel = SubResource("StyleBoxFlat_4ih41")
+
+[node name="MarginContainer" type="MarginContainer" parent="CanvasLayer/LeaderboardOverlay/CenterContainer/LeaderboardPanel" unique_id=1305762977]
+layout_mode = 2
+theme_override_constants/margin_left = 24
+theme_override_constants/margin_top = 20
+theme_override_constants/margin_right = 24
+theme_override_constants/margin_bottom = 20
+
+[node name="VBoxContainer" type="VBoxContainer" parent="CanvasLayer/LeaderboardOverlay/CenterContainer/LeaderboardPanel/MarginContainer" unique_id=1432727920]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="TitleLabel" type="Label" parent="CanvasLayer/LeaderboardOverlay/CenterContainer/LeaderboardPanel/MarginContainer/VBoxContainer" unique_id=116871623]
+layout_mode = 2
+theme_override_font_sizes/font_size = 24
+text = "Leaderboard"
+horizontal_alignment = 1
+
+[node name="HeaderPanel" type="PanelContainer" parent="CanvasLayer/LeaderboardOverlay/CenterContainer/LeaderboardPanel/MarginContainer/VBoxContainer" unique_id=750456925]
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_l1awt")
+
+[node name="HeaderMargin" type="MarginContainer" parent="CanvasLayer/LeaderboardOverlay/CenterContainer/LeaderboardPanel/MarginContainer/VBoxContainer/HeaderPanel" unique_id=1251521653]
+layout_mode = 2
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 12
+
+[node name="HeaderColumns" type="HBoxContainer" parent="CanvasLayer/LeaderboardOverlay/CenterContainer/LeaderboardPanel/MarginContainer/VBoxContainer/HeaderPanel/HeaderMargin" unique_id=77156102]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="PlayerNameHeader" type="Label" parent="CanvasLayer/LeaderboardOverlay/CenterContainer/LeaderboardPanel/MarginContainer/VBoxContainer/HeaderPanel/HeaderMargin/HeaderColumns" unique_id=61911769]
+custom_minimum_size = Vector2(340, 0)
+layout_mode = 2
+size_flags_horizontal = 0
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_font_sizes/font_size = 18
+text = "Player Name"
+
+[node name="KillsHeader" type="Label" parent="CanvasLayer/LeaderboardOverlay/CenterContainer/LeaderboardPanel/MarginContainer/VBoxContainer/HeaderPanel/HeaderMargin/HeaderColumns" unique_id=783797348]
+custom_minimum_size = Vector2(120, 0)
+layout_mode = 2
+size_flags_horizontal = 0
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_font_sizes/font_size = 18
+text = "Kills"
+horizontal_alignment = 1
+
+[node name="DeathsHeader" type="Label" parent="CanvasLayer/LeaderboardOverlay/CenterContainer/LeaderboardPanel/MarginContainer/VBoxContainer/HeaderPanel/HeaderMargin/HeaderColumns" unique_id=2093178300]
+custom_minimum_size = Vector2(120, 0)
+layout_mode = 2
+size_flags_horizontal = 0
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_font_sizes/font_size = 18
+text = "Deaths"
+horizontal_alignment = 1
+
+[node name="ScoreHeader" type="Label" parent="CanvasLayer/LeaderboardOverlay/CenterContainer/LeaderboardPanel/MarginContainer/VBoxContainer/HeaderPanel/HeaderMargin/HeaderColumns" unique_id=521634318]
+custom_minimum_size = Vector2(160, 0)
+layout_mode = 2
+size_flags_horizontal = 0
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_font_sizes/font_size = 18
+text = "Score"
+horizontal_alignment = 1
+
+[node name="RowsPanel" type="PanelContainer" parent="CanvasLayer/LeaderboardOverlay/CenterContainer/LeaderboardPanel/MarginContainer/VBoxContainer" unique_id=1032081654]
+custom_minimum_size = Vector2(0, 420)
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_styles/panel = SubResource("StyleBoxFlat_0fxj7")
+
+[node name="RowsMargin" type="MarginContainer" parent="CanvasLayer/LeaderboardOverlay/CenterContainer/LeaderboardPanel/MarginContainer/VBoxContainer/RowsPanel" unique_id=386854911]
+layout_mode = 2
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 14
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 14
+
+[node name="RowsContainer" type="VBoxContainer" parent="CanvasLayer/LeaderboardOverlay/CenterContainer/LeaderboardPanel/MarginContainer/VBoxContainer/RowsPanel/RowsMargin" unique_id=130855535]
+layout_mode = 2
+theme_override_constants/separation = 8

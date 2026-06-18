@@ -1,0 +1,13 @@
+# Godot editor/import cache
+.godot/
+
+# Export/build output
+/Build/
+*.tmp
+
+# Local machine files
+.DS_Store
+*.pem
+.env
+.env*.local
+*.log
