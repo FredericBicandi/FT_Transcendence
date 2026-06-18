@@ -143,7 +143,8 @@ export function AuthModal({ onClose, translations }: AuthModalProps) {
       if (error) {
         setEmailAuthMessage(error.message || translations.authFailed);
       }
-    } catch {
+    } catch (error) {
+      console.error("OAuth sign-in failed before Supabase returned a response.", error);
       setEmailAuthMessage(translations.authFailed);
     }
   }
@@ -185,7 +186,8 @@ export function AuthModal({ onClose, translations }: AuthModalProps) {
       setSentOtpEmail(normalizedEmail);
       setHasSentOtp(true);
       setEmailAuthMessage(translations.codeSent);
-    } catch {
+    } catch (error) {
+      console.error("Email OTP request failed before Supabase returned a response.", error);
       setEmailAuthMessage(translations.authFailed);
     } finally {
       isRequestingOtpRef.current = false;
@@ -228,7 +230,8 @@ export function AuthModal({ onClose, translations }: AuthModalProps) {
       }
 
       onClose();
-    } catch {
+    } catch (error) {
+      console.error("Email OTP verification failed before Supabase returned a response.", error);
       setEmailAuthMessage(translations.authFailed);
     } finally {
       isVerifyingOtpRef.current = false;
