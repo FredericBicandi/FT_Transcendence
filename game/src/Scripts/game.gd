@@ -118,6 +118,7 @@ func _ready() -> void:
 	_create_match_end_audio_player()
 	_create_exit_dialog()
 	Localization.apply_active_language_font(self)
+	leaderboard_ui.call("refresh_localization")
 	if match_has_ended:
 		remaining_match_seconds = 0.0
 		timer_ui.call("set_remaining_seconds", remaining_match_seconds)

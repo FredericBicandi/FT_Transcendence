@@ -37,10 +37,14 @@ var leaderboard_rows_refresh_scheduled: bool = false
 
 func _ready() -> void:
 	leaderboard_panel.custom_minimum_size = panel_minimum_size
-	_configure_leaderboard_header()
-	Localization.apply_active_language_font(self)
+	refresh_localization()
 	clear_leaderboard_entries()
 	set_leaderboard_visible(initially_visible)
+
+func refresh_localization() -> void:
+	_configure_leaderboard_header()
+	Localization.apply_active_language_font(self)
+	_schedule_leaderboard_rows_refresh()
 
 
 func _input(event: InputEvent) -> void:

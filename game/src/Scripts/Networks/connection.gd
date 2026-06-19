@@ -57,6 +57,7 @@ func _ready() -> void:
 	dashboard_button.pressed.connect(_on_dashboard_button_pressed)
 
 	_begin_connection_attempt(Localization.translate("connecting_server"))
+	leaderboard_ui.call("refresh_localization")
 
 func _process(delta: float) -> void:
 	if is_waiting_for_room_reservation and not has_started_game and not is_returning_to_lobby and not is_room_ready:
