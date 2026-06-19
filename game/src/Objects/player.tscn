@@ -322,6 +322,7 @@ bg_color = Color(0.160784, 0.776471, 0.286275, 1)
 position = Vector2(2, 0)
 collision_layer = 2
 script = ExtResource("1_4o2qk")
+camera_zoom = Vector2(7.0, 7.0)
 
 [node name="Leg" type="AnimatedSprite2D" parent="CharacterBody2D" unique_id=1021202293]
 position = Vector2(-1, 7)
@@ -354,7 +355,7 @@ scale = Vector2(0.51959234, 0.52162844)
 sprite_frames = SubResource("SpriteFrames_vun6k")
 
 [node name="Camera2D" type="Camera2D" parent="CharacterBody2D" unique_id=464962696]
-zoom = Vector2(6.5, 6.5)
+zoom = Vector2(7.0, 7.0)
 script = ExtResource("6_41rav")
 
 [node name="ShootSound" type="AudioStreamPlayer2D" parent="CharacterBody2D" unique_id=827025043]
@@ -378,8 +379,9 @@ shape = SubResource("RectangleShape2D_x6uln")
 [node name="OverheadUiCanvasLayer" type="CanvasLayer" parent="." unique_id=1761189483]
 
 [node name="OverheadPanel" type="PanelContainer" parent="OverheadUiCanvasLayer" unique_id=802100969]
+custom_minimum_size = Vector2(116, 32)
 offset_left = -58.0
-offset_top = -30.0
+offset_top = -34.0
 offset_right = 58.0
 offset_bottom = -4.0
 mouse_filter = 2
@@ -394,9 +396,10 @@ theme_override_constants/margin_bottom = 4
 
 [node name="OverheadVBox" type="VBoxContainer" parent="OverheadUiCanvasLayer/OverheadPanel/OverheadMargin" unique_id=1717534498]
 layout_mode = 2
-theme_override_constants/separation = 2
+theme_override_constants/separation = 4
 
 [node name="PlayerNameLabel" type="Label" parent="OverheadUiCanvasLayer/OverheadPanel/OverheadMargin/OverheadVBox" unique_id=112340915]
+custom_minimum_size = Vector2(104, 12)
 layout_mode = 2
 theme_override_colors/font_color = Color(0.886275, 0.952941, 0.862745, 1)
 theme_override_colors/font_outline_color = Color(0, 0, 0, 0.9)

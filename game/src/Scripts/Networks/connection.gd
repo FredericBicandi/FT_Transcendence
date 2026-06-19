@@ -9,6 +9,7 @@ const GAME_SCENE: PackedScene = preload("res://src/Scenes/game.tscn")
 const PLAYER_SCENE: PackedScene = preload("res://src/Objects/player.tscn")
 const LOBBY_URL: String = "https://pixelfight.live/"
 const LOBBY_LEADERBOARD_REFRESH_SECONDS: float = 3.0
+const ROOM_RESERVATION_TIMEOUT_SECONDS: float = 6.0
 
 @onready var background_map: Node2D = $Map
 @onready var background_camera: Camera2D = $BackgroundCamera
@@ -30,6 +31,8 @@ var lobby_leaderboard_refresh_elapsed: float = 0.0
 var player_play_time_accumulated_ms: int = 0
 var player_play_time_started_msec: int = -1
 var player_play_time_room_id: String = ""
+var is_waiting_for_room_reservation: bool = false
+var room_reservation_wait_elapsed: float = 0.0
 
 func _ready() -> void:
 	Localization.apply_url_language()
@@ -56,6 +59,15 @@ func _ready() -> void:
 	_begin_connection_attempt(Localization.translate("connecting_server"))
 
 func _process(delta: float) -> void:
+	if is_waiting_for_room_reservation and not has_started_game and not is_returning_to_lobby and not is_room_ready:
+		room_reservation_wait_elapsed += delta
+		if room_reservation_wait_elapsed >= ROOM_RESERVATION_TIMEOUT_SECONDS:
+			is_waiting_for_room_reservation = false
+			_set_status_text(Localization.translate("player_already_joined"))
+			if network_client != null:
+				network_client.close_connection()
+		return
+
 	if has_started_game or is_returning_to_lobby or not is_room_ready:
 		return
 
@@ -72,6 +84,8 @@ func _begin_connection_attempt(status_text: String) -> void:
 
 	# Reset lobby state before trying to join a room again
 	is_room_ready = false
+	is_waiting_for_room_reservation = false
+	room_reservation_wait_elapsed = 0.0
 	local_player_id = ""
 	_clear_preview_remote_players()
 	_set_background_visible(true)
@@ -89,6 +103,8 @@ func _on_connection_established() -> void:
 
 	_set_status_text(Localization.translate("connected_reserving"))
 	_set_room_ready_ui_visible(false)
+	is_waiting_for_room_reservation = true
+	room_reservation_wait_elapsed = 0.0
 
 func _on_room_ready(message: Dictionary) -> void:
 	if has_started_game or is_returning_to_lobby:
@@ -96,6 +112,8 @@ func _on_room_ready(message: Dictionary) -> void:
 
 	# Show the room preview until the player chooses to join the match
 	is_room_ready = true
+	is_waiting_for_room_reservation = false
+	room_reservation_wait_elapsed = 0.0
 	lobby_leaderboard_refresh_elapsed = 0.0
 	var assigned_room_id := str(message.get("room_id", network_client.local_room_id)).strip_edges()
 	if player_play_time_room_id != "" and assigned_room_id != "" and assigned_room_id != player_play_time_room_id:
@@ -129,6 +147,8 @@ func _on_leaderboard_updated(message: Dictionary) -> void:
 func _on_connection_failed() -> void:
 	has_started_game = false
 	is_room_ready = false
+	is_waiting_for_room_reservation = false
+	room_reservation_wait_elapsed = 0.0
 	_set_status_text(Localization.translate("connection_failed"))
 	$CanvasLayer.visible = true
 	_show_lobby_cursor()
@@ -148,6 +168,8 @@ func _on_connection_lost(reason: String) -> void:
 	game_instance = null
 	has_started_game = false
 	is_room_ready = false
+	is_waiting_for_room_reservation = false
+	room_reservation_wait_elapsed = 0.0
 	local_player_id = ""
 	_clear_preview_remote_players()
 	_begin_connection_attempt(Localization.translate("reconnecting") % reason)
@@ -499,6 +521,8 @@ func _reset_after_match_exit() -> void:
 	has_started_game = false
 	_reset_player_play_timer()
 	is_room_ready = false
+	is_waiting_for_room_reservation = false
+	room_reservation_wait_elapsed = 0.0
 	is_returning_to_lobby = false
 	local_player_id = network_client.local_player_id
 	_clear_preview_remote_players()
