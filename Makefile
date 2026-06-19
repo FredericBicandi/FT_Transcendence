@@ -3,6 +3,17 @@ WEB_IMAGE = $(WEB_NAME)
 WEB_CONTAINER = $(WEB_NAME)
 SERVER_DIR = server
 
+ifneq (,$(wildcard .env))
+include .env
+export
+endif
+
+WEB_BUILD_ARGS = \
+	--build-arg NEXT_PUBLIC_SUPABASE_URL="$(NEXT_PUBLIC_SUPABASE_URL)" \
+	--build-arg NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY="$(NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY)" \
+	--build-arg NEXT_PUBLIC_APP_URL="$(NEXT_PUBLIC_APP_URL)" \
+	--build-arg NEXT_PUBLIC_DASHBOARD_WS_URL="$(NEXT_PUBLIC_DASHBOARD_WS_URL)"
+
 build: web-build server-build
 
 run: server-run web-run
@@ -16,11 +27,12 @@ fclean: web-fclean server-fclean
 re: fclean build run
 
 web-build:
-	docker build -t $(WEB_IMAGE) .
+	docker build $(WEB_BUILD_ARGS) -t $(WEB_IMAGE) .
 
 web-run: web-clean
 	docker run -d \
 		--name $(WEB_CONTAINER) \
+		--env-file .env \
 		-p 127.0.0.1:3000:3000 \
 		$(WEB_IMAGE)
 
