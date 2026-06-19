@@ -15,6 +15,7 @@ import {
 import type { HomeTranslations } from "@/views/home/homeTranslations";
 
 type ProfileModalProps = {
+  isClosing?: boolean;
   onClose: () => void;
   onDeleteAccount: () => Promise<void>;
   onLogout: () => Promise<void>;
@@ -155,6 +156,7 @@ function MatchLogIcon() {
 }
 
 export function ProfileModal({
+  isClosing = false,
   onClose,
   onDeleteAccount,
   onLogout,
@@ -476,11 +478,15 @@ export function ProfileModal({
 
   return (
     <div
-      className="modal-backdrop-enter absolute inset-0 z-40 flex items-center justify-center bg-black/35 px-4 backdrop-blur-[2px]"
+      className={`absolute inset-0 z-40 flex items-center justify-center bg-black/35 p-2 backdrop-blur-[2px] sm:p-3 ${
+        isClosing ? "modal-backdrop-exit" : "modal-backdrop-enter"
+      }`}
       onClick={onClose}
     >
       <section
-        className="modal-panel-enter relative grid max-h-[calc(100vh-3rem)] w-[min(70rem,calc(100vw-2rem))] grid-cols-1 gap-8 overflow-y-auto px-7 py-14 shadow-[0_0_0_4px_#050302,0_8px_0_4px_#111515,inset_0_4px_0_#374041,inset_0_-4px_0_#151819] md:grid-cols-[20rem_minmax(0,1fr)] md:px-9"
+        className={`relative grid h-[min(42rem,calc(100vh-2rem))] w-[min(76rem,calc(100vw-2rem))] min-h-0 grid-cols-1 gap-5 overflow-hidden px-5 pb-6 pt-12 shadow-[0_0_0_4px_#050302,0_8px_0_4px_#111515,inset_0_4px_0_#374041,inset_0_-4px_0_#151819] md:grid-cols-[18rem_minmax(0,1fr)] md:gap-7 md:px-7 md:pb-7 md:pt-12 lg:grid-cols-[19rem_minmax(0,1fr)] ${
+          isClosing ? "modal-panel-exit" : "modal-panel-enter"
+        }`}
         onClick={(event) => event.stopPropagation()}
         style={brickWallStyle}
       >
@@ -493,17 +499,17 @@ export function ProfileModal({
           <CloseIcon />
         </button>
 
-        <div className="flex flex-col items-center justify-center gap-7">
-          <div className="flex items-end gap-3">
-            <span className="text-2xl uppercase text-[#d9b46b]">
+        <div className="flex min-h-0 flex-col items-center justify-center gap-3 overflow-hidden py-1 md:gap-4">
+          <div className="flex h-9 items-end gap-3">
+            <span className="text-lg uppercase text-[#d9b46b]">
               {translations.level}
             </span>
-            <span className="text-4xl leading-none text-[#f5dfad]">
+            <span className="text-3xl leading-none text-[#f5dfad]">
               {level}
             </span>
           </div>
 
-          <label className={`group relative flex h-40 w-40 items-center justify-center overflow-hidden bg-[#151819] shadow-[0_0_0_3px_#050302,inset_0_4px_0_#374041,inset_0_-4px_0_#050302] ${isAuthenticatedPlayer ? "cursor-pointer" : "cursor-not-allowed opacity-80"}`}>
+          <label className={`group relative flex h-[7.5rem] w-[7.5rem] items-center justify-center overflow-hidden bg-[#151819] shadow-[0_0_0_3px_#050302,inset_0_4px_0_#374041,inset_0_-4px_0_#050302] ${isAuthenticatedPlayer ? "cursor-pointer" : "cursor-not-allowed opacity-80"}`}>
             {avatarPreviewUrl ? (
               <span
                 aria-hidden="true"
@@ -526,7 +532,7 @@ export function ProfileModal({
             />
           </label>
 
-          <label className={`flex h-14 w-full max-w-sm items-center gap-3 bg-[#151819] px-4 text-[#d9b46b] shadow-[inset_0_3px_0_#050302,inset_0_-3px_0_#374041] ${isAuthenticatedPlayer ? "focus-within:shadow-[0_0_0_2px_#b8893b,inset_0_3px_0_#050302,inset_0_-3px_0_#374041]" : "cursor-not-allowed opacity-80"}`}>
+          <label className={`flex h-11 w-full max-w-sm items-center gap-3 bg-[#151819] px-4 text-[#d9b46b] shadow-[inset_0_3px_0_#050302,inset_0_-3px_0_#374041] ${isAuthenticatedPlayer ? "focus-within:shadow-[0_0_0_2px_#b8893b,inset_0_3px_0_#050302,inset_0_-3px_0_#374041]" : "cursor-not-allowed opacity-80"}`}>
             {isAuthenticatedPlayer ? <PencilIcon /> : <LockIcon />}
             <input
               aria-label={translations.usernameInput}
@@ -541,13 +547,19 @@ export function ProfileModal({
               value={playerName}
             />
           </label>
-          {isAuthenticatedPlayer && hasPlayerNameChanged && (
-            <p className="w-full max-w-sm text-right text-xs uppercase text-[#d9b46b]">
+          <div className="flex h-4 w-full max-w-sm items-center justify-end overflow-hidden">
+            <p
+              className={`text-right text-xs uppercase text-[#d9b46b] ${
+                isAuthenticatedPlayer && hasPlayerNameChanged
+                  ? ""
+                  : "invisible"
+              }`}
+            >
               {normalizedPlayerName.length} / {MAX_USERNAME_LENGTH}
             </p>
-          )}
+          </div>
 
-          <div className="grid w-full max-w-sm grid-cols-[auto_1fr] items-center gap-x-4 gap-y-2">
+          <div className="grid w-full max-w-sm grid-cols-[auto_1fr] items-center gap-x-3 gap-y-1">
             <span className="text-base uppercase text-[#d9b46b]">
               {translations.exp}
             </span>
@@ -563,7 +575,7 @@ export function ProfileModal({
           </div>
 
           <button
-            className="h-12 w-full max-w-sm bg-[#344326] text-lg uppercase text-[#d9b46b] shadow-[0_0_0_3px_#050302,0_4px_0_3px_#172111,inset_0_3px_0_#53663a,inset_0_-3px_0_#202b17] hover:bg-[#40522d] hover:text-[#ead08a] active:translate-y-1 active:shadow-[0_0_0_3px_#050302,0_1px_0_3px_#172111,inset_0_2px_0_#53663a,inset_0_-2px_0_#202b17] disabled:cursor-not-allowed disabled:bg-[#303536] disabled:text-[#8a8170] disabled:shadow-[0_0_0_3px_#050302,0_4px_0_3px_#151819,inset_0_3px_0_#4a5051,inset_0_-3px_0_#202425] disabled:hover:bg-[#303536] disabled:hover:text-[#8a8170] disabled:active:translate-y-0"
+            className="h-10 w-full max-w-sm bg-[#344326] text-base uppercase text-[#d9b46b] shadow-[0_0_0_3px_#050302,0_4px_0_3px_#172111,inset_0_3px_0_#53663a,inset_0_-3px_0_#202b17] hover:bg-[#40522d] hover:text-[#ead08a] active:translate-y-1 active:shadow-[0_0_0_3px_#050302,0_1px_0_3px_#172111,inset_0_2px_0_#53663a,inset_0_-2px_0_#202b17] disabled:cursor-not-allowed disabled:bg-[#303536] disabled:text-[#8a8170] disabled:shadow-[0_0_0_3px_#050302,0_4px_0_3px_#151819,inset_0_3px_0_#4a5051,inset_0_-3px_0_#202425] disabled:hover:bg-[#303536] disabled:hover:text-[#8a8170] disabled:active:translate-y-0"
             disabled={
               !isAuthenticatedPlayer ||
               !normalizedPlayerName ||
@@ -576,16 +588,19 @@ export function ProfileModal({
             {isSaving ? translations.applying : translations.apply}
           </button>
 
-          {saveStatus && (
-            <p className="text-center text-sm uppercase text-[#d9b46b]">
+          <div
+            aria-live="polite"
+            className="flex h-8 w-full max-w-sm items-center justify-center overflow-hidden"
+          >
+            <p className="max-h-8 overflow-hidden break-words text-center text-xs uppercase leading-4 text-[#d9b46b]">
               {saveStatus}
             </p>
-          )}
+          </div>
 
           {isAuthenticatedPlayer && (
-            <div className="flex w-full max-w-sm flex-col gap-3">
+            <div className="flex w-full max-w-sm flex-col gap-2">
               <button
-                className="h-10 w-full bg-[#151819] text-sm uppercase text-[#f5dfad] shadow-[0_0_0_2px_#050302,inset_0_2px_0_#374041,inset_0_-2px_0_#050302] hover:bg-[#2a3031] active:translate-y-0.5 disabled:cursor-not-allowed disabled:text-[#8a8170]"
+                className="h-9 w-full bg-[#151819] text-sm uppercase text-[#f5dfad] shadow-[0_0_0_2px_#050302,inset_0_2px_0_#374041,inset_0_-2px_0_#050302] hover:bg-[#2a3031] active:translate-y-0.5 disabled:cursor-not-allowed disabled:text-[#8a8170]"
                 disabled={isDeletingAccount}
                 onClick={logout}
                 type="button"
@@ -593,7 +608,7 @@ export function ProfileModal({
                 {translations.logout}
               </button>
               <button
-                className="h-10 w-full bg-[#4b2323] text-sm uppercase text-[#f5dfad] shadow-[0_0_0_2px_#050302,inset_0_2px_0_#7a3434,inset_0_-2px_0_#250f0f] hover:bg-[#653030] active:translate-y-0.5 disabled:cursor-not-allowed disabled:bg-[#303536] disabled:text-[#8a8170] disabled:shadow-[0_0_0_2px_#050302,inset_0_2px_0_#4a5051,inset_0_-2px_0_#202425] disabled:hover:bg-[#303536] disabled:active:translate-y-0"
+                className="h-9 w-full bg-[#4b2323] text-sm uppercase text-[#f5dfad] shadow-[0_0_0_2px_#050302,inset_0_2px_0_#7a3434,inset_0_-2px_0_#250f0f] hover:bg-[#653030] active:translate-y-0.5 disabled:cursor-not-allowed disabled:bg-[#303536] disabled:text-[#8a8170] disabled:shadow-[0_0_0_2px_#050302,inset_0_2px_0_#4a5051,inset_0_-2px_0_#202425] disabled:hover:bg-[#303536] disabled:active:translate-y-0"
                 disabled={isDeletingAccount}
                 onClick={deleteAccount}
                 type="button"
@@ -606,27 +621,27 @@ export function ProfileModal({
           )}
         </div>
 
-        <div className="flex min-h-[24rem] flex-col gap-5">
-          <div className="flex items-center gap-3">
+        <div className="flex min-h-0 flex-col gap-3 overflow-hidden">
+          <div className="flex h-8 shrink-0 items-center gap-3">
             <MatchLogIcon />
-            <h2 className="text-2xl uppercase text-[#f5dfad]">
+            <h2 className="text-xl uppercase text-[#f5dfad]">
               {translations.matchLog}
             </h2>
           </div>
 
           <div className="flex min-h-0 flex-1 flex-col overflow-x-auto overflow-y-hidden bg-[#151819] shadow-[0_0_0_3px_#050302,inset_0_3px_0_#374041,inset_0_-3px_0_#050302] [scrollbar-color:#b8893b_rgba(0,0,0,0.35)]">
-            <div className="grid min-w-[38rem] grid-cols-[1.35fr_0.85fr_0.65fr_0.65fr_0.75fr] bg-black/35 px-5 py-4 text-base uppercase text-[#d9b46b]">
+            <div className="grid min-w-[38rem] grid-cols-[1.35fr_0.85fr_0.65fr_0.65fr_0.75fr] bg-black/35 px-4 py-3 text-sm uppercase text-[#d9b46b]">
               <span>{translations.dateTime}</span>
               <span>{translations.playTime}</span>
               <span>{translations.kills}</span>
               <span>{translations.death}</span>
               <span>{translations.score}</span>
             </div>
-            <div className="min-w-[38rem] flex-1 overflow-y-auto [scrollbar-color:#b8893b_rgba(0,0,0,0.35)]">
+            <div className="min-w-[38rem] flex-1 overflow-y-auto overflow-x-hidden">
               {isAuthenticatedPlayer && matchLogs.length > 0 ? (
                 matchLogs.map((matchLog) => (
                   <div
-                    className="grid min-h-16 grid-cols-[1.35fr_0.85fr_0.65fr_0.65fr_0.75fr] items-center px-5 py-4 text-base text-[#f5dfad] odd:bg-[#212627]/55 even:bg-[#1b2021]/55"
+                    className="grid min-h-12 grid-cols-[1.35fr_0.85fr_0.65fr_0.65fr_0.75fr] items-center px-4 py-3 text-sm text-[#f5dfad] odd:bg-[#212627]/55 even:bg-[#1b2021]/55"
                     key={matchLog.id}
                   >
                     <span>{matchLog.playedAt}</span>
@@ -637,11 +652,11 @@ export function ProfileModal({
                   </div>
                 ))
               ) : isAuthenticatedPlayer ? (
-                <div className="flex min-h-64 items-center justify-center px-5 py-8 text-center text-base uppercase text-[#d9b46b]">
+                <div className="flex h-full items-center justify-center px-5 py-8 text-center text-base uppercase text-[#d9b46b]">
                   {translations.noMatchLogs}
                 </div>
               ) : (
-                <div className="flex min-h-64 items-center justify-center px-5 py-8 text-center text-base uppercase text-[#d9b46b]">
+                <div className="flex h-full items-center justify-center px-5 py-8 text-center text-base uppercase text-[#d9b46b]">
                   {translations.signInToSaveMatchLogs}
                 </div>
               )}

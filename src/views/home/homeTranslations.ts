@@ -17,10 +17,13 @@ export type HomeTranslations = {
     verifyingCode: string;
   };
   chat: {
+    close: string;
     cooldown: string;
     inputLabel: string;
+    open: string;
     placeholder: string;
     signInToSend: string;
+    title: string;
     unavailable: string;
   };
   fullscreen: {
@@ -28,6 +31,7 @@ export type HomeTranslations = {
     exit: string;
   };
   home: {
+    battleArena: string;
     loginSignup: string;
     loading: string;
     online: string;
@@ -85,10 +89,13 @@ export const homeTranslations: Record<HomeLanguage, HomeTranslations> = {
       verifyingCode: "Verifying...",
     },
     chat: {
+      close: "Close global chat",
       cooldown: "Wait {seconds}s",
       inputLabel: "Global chat message",
+      open: "Chat",
       placeholder: "Type message...",
       signInToSend: "Sign in to chat",
+      title: "Global Chat",
       unavailable: "Chat unavailable",
     },
     fullscreen: {
@@ -96,6 +103,7 @@ export const homeTranslations: Record<HomeLanguage, HomeTranslations> = {
       exit: "Exit",
     },
     home: {
+      battleArena: "Battle Arena",
       loginSignup: "Login / Sign Up",
       loading: "Loading...",
       online: "online",
@@ -156,10 +164,13 @@ export const homeTranslations: Record<HomeLanguage, HomeTranslations> = {
       verifyingCode: "Verification...",
     },
     chat: {
+      close: "Fermer le chat global",
       cooldown: "Attendez {seconds}s",
       inputLabel: "Message du chat global",
+      open: "Chat",
       placeholder: "Ecrire un message...",
       signInToSend: "Connectez-vous pour chatter",
+      title: "Chat Global",
       unavailable: "Chat indisponible",
     },
     fullscreen: {
@@ -167,6 +178,7 @@ export const homeTranslations: Record<HomeLanguage, HomeTranslations> = {
       exit: "Quitter",
     },
     home: {
+      battleArena: "Arene de Combat",
       loginSignup: "Connexion / Inscription",
       loading: "Chargement...",
       online: "en ligne",
@@ -227,10 +239,13 @@ export const homeTranslations: Record<HomeLanguage, HomeTranslations> = {
       verifyingCode: "جاري التحقق...",
     },
     chat: {
+      close: "اغلاق الدردشة العامة",
       cooldown: "انتظر {seconds}ث",
       inputLabel: "رسالة الدردشة العامة",
+      open: "الدردشة",
       placeholder: "اكتب رسالة...",
       signInToSend: "سجل للدردشة",
+      title: "الدردشة العامة",
       unavailable: "الدردشة غير متاحة",
     },
     fullscreen: {
@@ -238,6 +253,7 @@ export const homeTranslations: Record<HomeLanguage, HomeTranslations> = {
       exit: "الخروج",
     },
     home: {
+      battleArena: "ساحة القتال",
       loginSignup: "دخول / تسجيل",
       loading: "جاري التحميل...",
       online: "متصل",

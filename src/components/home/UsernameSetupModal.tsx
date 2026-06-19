@@ -62,7 +62,7 @@ export function UsernameSetupModal({
   return (
     <div className="modal-backdrop-enter absolute inset-0 z-50 flex items-center justify-center bg-black/45 px-4 backdrop-blur-[2px]">
       <form
-        className="modal-panel-enter flex w-[min(24rem,calc(100vw-2rem))] flex-col gap-6 bg-[#212627]/95 px-7 py-9 shadow-[0_0_0_4px_#050302,0_8px_0_4px_#111515,inset_0_4px_0_#374041,inset_0_-4px_0_#151819]"
+        className="modal-panel-enter flex h-[min(24rem,calc(100vh-2rem))] w-[min(24rem,calc(100vw-2rem))] flex-col justify-center gap-6 overflow-hidden bg-[#212627]/95 px-7 py-9 shadow-[0_0_0_4px_#050302,0_8px_0_4px_#111515,inset_0_4px_0_#374041,inset_0_-4px_0_#151819]"
         onSubmit={saveUsername}
       >
         <h2 className="text-center text-xl uppercase text-[#f5dfad]">
@@ -89,11 +89,14 @@ export function UsernameSetupModal({
           {playerName.length} / {MAX_USERNAME_LENGTH}
         </p>
 
-        {errorMessage && (
-          <p className="text-center text-sm uppercase text-[#d9b46b]">
+        <div
+          aria-live="polite"
+          className="flex h-10 items-center justify-center overflow-hidden"
+        >
+          <p className="max-h-10 overflow-hidden break-words text-center text-sm uppercase leading-5 text-[#d9b46b]">
             {errorMessage}
           </p>
-        )}
+        </div>
 
         <button
           className="h-12 bg-[#344326] text-lg uppercase text-[#d9b46b] shadow-[0_0_0_3px_#050302,0_4px_0_3px_#172111,inset_0_3px_0_#53663a,inset_0_-3px_0_#202b17] hover:bg-[#40522d] hover:text-[#ead08a] active:translate-y-1 active:shadow-[0_0_0_3px_#050302,0_1px_0_3px_#172111,inset_0_2px_0_#53663a,inset_0_-2px_0_#202b17] disabled:cursor-not-allowed disabled:bg-[#303536] disabled:text-[#8a8170] disabled:shadow-[0_0_0_3px_#050302,0_4px_0_3px_#151819,inset_0_3px_0_#4a5051,inset_0_-3px_0_#202425]"

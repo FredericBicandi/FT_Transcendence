@@ -55,10 +55,11 @@ const BULLET_SPAWN_SNAP_DISTANCE: float = 24.0
 @export var walk_dust_interval: float = 0.24
 @export var walk_dust_min_move_distance: float = 1.0
 @export var footstep_interval: float = 0.36
-@export var footstep_volume_db: float = -8.0
+@export var footstep_volume_db: float = 4.0
+@export var footstep_volume_jitter_db: float = 0.75
 @export var footstep_pitch_randomness: float = 0.06
-@export var footstep_max_distance: float = 420.0
-@export var footstep_attenuation: float = 1.2
+@export var footstep_max_distance: float = 560.0
+@export var footstep_attenuation: float = 0.85
 
 # Runtime state for health, network sync, sounds, and remote smoothing
 var health: int
@@ -349,7 +350,7 @@ func _play_footstep_sound() -> void:
 	if footstep_audio_player.playing:
 		footstep_audio_player.stop()
 	footstep_audio_player.pitch_scale = randf_range(1.0 - footstep_pitch_randomness, 1.0 + footstep_pitch_randomness)
-	footstep_audio_player.volume_db = footstep_volume_db + randf_range(-2.0, 0.0)
+	footstep_audio_player.volume_db = footstep_volume_db + randf_range(-footstep_volume_jitter_db, footstep_volume_jitter_db)
 	footstep_audio_player.play()
 
 func _stop_footstep_sound() -> void:

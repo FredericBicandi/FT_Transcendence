@@ -17,6 +17,7 @@ const OTP_CODE_LENGTH = 6;
 type OAuthProvider = "github" | "google";
 
 type AuthModalProps = {
+  isClosing?: boolean;
   onClose: () => void;
   translations: HomeTranslations["auth"];
 };
@@ -105,7 +106,11 @@ function MailIcon() {
   );
 }
 
-export function AuthModal({ onClose, translations }: AuthModalProps) {
+export function AuthModal({
+  isClosing = false,
+  onClose,
+  translations,
+}: AuthModalProps) {
   const [email, setEmail] = useState("");
   const [otpCode, setOtpCode] = useState("");
   const [hasSentOtp, setHasSentOtp] = useState(false);
@@ -313,11 +318,15 @@ export function AuthModal({ onClose, translations }: AuthModalProps) {
 
   return (
     <div
-      className="modal-backdrop-enter absolute inset-0 z-40 flex items-center justify-center bg-black/35 px-4 backdrop-blur-[2px]"
+      className={`absolute inset-0 z-40 flex items-center justify-center bg-black/35 px-4 backdrop-blur-[2px] ${
+        isClosing ? "modal-backdrop-exit" : "modal-backdrop-enter"
+      }`}
       onClick={onClose}
     >
       <div
-        className="modal-panel-enter relative flex min-h-[32rem] w-[min(23rem,calc(100vw-2rem))] flex-col justify-center gap-8 bg-[#212627]/95 px-7 py-16 shadow-[0_0_0_4px_#050302,0_8px_0_4px_#111515,inset_0_4px_0_#374041,inset_0_-4px_0_#151819] sm:min-h-[36rem] sm:px-8"
+        className={`relative grid h-[min(34rem,calc(100vh-2rem))] w-[min(23rem,calc(100vw-2rem))] grid-rows-[1fr_auto] overflow-hidden bg-[#212627]/95 px-7 pb-8 pt-14 shadow-[0_0_0_4px_#050302,0_8px_0_4px_#111515,inset_0_4px_0_#374041,inset_0_-4px_0_#151819] sm:h-[min(36rem,calc(100vh-2rem))] sm:px-8 sm:pb-9 sm:pt-16 ${
+          isClosing ? "modal-panel-exit" : "modal-panel-enter"
+        }`}
         onClick={(event) => event.stopPropagation()}
       >
         <button
@@ -329,12 +338,12 @@ export function AuthModal({ onClose, translations }: AuthModalProps) {
           <CloseIcon />
         </button>
 
-        <form className="flex flex-col gap-4" onSubmit={handleEmailAuthSubmit}>
+        <form className="flex -translate-y-3 flex-col justify-center gap-4" onSubmit={handleEmailAuthSubmit}>
           <label className="flex h-16 items-center gap-4 bg-[#151819] px-4 shadow-[inset_0_4px_0_#050302,inset_0_-4px_0_#374041] focus-within:shadow-[0_0_0_2px_#b8893b,inset_0_4px_0_#050302,inset_0_-4px_0_#374041]">
             <MailIcon />
             <input
               aria-label={translations.email}
-              className="chat-font min-w-0 flex-1 bg-transparent text-[10px] text-[#f5dfad] outline-none placeholder:text-[#d9b46b]/70"
+              className="chat-font h-full min-w-0 flex-1 bg-transparent pt-[2px] text-[10px] leading-none text-[#f5dfad] outline-none placeholder:text-[#d9b46b]/70"
               disabled={isEmailAuthLoading || hasSentOtp}
               onChange={(event) => {
                 setEmail(event.target.value);
@@ -346,40 +355,42 @@ export function AuthModal({ onClose, translations }: AuthModalProps) {
             />
           </label>
 
-          {hasSentOtp && (
-            <div
-              aria-label={translations.code}
-              className="grid grid-cols-6 gap-2"
-              role="group"
-            >
-              {otpDigits.map((digit, index) => (
-                <input
-                  aria-label={`${translations.code} ${index + 1}`}
-                  className="h-12 min-w-0 bg-[#151819] text-center text-lg text-[#f5dfad] shadow-[inset_0_3px_0_#050302,inset_0_-3px_0_#374041] outline-none focus:shadow-[0_0_0_2px_#b8893b,inset_0_3px_0_#050302,inset_0_-3px_0_#374041] disabled:cursor-not-allowed disabled:text-[#8a8170]"
-                  disabled={isEmailAuthLoading}
-                  inputMode="numeric"
-                  key={index}
-                  maxLength={1}
-                  onChange={(event) =>
-                    handleOtpChange(index, event.target.value)
-                  }
-                  onKeyDown={(event) => handleOtpKeyDown(index, event)}
-                  onPaste={(event) => handleOtpPaste(index, event)}
-                  ref={(input) => {
-                    otpInputRefs.current[index] = input;
-                  }}
-                  type="text"
-                  value={digit}
-                />
-              ))}
-            </div>
-          )}
+          <div
+            aria-hidden={!hasSentOtp}
+            aria-label={translations.code}
+            className={`grid h-12 grid-cols-6 gap-2 ${hasSentOtp ? "" : "invisible pointer-events-none"}`}
+            role="group"
+          >
+            {otpDigits.map((digit, index) => (
+              <input
+                aria-label={`${translations.code} ${index + 1}`}
+                className="h-12 min-w-0 bg-[#151819] text-center text-lg text-[#f5dfad] shadow-[inset_0_3px_0_#050302,inset_0_-3px_0_#374041] outline-none focus:shadow-[0_0_0_2px_#b8893b,inset_0_3px_0_#050302,inset_0_-3px_0_#374041] disabled:cursor-not-allowed disabled:text-[#8a8170]"
+                disabled={!hasSentOtp || isEmailAuthLoading}
+                inputMode="numeric"
+                key={index}
+                maxLength={1}
+                onChange={(event) =>
+                  handleOtpChange(index, event.target.value)
+                }
+                onKeyDown={(event) => handleOtpKeyDown(index, event)}
+                onPaste={(event) => handleOtpPaste(index, event)}
+                ref={(input) => {
+                  otpInputRefs.current[index] = input;
+                }}
+                type="text"
+                value={digit}
+              />
+            ))}
+          </div>
 
-          {emailAuthMessage && (
-            <p className="text-center text-[10px] uppercase leading-5 text-[#f5dfad]">
+          <div
+            aria-live="polite"
+            className="flex h-10 items-center justify-center overflow-hidden"
+          >
+            <p className="max-h-10 overflow-hidden break-words text-center text-[10px] uppercase leading-5 text-[#f5dfad]">
               {emailAuthMessage}
             </p>
-          )}
+          </div>
 
           <button
             className="h-16 bg-[#344326] px-3 text-base uppercase text-[#d9b46b] shadow-[0_0_0_3px_#050302,0_5px_0_3px_#172111,inset_0_4px_0_#53663a,inset_0_-4px_0_#202b17] hover:bg-[#40522d] hover:text-[#ead08a] active:translate-y-1 active:shadow-[0_0_0_3px_#050302,0_2px_0_3px_#172111,inset_0_3px_0_#53663a,inset_0_-3px_0_#202b17] disabled:cursor-not-allowed disabled:bg-[#303536] disabled:text-[#8a8170] disabled:shadow-[0_0_0_3px_#050302,0_5px_0_3px_#151819,inset_0_4px_0_#4a5051,inset_0_-4px_0_#202425]"
@@ -396,29 +407,31 @@ export function AuthModal({ onClose, translations }: AuthModalProps) {
           </button>
         </form>
 
-        <div className="flex w-full items-center gap-3 text-sm uppercase text-[#f5dfad]">
-          <span className="h-px flex-1 bg-[#d9b46b]/55" />
-          <span className="shrink-0 text-center">{translations.connectVia}</span>
-          <span className="h-px flex-1 bg-[#d9b46b]/55" />
-        </div>
+        <div className="flex flex-col gap-5">
+          <div className="flex w-full items-center gap-3 text-sm uppercase text-[#f5dfad]">
+            <span className="h-px flex-1 bg-[#d9b46b]/55" />
+            <span className="shrink-0 text-center">{translations.connectVia}</span>
+            <span className="h-px flex-1 bg-[#d9b46b]/55" />
+          </div>
 
-        <div className="flex flex-col gap-3">
-          <button
-            className="flex h-14 items-center justify-center gap-2 bg-[#f5dfad] text-sm uppercase text-[#151819] shadow-[0_0_0_2px_#050302,inset_0_3px_0_#fff0c7,inset_0_-3px_0_#b8893b] hover:bg-[#ffe8b8] active:translate-y-0.5"
-            onClick={signInWithGoogle}
-            type="button"
-          >
-            <GoogleIcon />
-            Google
-          </button>
-          <button
-            className="flex h-14 items-center justify-center gap-2 bg-[#050302] text-sm uppercase text-[#f5dfad] shadow-[0_0_0_2px_#050302,inset_0_3px_0_#252b2c,inset_0_-3px_0_#000000] hover:bg-[#151819] active:translate-y-0.5"
-            onClick={signInWithGithub}
-            type="button"
-          >
-            <GithubIcon />
-            Github
-          </button>
+          <div className="flex flex-col gap-3">
+            <button
+              className="flex h-14 items-center justify-center gap-2 bg-[#d8c6a2] text-sm uppercase text-[#151819] shadow-[0_0_0_2px_#050302,inset_0_3px_0_#efe1c5,inset_0_-3px_0_#9f875f] hover:bg-[#e2d0ad] active:translate-y-0.5"
+              onClick={signInWithGoogle}
+              type="button"
+            >
+              <GoogleIcon />
+              Google
+            </button>
+            <button
+              className="flex h-14 items-center justify-center gap-2 bg-[#050302] text-sm uppercase text-[#f5dfad] shadow-[0_0_0_2px_#050302,inset_0_3px_0_#252b2c,inset_0_-3px_0_#000000] hover:bg-[#151819] active:translate-y-0.5"
+              onClick={signInWithGithub}
+              type="button"
+            >
+              <GithubIcon />
+              Github
+            </button>
+          </div>
         </div>
       </div>
     </div>

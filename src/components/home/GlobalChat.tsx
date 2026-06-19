@@ -1,16 +1,22 @@
+import type { CSSProperties } from "react";
 import { FormEvent, useMemo, useState } from "react";
 import type { DashboardChatMessage } from "@/controllers/home/useDashboardSocket";
 import type { PlayerProfile } from "@/models/player/playerProfile.model";
 import type { HomeTranslations } from "@/views/home/homeTranslations";
 
 type GlobalChatProps = {
+  className?: string;
+  closeLabel?: string;
   cooldownSeconds: number;
   errorMessage: string | null;
   isConnected: boolean;
   messages: DashboardChatMessage[];
+  onClose?: () => void;
   onSendMessage: (content: string, playerProfile: PlayerProfile) => boolean;
   playerProfile: PlayerProfile | null;
+  style?: CSSProperties;
   textDirection: "ltr" | "rtl";
+  title?: string;
   translations: HomeTranslations["chat"];
 };
 
@@ -55,13 +61,18 @@ function isRtlMessage(content: string) {
 }
 
 export function GlobalChat({
+  className,
+  closeLabel,
   cooldownSeconds,
   errorMessage,
   isConnected,
   messages,
+  onClose,
   onSendMessage,
   playerProfile,
+  style,
   textDirection,
+  title,
   translations,
 }: GlobalChatProps) {
   const [draftMessage, setDraftMessage] = useState("");
@@ -109,12 +120,31 @@ export function GlobalChat({
 
   return (
     <section
-      className="chat-font hidden w-[28rem] flex-col bg-black/55 shadow-[0_0_0_3px_#050302,0_4px_0_3px_rgba(0,0,0,0.55),inset_0_3px_0_rgba(255,255,255,0.08)] backdrop-blur-[2px] lg:flex"
+      className={`chat-font flex min-h-0 flex-col bg-black/55 shadow-[0_0_0_3px_#050302,0_4px_0_3px_rgba(0,0,0,0.55),inset_0_3px_0_rgba(255,255,255,0.08)] backdrop-blur-[2px] ${
+        className ?? "w-[28rem]"
+      }`}
       dir={textDirection}
-      style={{ height: "27rem" }}
+      style={style ?? { height: "27rem" }}
     >
+      {onClose && (
+        <div className="flex min-h-14 items-center justify-between border-b border-[#b8893b]/45 bg-[#050302]/75 px-3">
+          <h2 className="truncate text-sm uppercase tracking-[0.08em] text-[#f5dfad]">
+            {title ?? "Global Chat"}
+          </h2>
+          <button
+            aria-label={closeLabel ?? "Close global chat"}
+            className="flex h-10 w-10 items-center justify-center bg-[#212627] text-lg uppercase text-[#f5dfad] shadow-[0_0_0_2px_#050302,0_3px_0_2px_#111515,inset_0_2px_0_#374041,inset_0_-2px_0_#151819] hover:brightness-110 active:translate-y-1 active:shadow-[0_0_0_2px_#050302,0_1px_0_2px_#111515,inset_0_1px_0_#374041,inset_0_-1px_0_#151819]"
+            onClick={onClose}
+            title={closeLabel ?? "Close global chat"}
+            type="button"
+          >
+            X
+          </button>
+        </div>
+      )}
+
       <div
-        className="flex-1 overflow-y-auto px-4 py-3 text-xs leading-6 [scrollbar-color:#b8893b_rgba(0,0,0,0.35)]"
+        className="min-h-0 flex-1 overflow-y-auto px-3 py-3 text-xs leading-6 [scrollbar-color:#b8893b_rgba(0,0,0,0.35)] sm:px-4"
         dir="ltr"
       >
         {coloredMessages.map((message) => (
@@ -137,8 +167,8 @@ export function GlobalChat({
                   {message.content}
                 </span>
                 <span
-                  className="whitespace-nowrap text-right [unicode-bidi:isolate]"
-                  dir="rtl"
+                  className="max-w-[5.5rem] truncate whitespace-nowrap text-left [unicode-bidi:isolate] sm:max-w-[7rem]"
+                  dir="ltr"
                   style={{ color: message.usernameColor }}
                 >
                   :{message.playerName}
@@ -156,7 +186,7 @@ export function GlobalChat({
                   {message.sentAtLabel}
                 </span>
                 <span
-                  className="whitespace-nowrap [unicode-bidi:isolate]"
+                  className="max-w-[5.5rem] truncate whitespace-nowrap [unicode-bidi:isolate] sm:max-w-[7rem]"
                   style={{ color: message.usernameColor }}
                 >
                   {message.playerName}:

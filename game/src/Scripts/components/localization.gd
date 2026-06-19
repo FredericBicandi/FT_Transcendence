@@ -3,7 +3,7 @@ extends RefCounted
 
 const DEFAULT_LANGUAGE := "english"
 const SUPPORTED_LANGUAGES := ["english", "french", "arabic"]
-const ARABIC_FONT_RESOURCE := preload("res://Assets/Fonts/PixelAE-Regular.ttf")
+const ARABIC_FONT_RESOURCE := preload("res://Assets/Fonts/IBM_Plex_Sans_Arabic/IBMPlexSansArabic-Regular.ttf")
 const ARABIC_FONT_NAMES := ["Segoe UI", "Tahoma", "Arial", "Adobe Arabic", "Arial Unicode MS"]
 const WEAPON_TRANSLATION_KEYS := {
 	"Assult rifle": "weapon_assault_rifle",

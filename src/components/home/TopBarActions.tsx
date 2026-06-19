@@ -24,6 +24,8 @@ const brickWallStyle = {
   backgroundSize: "72px 36px",
 };
 
+const LANGUAGE_MENU_ANIMATION_MS = 140;
+
 function AvatarIcon() {
   return (
     <svg
@@ -113,6 +115,7 @@ export function TopBarActions({
 }: TopBarActionsProps) {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showLanguageMenu, setShowLanguageMenu] = useState(false);
+  const [renderLanguageMenu, setRenderLanguageMenu] = useState(false);
   const languageMenuRef = useRef<HTMLDivElement>(null);
   const playerName = playerProfile?.playerName ?? "Player";
   const avatarUrl = playerProfile?.isGuest ? undefined : playerProfile?.avatarUrl;
@@ -145,7 +148,7 @@ export function TopBarActions({
         return;
       }
 
-      setShowLanguageMenu(false);
+      closeLanguageMenu();
     }
 
     document.addEventListener("pointerdown", handlePointerDown);
@@ -154,6 +157,29 @@ export function TopBarActions({
       document.removeEventListener("pointerdown", handlePointerDown);
     };
   }, [showLanguageMenu]);
+
+  useEffect(() => {
+    if (showLanguageMenu || !renderLanguageMenu) {
+      return;
+    }
+
+    const closeTimer = window.setTimeout(() => {
+      setRenderLanguageMenu(false);
+    }, LANGUAGE_MENU_ANIMATION_MS);
+
+    return () => {
+      window.clearTimeout(closeTimer);
+    };
+  }, [renderLanguageMenu, showLanguageMenu]);
+
+  function closeLanguageMenu() {
+    setShowLanguageMenu(false);
+  }
+
+  function toggleLanguageMenu() {
+    setRenderLanguageMenu(true);
+    setShowLanguageMenu((currentValue) => !currentValue);
+  }
 
   async function toggleFullscreen() {
     try {
@@ -169,7 +195,7 @@ export function TopBarActions({
 
   return (
     <div
-      className={`z-30 flex items-start gap-3 ${
+      className={`z-30 flex items-start gap-2 sm:gap-3 ${
         className ?? "absolute right-4 top-4 sm:right-6 sm:top-6"
       }`}
       dir="ltr"
@@ -177,22 +203,24 @@ export function TopBarActions({
       <button
         aria-label={isFullscreen ? translations.exit : translations.enter}
         aria-pressed={isFullscreen}
-        className="flex h-16 min-w-24 flex-col items-center justify-center gap-1 px-3 shadow-[0_0_0_3px_#050302,0_4px_0_3px_#111515,inset_0_3px_0_#374041,inset_0_-3px_0_#151819] hover:brightness-110 hover:shadow-[0_0_0_3px_#050302,0_4px_0_3px_#111515,inset_0_3px_0_#465253,inset_0_-3px_0_#151819] active:translate-y-1 active:shadow-[0_0_0_3px_#050302,0_1px_0_3px_#111515,inset_0_2px_0_#374041,inset_0_-2px_0_#151819]"
+        className="flex h-14 min-w-14 flex-col items-center justify-center gap-1 px-2 shadow-[0_0_0_3px_#050302,0_4px_0_3px_#111515,inset_0_3px_0_#374041,inset_0_-3px_0_#151819] hover:brightness-110 hover:shadow-[0_0_0_3px_#050302,0_4px_0_3px_#111515,inset_0_3px_0_#465253,inset_0_-3px_0_#151819] active:translate-y-1 active:shadow-[0_0_0_3px_#050302,0_1px_0_3px_#111515,inset_0_2px_0_#374041,inset_0_-2px_0_#151819] sm:h-16 sm:min-w-24 sm:px-3"
         onClick={toggleFullscreen}
         style={brickWallStyle}
         title={isFullscreen ? translations.exit : translations.enter}
         type="button"
       >
         <FullscreenIcon isFullscreen={isFullscreen} />
-        <span className="max-w-28 text-center text-xs uppercase leading-tight text-[#d9b46b]">
+        <span className="hidden max-w-28 text-center text-xs uppercase leading-tight text-[#d9b46b] sm:block">
           {isFullscreen ? translations.exit : translations.enter}
         </span>
       </button>
 
       <button
-        className="grid min-h-16 min-w-58 grid-cols-[48px_minmax(0,1fr)] grid-rows-2 items-center px-3 py-2 text-left shadow-[0_0_0_3px_#050302,0_4px_0_3px_#111515,inset_0_3px_0_#374041,inset_0_-3px_0_#151819] hover:brightness-110 hover:shadow-[0_0_0_3px_#050302,0_4px_0_3px_#111515,inset_0_3px_0_#465253,inset_0_-3px_0_#151819] active:translate-y-1 active:shadow-[0_0_0_3px_#050302,0_1px_0_3px_#111515,inset_0_2px_0_#374041,inset_0_-2px_0_#151819]"
+        aria-label={translations.profile}
+        className="grid h-14 min-w-14 grid-cols-[40px] items-center justify-center px-2 py-2 text-left shadow-[0_0_0_3px_#050302,0_4px_0_3px_#111515,inset_0_3px_0_#374041,inset_0_-3px_0_#151819] hover:brightness-110 hover:shadow-[0_0_0_3px_#050302,0_4px_0_3px_#111515,inset_0_3px_0_#465253,inset_0_-3px_0_#151819] active:translate-y-1 active:shadow-[0_0_0_3px_#050302,0_1px_0_3px_#111515,inset_0_2px_0_#374041,inset_0_-2px_0_#151819] sm:min-h-16 sm:min-w-58 sm:grid-cols-[48px_minmax(0,1fr)] sm:grid-rows-2 sm:justify-stretch sm:px-3"
         onClick={onProfileClick}
         style={brickWallStyle}
+        title={translations.profile}
         type="button"
       >
         <span className="row-span-2 flex h-10 w-10 items-center justify-center overflow-hidden bg-[#151819] shadow-[inset_0_2px_0_#374041,inset_0_-2px_0_#050302]">
@@ -206,10 +234,10 @@ export function TopBarActions({
             <AvatarIcon />
           )}
         </span>
-        <span className="truncate text-sm uppercase text-[#f5dfad]">
+        <span className="hidden truncate text-sm uppercase text-[#f5dfad] sm:block">
           {playerName}
         </span>
-        <span className="text-xs uppercase text-[#d9b46b]">
+        <span className="hidden text-xs uppercase text-[#d9b46b] sm:block">
           {translations.profile}
         </span>
       </button>
@@ -218,22 +246,24 @@ export function TopBarActions({
         <button
           aria-expanded={showLanguageMenu}
           aria-label={translations.label}
-          className="flex h-16 min-w-24 flex-col items-center justify-center gap-1 px-3 shadow-[0_0_0_3px_#050302,0_4px_0_3px_#111515,inset_0_3px_0_#374041,inset_0_-3px_0_#151819] hover:brightness-110 hover:shadow-[0_0_0_3px_#050302,0_4px_0_3px_#111515,inset_0_3px_0_#465253,inset_0_-3px_0_#151819] active:translate-y-1 active:shadow-[0_0_0_3px_#050302,0_1px_0_3px_#111515,inset_0_2px_0_#374041,inset_0_-2px_0_#151819]"
-          onClick={() =>
-            setShowLanguageMenu((currentValue) => !currentValue)
-          }
+          className="flex h-14 min-w-14 flex-col items-center justify-center gap-1 px-2 shadow-[0_0_0_3px_#050302,0_4px_0_3px_#111515,inset_0_3px_0_#374041,inset_0_-3px_0_#151819] hover:brightness-110 hover:shadow-[0_0_0_3px_#050302,0_4px_0_3px_#111515,inset_0_3px_0_#465253,inset_0_-3px_0_#151819] active:translate-y-1 active:shadow-[0_0_0_3px_#050302,0_1px_0_3px_#111515,inset_0_2px_0_#374041,inset_0_-2px_0_#151819] sm:h-16 sm:min-w-24 sm:px-3"
+          onClick={toggleLanguageMenu}
           style={brickWallStyle}
           type="button"
         >
           <LanguageIcon />
-          <span className="text-xs text-[#d9b46b]">
+          <span className="hidden text-xs text-[#d9b46b] sm:block">
             {translations.options[language]}
           </span>
         </button>
 
-        {showLanguageMenu && (
+        {renderLanguageMenu && (
           <div
-            className="menu-enter absolute right-0 top-[4.75rem] flex w-32 flex-col gap-1 bg-[#151819] p-2 shadow-[0_0_0_3px_#050302,0_4px_0_3px_#111515,inset_0_2px_0_#374041,inset_0_-2px_0_#050302]"
+            className={`absolute right-0 top-[4.75rem] flex w-32 flex-col gap-1 bg-[#151819] p-2 shadow-[0_0_0_3px_#050302,0_4px_0_3px_#111515,inset_0_2px_0_#374041,inset_0_-2px_0_#050302] ${
+              showLanguageMenu
+                ? "menu-fade-down-enter"
+                : "menu-fade-up-exit pointer-events-none"
+            }`}
             role="menu"
           >
             {languageOptions.map((languageOption) => (
@@ -242,7 +272,7 @@ export function TopBarActions({
                 key={languageOption}
                 onClick={() => {
                   onLanguageChange(languageOption);
-                  setShowLanguageMenu(false);
+                  closeLanguageMenu();
                 }}
                 role="menuitem"
                 type="button"
