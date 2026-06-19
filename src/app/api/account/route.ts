@@ -13,17 +13,38 @@ const supabaseCookieOptions = {
   encode: "tokens-only",
 } satisfies Pick<CookieMethodsServer, "encode">;
 
-function createErrorResponse(message: string, status: number) {
-  return NextResponse.json({ error: message }, { status });
+function createErrorResponse(message: string, status: number, code: string) {
+  return NextResponse.json({ code, error: message }, { status });
+}
+
+function getEnvValue(name: string) {
+  const value = process.env[name]?.trim();
+
+  return value || undefined;
+}
+
+function logAccountDeletionError(step: string, error: unknown) {
+  console.error("Account deletion failed.", { step, error });
 }
 
 export async function DELETE() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabasePublishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
-  const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const supabaseUrl = getEnvValue("NEXT_PUBLIC_SUPABASE_URL");
+  const supabasePublishableKey = getEnvValue(
+    "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
+  );
+  const supabaseServiceRoleKey = getEnvValue("SUPABASE_SERVICE_ROLE_KEY");
 
   if (!supabaseUrl || !supabasePublishableKey || !supabaseServiceRoleKey) {
-    return createErrorResponse("Account deletion is not configured.", 500);
+    logAccountDeletionError("configuration", {
+      hasPublishableKey: Boolean(supabasePublishableKey),
+      hasServiceRoleKey: Boolean(supabaseServiceRoleKey),
+      hasUrl: Boolean(supabaseUrl),
+    });
+    return createErrorResponse(
+      "Account deletion is not configured.",
+      500,
+      "ACCOUNT_DELETE_CONFIG",
+    );
   }
 
   const cookieStore = await cookies();
@@ -48,7 +69,11 @@ export async function DELETE() {
   } = await userSupabase.auth.getUser();
 
   if (userError || !user) {
-    return createErrorResponse("Not authenticated.", 401);
+    return createErrorResponse(
+      "Not authenticated.",
+      401,
+      "ACCOUNT_DELETE_UNAUTHENTICATED",
+    );
   }
 
   // Use the service role only after proving the request owns this session.
@@ -58,11 +83,45 @@ export async function DELETE() {
       persistSession: false,
     },
   });
+
+  const { error: deletePlayedMatchesError } = await adminSupabase
+    .from("played_matches")
+    .delete()
+    .eq("user_id", user.id);
+
+  if (deletePlayedMatchesError) {
+    logAccountDeletionError("played_matches", deletePlayedMatchesError);
+    return createErrorResponse(
+      "Could not delete account.",
+      500,
+      "ACCOUNT_DELETE_PLAYED_MATCHES",
+    );
+  }
+
+  const { error: deleteProfileError } = await adminSupabase
+    .from("profiles")
+    .delete()
+    .eq("id", user.id);
+
+  if (deleteProfileError) {
+    logAccountDeletionError("profiles", deleteProfileError);
+    return createErrorResponse(
+      "Could not delete account.",
+      500,
+      "ACCOUNT_DELETE_PROFILE",
+    );
+  }
+
   const { error: deleteUserError } =
     await adminSupabase.auth.admin.deleteUser(user.id);
 
   if (deleteUserError) {
-    return createErrorResponse("Could not delete account.", 500);
+    logAccountDeletionError("auth.users", deleteUserError);
+    return createErrorResponse(
+      "Could not delete account.",
+      500,
+      "ACCOUNT_DELETE_AUTH_USER",
+    );
   }
 
   return NextResponse.json({ ok: true });

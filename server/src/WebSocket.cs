@@ -618,8 +618,6 @@ public sealed class Ws
     // Applies the current client message protocol.
     public async Task HandleMessageAsync(ClientConnection client, string message)
     {
-        client.MarkActivity(timeProvider.GetUtcNow());
-
         JsonDocument document;
 
         try
@@ -642,8 +640,8 @@ public sealed class Ws
                 return;
             }
 
-            if (type is "ping" or "heartbeat")
-                return;
+            if (RefreshesClientActivity(type))
+                client.MarkActivity(timeProvider.GetUtcNow());
 
             if (type == "on_connect")
             {
@@ -1083,27 +1081,30 @@ public sealed class Ws
                 return;
             }
 
-            if (type == "idle")
+            if (type is "idle" or "ping" or "heartbeat")
             {
                 if (!await RequireActiveJoinedAsync(client, type, message))
                     return;
 
-                if (!client.IsAlive)
-                    return;
-
-                if (!TryReadIdle(root, message, client.PlayerId, out var x, out var y, out var angle, out var aimFrame))
+                if (!TryReadPassiveStateSync(root, message, client.PlayerId, type, out var x, out var y, out var angle, out var aimFrame))
                     return;
 
                 client.MarkIdle(x, y, angle, aimFrame);
+
+                if (!client.TryGetStateSnapshot(out var state))
+                    return;
 
                 await BroadcastToRoomAsync(client.RoomId, new
                 {
                     type = "player_idle",
                     player_id = client.PlayerId,
-                    x,
-                    y,
-                    angle,
-                    aim_frame = aimFrame
+                    x = state.X,
+                    y = state.Y,
+                    angle = state.Angle,
+                    aim_frame = state.AimFrame,
+                    weapon_type = state.Weapon,
+                    health = state.Health,
+                    is_dead = state.IsDead
                 });
 
                 return;
@@ -1182,6 +1183,22 @@ public sealed class Ws
             Console.WriteLine($"Unknown message type from {client.PlayerId}: {type}");
         }
     }
+
+    private static bool RefreshesClientActivity(string messageType) =>
+        messageType is
+            "on_connect" or
+            "on_join" or
+            "message" or
+            "chat_message" or
+            "leave_match" or
+            "move" or
+            "angle" or
+            "hit" or
+            "heal" or
+            "player_death" or
+            "respawn" or
+            "weapon_switch" or
+            "shoot";
 
     private async Task SendExistingPlayersAsync(ClientConnection client)
     {
@@ -2004,10 +2021,11 @@ public sealed class Ws
         return TryReadAim(root, message, playerId, "angle", out angle, out aimFrame);
     }
 
-    private static bool TryReadIdle(
+    private static bool TryReadPassiveStateSync(
         JsonElement root,
         string message,
         string playerId,
+        string messageType,
         out double x,
         out double y,
         out double angle,
@@ -2016,10 +2034,10 @@ public sealed class Ws
         angle = default;
         aimFrame = default;
 
-        if (!TryReadCoordinates(root, message, playerId, "idle", out x, out y))
+        if (!TryReadCoordinates(root, message, playerId, messageType, out x, out y))
             return false;
 
-        return TryReadAim(root, message, playerId, "idle", out angle, out aimFrame);
+        return TryReadAim(root, message, playerId, messageType, out angle, out aimFrame);
     }
 
     private static bool TryReadAim(

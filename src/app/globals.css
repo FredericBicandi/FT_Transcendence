@@ -73,6 +73,57 @@ select:disabled,
   }
 }
 
+@keyframes modal-backdrop-enter {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes modal-panel-enter {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes menu-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.modal-backdrop-enter {
+  animation: modal-backdrop-enter 160ms ease-out both;
+}
+
+.modal-panel-enter {
+  animation: modal-panel-enter 180ms ease-out both;
+}
+
+.menu-enter {
+  animation: menu-enter 140ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modal-backdrop-enter,
+  .modal-panel-enter,
+  .menu-enter {
+    animation-duration: 1ms;
+  }
+}
+
 .chat-font {
   /* Use the smaller pixel font where long chat/profile text needs room. */
   font-family: "PFRondaSeven", "Courier New", monospace;

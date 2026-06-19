@@ -43,25 +43,25 @@ function GoogleIcon() {
   return (
     <svg
       aria-hidden="true"
-      className="h-5 w-5"
+      className="h-6 w-6"
       fill="none"
       viewBox="0 0 24 24"
     >
       <path
         d="M21 12.2c0-.72-.06-1.26-.18-1.8H12v3.42h5.18c-.1.86-.67 2.16-1.92 3.03v2.22h3.12C20.12 17.46 21 15.08 21 12.2Z"
-        fill="#7dd3fc"
+        fill="#4285F4"
       />
       <path
         d="M12 21c2.5 0 4.6-.78 6.13-2.12l-2.92-2.22c-.78.52-1.83.9-3.21.9-2.46 0-4.54-1.54-5.29-3.68H3.5v2.29C5.02 19.02 8.22 21 12 21Z"
-        fill="#86efac"
+        fill="#34A853"
       />
       <path
         d="M6.7 13.88A5.44 5.44 0 0 1 6.4 12c0-.65.1-1.29.3-1.88V7.83H3.5A8.53 8.53 0 0 0 2.6 12c0 1.5.36 2.92.9 4.17l3.2-2.29Z"
-        fill="#fde047"
+        fill="#FBBC05"
       />
       <path
         d="M12 6.44c1.74 0 2.91.72 3.58 1.32l2.62-2.48C16.59 3.85 14.5 3 12 3 8.22 3 5.02 4.98 3.5 7.83l3.2 2.29C7.46 7.98 9.54 6.44 12 6.44Z"
-        fill="#fca5a5"
+        fill="#EA4335"
       />
     </svg>
   );
@@ -313,11 +313,11 @@ export function AuthModal({ onClose, translations }: AuthModalProps) {
 
   return (
     <div
-      className="absolute inset-0 z-40 flex items-center justify-center bg-black/35 px-4 backdrop-blur-[2px]"
+      className="modal-backdrop-enter absolute inset-0 z-40 flex items-center justify-center bg-black/35 px-4 backdrop-blur-[2px]"
       onClick={onClose}
     >
       <div
-        className="relative flex min-h-[32rem] w-[min(23rem,calc(100vw-2rem))] flex-col justify-center gap-8 bg-[#212627]/95 px-7 py-16 shadow-[0_0_0_4px_#050302,0_8px_0_4px_#111515,inset_0_4px_0_#374041,inset_0_-4px_0_#151819] sm:min-h-[36rem] sm:px-8"
+        className="modal-panel-enter relative flex min-h-[32rem] w-[min(23rem,calc(100vw-2rem))] flex-col justify-center gap-8 bg-[#212627]/95 px-7 py-16 shadow-[0_0_0_4px_#050302,0_8px_0_4px_#111515,inset_0_4px_0_#374041,inset_0_-4px_0_#151819] sm:min-h-[36rem] sm:px-8"
         onClick={(event) => event.stopPropagation()}
       >
         <button
@@ -396,13 +396,15 @@ export function AuthModal({ onClose, translations }: AuthModalProps) {
           </button>
         </form>
 
-        <p className="text-center text-sm uppercase text-[#f5dfad]">
-          {translations.connectVia}
-        </p>
+        <div className="flex w-full items-center gap-3 text-sm uppercase text-[#f5dfad]">
+          <span className="h-px flex-1 bg-[#d9b46b]/55" />
+          <span className="shrink-0 text-center">{translations.connectVia}</span>
+          <span className="h-px flex-1 bg-[#d9b46b]/55" />
+        </div>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="flex flex-col gap-3">
           <button
-            className="flex h-14 items-center justify-center gap-2 bg-[#151819] text-sm uppercase text-[#f5dfad] shadow-[0_0_0_2px_#050302,inset_0_3px_0_#374041,inset_0_-3px_0_#050302] hover:bg-[#2a3031] active:translate-y-0.5"
+            className="flex h-14 items-center justify-center gap-2 bg-[#f5dfad] text-sm uppercase text-[#151819] shadow-[0_0_0_2px_#050302,inset_0_3px_0_#fff0c7,inset_0_-3px_0_#b8893b] hover:bg-[#ffe8b8] active:translate-y-0.5"
             onClick={signInWithGoogle}
             type="button"
           >
@@ -410,7 +412,7 @@ export function AuthModal({ onClose, translations }: AuthModalProps) {
             Google
           </button>
           <button
-            className="flex h-14 items-center justify-center gap-2 bg-[#151819] text-sm uppercase text-[#f5dfad] shadow-[0_0_0_2px_#050302,inset_0_3px_0_#374041,inset_0_-3px_0_#050302] hover:bg-[#2a3031] active:translate-y-0.5"
+            className="flex h-14 items-center justify-center gap-2 bg-[#050302] text-sm uppercase text-[#f5dfad] shadow-[0_0_0_2px_#050302,inset_0_3px_0_#252b2c,inset_0_-3px_0_#000000] hover:bg-[#151819] active:translate-y-0.5"
             onClick={signInWithGithub}
             type="button"
           >

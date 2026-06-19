@@ -4,6 +4,7 @@ import type { PlayerProfile } from "@/models/player/playerProfile.model";
 import type { HomeTranslations } from "@/views/home/homeTranslations";
 
 type GlobalChatProps = {
+  cooldownSeconds: number;
   errorMessage: string | null;
   isConnected: boolean;
   messages: DashboardChatMessage[];
@@ -54,6 +55,7 @@ function isRtlMessage(content: string) {
 }
 
 export function GlobalChat({
+  cooldownSeconds,
   errorMessage,
   isConnected,
   messages,
@@ -64,7 +66,13 @@ export function GlobalChat({
 }: GlobalChatProps) {
   const [draftMessage, setDraftMessage] = useState("");
   const isAuthenticated = playerProfile ? !playerProfile.isGuest : false;
-  const canSendMessages = isAuthenticated && isConnected;
+  const isCoolingDown = cooldownSeconds > 0;
+  const canSendMessages = isAuthenticated && isConnected && !isCoolingDown;
+  const cooldownMessage = translations.cooldown.replace(
+    "{seconds}",
+    String(cooldownSeconds),
+  );
+  const isRtlLayout = textDirection === "rtl";
   const coloredMessages = useMemo(
     () =>
       messages.map((message) => ({
@@ -103,42 +111,62 @@ export function GlobalChat({
     <section
       className="chat-font hidden w-[28rem] flex-col bg-black/55 shadow-[0_0_0_3px_#050302,0_4px_0_3px_rgba(0,0,0,0.55),inset_0_3px_0_rgba(255,255,255,0.08)] backdrop-blur-[2px] lg:flex"
       dir={textDirection}
-      style={{ height: "28rem" }}
+      style={{ height: "27rem" }}
     >
-      <div className="flex-1 overflow-y-auto px-4 py-3 text-xs leading-6 [scrollbar-color:#b8893b_rgba(0,0,0,0.35)]">
+      <div
+        className="flex-1 overflow-y-auto px-4 py-3 text-xs leading-6 [scrollbar-color:#b8893b_rgba(0,0,0,0.35)]"
+        dir="ltr"
+      >
         {coloredMessages.map((message) => (
           <div
             key={message.messageId}
-            className="flex w-full min-w-0 flex-nowrap gap-2 text-[#f5dfad]/90"
-            dir={message.isRtl ? "rtl" : "ltr"}
+            className={`grid w-full min-w-0 items-start gap-2 text-[#f5dfad]/90 ${
+              isRtlLayout
+                ? "grid-cols-[minmax(0,1fr)_max-content_3.25rem]"
+                : "grid-cols-[3.25rem_max-content_minmax(0,1fr)]"
+            }`}
           >
-            {message.isRtl ? (
+            {isRtlLayout ? (
               <>
-                <span className="min-w-0 flex-1 text-right [unicode-bidi:plaintext]">
+                <span
+                  className={`min-w-0 break-words [unicode-bidi:plaintext] ${
+                    message.isRtl ? "text-right" : "text-left"
+                  }`}
+                  dir={message.isRtl ? "rtl" : "ltr"}
+                >
                   {message.content}
                 </span>
                 <span
-                  className="shrink-0 [unicode-bidi:isolate]"
+                  className="whitespace-nowrap text-right [unicode-bidi:isolate]"
+                  dir="rtl"
                   style={{ color: message.usernameColor }}
                 >
-                  {message.playerName}:
+                  :{message.playerName}
                 </span>
-                <span className="shrink-0 text-[#d9b46b]/80 [unicode-bidi:isolate]">
+                <span
+                  className="text-right text-[#d9b46b]/80 [font-variant-numeric:tabular-nums] [unicode-bidi:isolate]"
+                  dir="ltr"
+                >
                   {message.sentAtLabel}
                 </span>
               </>
             ) : (
               <>
-                <span className="shrink-0 text-[#d9b46b]/80 [unicode-bidi:isolate]">
+                <span className="text-[#d9b46b]/80 [font-variant-numeric:tabular-nums] [unicode-bidi:isolate]">
                   {message.sentAtLabel}
                 </span>
                 <span
-                  className="shrink-0 [unicode-bidi:isolate]"
+                  className="whitespace-nowrap [unicode-bidi:isolate]"
                   style={{ color: message.usernameColor }}
                 >
                   {message.playerName}:
                 </span>
-                <span className="min-w-0 flex-1 text-left [unicode-bidi:plaintext]">
+                <span
+                  className={`min-w-0 break-words [unicode-bidi:plaintext] ${
+                    message.isRtl ? "text-right" : "text-left"
+                  }`}
+                  dir={message.isRtl ? "rtl" : "ltr"}
+                >
                   {message.content}
                 </span>
               </>
@@ -159,14 +187,18 @@ export function GlobalChat({
           placeholder={
             !isAuthenticated
               ? translations.signInToSend
+              : isCoolingDown
+                ? cooldownMessage
               : isConnected
                 ? translations.placeholder
                 : translations.unavailable
           }
           value={draftMessage}
         />
-        {errorMessage && (
-          <p className="mt-2 text-[10px] text-[#fca5a5]">{errorMessage}</p>
+        {(isCoolingDown || errorMessage) && (
+          <p className="mt-2 text-[10px] text-[#fca5a5]">
+            {isCoolingDown ? cooldownMessage : errorMessage}
+          </p>
         )}
       </form>
     </section>

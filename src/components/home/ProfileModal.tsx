@@ -6,6 +6,8 @@ import { useEffect, useState, type ChangeEvent } from "react";
 import {
   getXpRequiredForPlayerLevel,
   isUsernameTakenError,
+  MAX_USERNAME_LENGTH,
+  sanitizeUsernameInput,
   saveAuthenticatedPlayerProfile,
   type MatchProgressUpdate,
   type PlayerProfile,
@@ -29,6 +31,13 @@ const brickWallStyle = {
     "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='72' height='36' viewBox='0 0 72 36'%3E%3Crect width='72' height='36' fill='%23151819' fill-opacity='.62'/%3E%3Crect x='2' y='2' width='32' height='14' fill='%23212627' fill-opacity='.62'/%3E%3Crect x='36' y='2' width='34' height='14' fill='%23252b2c' fill-opacity='.62'/%3E%3Crect x='2' y='20' width='16' height='14' fill='%23252b2c' fill-opacity='.62'/%3E%3Crect x='20' y='20' width='32' height='14' fill='%23212627' fill-opacity='.62'/%3E%3Crect x='54' y='20' width='16' height='14' fill='%231f2425' fill-opacity='.62'/%3E%3Crect x='5' y='4' width='24' height='2' fill='%23374041' opacity='.38'/%3E%3Crect x='40' y='4' width='18' height='2' fill='%23374041' opacity='.32'/%3E%3Crect x='24' y='22' width='20' height='2' fill='%23374041' opacity='.34'/%3E%3Crect x='7' y='13' width='8' height='2' fill='%23050302' opacity='.16'/%3E%3Crect x='60' y='11' width='6' height='2' fill='%23050302' opacity='.14'/%3E%3Crect x='41' y='30' width='8' height='2' fill='%23050302' opacity='.14'/%3E%3C/svg%3E\")",
   backgroundSize: "72px 36px",
 };
+
+const ALLOWED_AVATAR_IMAGE_TYPES = new Set([
+  "image/gif",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+]);
 
 function AvatarIcon() {
   return (
@@ -156,7 +165,9 @@ export function ProfileModal({
   translations,
 }: ProfileModalProps) {
   const [playerName, setPlayerName] = useState(
-    playerProfile?.playerName ?? "Player",
+    playerProfile?.isGuest
+      ? (playerProfile?.playerName ?? "Player")
+      : sanitizeUsernameInput(playerProfile?.playerName ?? ""),
   );
   const [avatarPreviewUrl, setAvatarPreviewUrl] = useState<string | undefined>(
     playerProfile?.isGuest ? undefined : playerProfile?.avatarUrl,
@@ -168,9 +179,10 @@ export function ProfileModal({
   // Snapshot once so a profile refresh does not restart or skip the post-match animation.
   const [progressAnimationToPlay] = useState(progressAnimation ?? null);
   const isAuthenticatedPlayer = playerProfile ? !playerProfile.isGuest : false;
-  const normalizedPlayerName = playerName.trim();
+  const normalizedPlayerName = sanitizeUsernameInput(playerName);
+  const savedPlayerName = sanitizeUsernameInput(playerProfile?.playerName ?? "");
   const hasPlayerNameChanged =
-    normalizedPlayerName !== (playerProfile?.playerName.trim() ?? "");
+    normalizedPlayerName !== savedPlayerName;
   const hasAvatarChanged = avatarDataUrl !== undefined;
   const hasProfileChanges = hasPlayerNameChanged || hasAvatarChanged;
   const [displayedProgress, setDisplayedProgress] = useState(() => ({
@@ -375,6 +387,12 @@ export function ProfileModal({
       return;
     }
 
+    if (!ALLOWED_AVATAR_IMAGE_TYPES.has(file.type)) {
+      event.target.value = "";
+      setSaveStatus(translations.imageRequired);
+      return;
+    }
+
     setSaveStatus(null);
     setAvatarPreviewUrl((currentUrl) => {
       if (currentUrl?.startsWith("blob:")) {
@@ -458,11 +476,11 @@ export function ProfileModal({
 
   return (
     <div
-      className="absolute inset-0 z-40 flex items-center justify-center bg-black/35 px-4 backdrop-blur-[2px]"
+      className="modal-backdrop-enter absolute inset-0 z-40 flex items-center justify-center bg-black/35 px-4 backdrop-blur-[2px]"
       onClick={onClose}
     >
       <section
-        className="relative grid max-h-[calc(100vh-3rem)] w-[min(70rem,calc(100vw-2rem))] grid-cols-1 gap-8 overflow-y-auto px-7 py-14 shadow-[0_0_0_4px_#050302,0_8px_0_4px_#111515,inset_0_4px_0_#374041,inset_0_-4px_0_#151819] md:grid-cols-[20rem_minmax(0,1fr)] md:px-9"
+        className="modal-panel-enter relative grid max-h-[calc(100vh-3rem)] w-[min(70rem,calc(100vw-2rem))] grid-cols-1 gap-8 overflow-y-auto px-7 py-14 shadow-[0_0_0_4px_#050302,0_8px_0_4px_#111515,inset_0_4px_0_#374041,inset_0_-4px_0_#151819] md:grid-cols-[20rem_minmax(0,1fr)] md:px-9"
         onClick={(event) => event.stopPropagation()}
         style={brickWallStyle}
       >
@@ -477,7 +495,7 @@ export function ProfileModal({
 
         <div className="flex flex-col items-center justify-center gap-7">
           <div className="flex items-end gap-3">
-            <span className="text-base uppercase text-[#d9b46b]">
+            <span className="text-2xl uppercase text-[#d9b46b]">
               {translations.level}
             </span>
             <span className="text-4xl leading-none text-[#f5dfad]">
@@ -499,7 +517,7 @@ export function ProfileModal({
               {isAuthenticatedPlayer ? <PencilIcon /> : <LockIcon />}
             </span>
             <input
-              accept="image/*"
+              accept="image/png,image/jpeg,image/gif,image/webp"
               aria-label={translations.photoInput}
               className="sr-only"
               disabled={!isAuthenticatedPlayer}
@@ -512,16 +530,22 @@ export function ProfileModal({
             {isAuthenticatedPlayer ? <PencilIcon /> : <LockIcon />}
             <input
               aria-label={translations.usernameInput}
-              className="min-w-0 flex-1 bg-transparent text-base uppercase text-[#f5dfad] outline-none disabled:cursor-not-allowed disabled:text-[#d9b46b]/70"
+              autoCapitalize="none"
+              className="min-w-0 flex-1 bg-transparent text-base text-[#f5dfad] outline-none disabled:cursor-not-allowed disabled:text-[#d9b46b]/70"
               disabled={!isAuthenticatedPlayer}
-              maxLength={18}
               onChange={(event) => {
                 setSaveStatus(null);
-                setPlayerName(event.target.value);
+                setPlayerName(sanitizeUsernameInput(event.target.value));
               }}
+              spellCheck={false}
               value={playerName}
             />
           </label>
+          {isAuthenticatedPlayer && hasPlayerNameChanged && (
+            <p className="w-full max-w-sm text-right text-xs uppercase text-[#d9b46b]">
+              {normalizedPlayerName.length} / {MAX_USERNAME_LENGTH}
+            </p>
+          )}
 
           <div className="grid w-full max-w-sm grid-cols-[auto_1fr] items-center gap-x-4 gap-y-2">
             <span className="text-base uppercase text-[#d9b46b]">
@@ -569,7 +593,7 @@ export function ProfileModal({
                 {translations.logout}
               </button>
               <button
-                className="h-10 w-full bg-[#4b2323] text-sm uppercase text-[#f5dfad] shadow-[0_0_0_2px_#050302,inset_0_2px_0_#7a3434,inset_0_-2px_0_#250f0f] hover:bg-[#653030] active:translate-y-0.5 disabled:cursor-not-allowed disabled:bg-[#303536] disabled:text-[#8a8170] disabled:active:translate-y-0"
+                className="h-10 w-full bg-[#4b2323] text-sm uppercase text-[#f5dfad] shadow-[0_0_0_2px_#050302,inset_0_2px_0_#7a3434,inset_0_-2px_0_#250f0f] hover:bg-[#653030] active:translate-y-0.5 disabled:cursor-not-allowed disabled:bg-[#303536] disabled:text-[#8a8170] disabled:shadow-[0_0_0_2px_#050302,inset_0_2px_0_#4a5051,inset_0_-2px_0_#202425] disabled:hover:bg-[#303536] disabled:active:translate-y-0"
                 disabled={isDeletingAccount}
                 onClick={deleteAccount}
                 type="button"

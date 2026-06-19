@@ -5,6 +5,8 @@
 import { FormEvent, useState } from "react";
 import {
   isUsernameTakenError,
+  MAX_USERNAME_LENGTH,
+  sanitizeUsernameInput,
   saveAuthenticatedPlayerProfile,
   type PlayerProfile,
 } from "@/models/player/playerProfile.model";
@@ -28,7 +30,7 @@ export function UsernameSetupModal({
   async function saveUsername(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    const normalizedPlayerName = playerName.trim();
+    const normalizedPlayerName = sanitizeUsernameInput(playerName);
 
     if (!normalizedPlayerName) {
       setErrorMessage(translations.usernameRequired);
@@ -58,9 +60,9 @@ export function UsernameSetupModal({
   }
 
   return (
-    <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/45 px-4 backdrop-blur-[2px]">
+    <div className="modal-backdrop-enter absolute inset-0 z-50 flex items-center justify-center bg-black/45 px-4 backdrop-blur-[2px]">
       <form
-        className="flex w-[min(24rem,calc(100vw-2rem))] flex-col gap-6 bg-[#212627]/95 px-7 py-9 shadow-[0_0_0_4px_#050302,0_8px_0_4px_#111515,inset_0_4px_0_#374041,inset_0_-4px_0_#151819]"
+        className="modal-panel-enter flex w-[min(24rem,calc(100vw-2rem))] flex-col gap-6 bg-[#212627]/95 px-7 py-9 shadow-[0_0_0_4px_#050302,0_8px_0_4px_#111515,inset_0_4px_0_#374041,inset_0_-4px_0_#151819]"
         onSubmit={saveUsername}
       >
         <h2 className="text-center text-xl uppercase text-[#f5dfad]">
@@ -71,16 +73,21 @@ export function UsernameSetupModal({
           <input
             aria-label={translations.usernameInput}
             autoFocus
-            className="min-w-0 flex-1 bg-transparent text-base uppercase text-[#f5dfad] outline-none placeholder:text-[#d9b46b]/55"
-            maxLength={18}
+            autoCapitalize="none"
+            className="min-w-0 flex-1 bg-transparent text-base text-[#f5dfad] outline-none placeholder:text-[#d9b46b]/55"
             onChange={(event) => {
               setErrorMessage(null);
-              setPlayerName(event.target.value);
+              setPlayerName(sanitizeUsernameInput(event.target.value));
             }}
             placeholder={translations.usernameInput}
+            spellCheck={false}
             value={playerName}
           />
         </label>
+
+        <p className="text-right text-xs uppercase text-[#d9b46b]">
+          {playerName.length} / {MAX_USERNAME_LENGTH}
+        </p>
 
         {errorMessage && (
           <p className="text-center text-sm uppercase text-[#d9b46b]">

@@ -6,6 +6,7 @@ import type {
 } from "@/views/home/homeTranslations";
 
 type TopBarActionsProps = {
+  className?: string;
   language: HomeLanguage;
   onProfileClick: () => void;
   onLanguageChange: (language: HomeLanguage) => void;
@@ -103,6 +104,7 @@ function FullscreenIcon({ isFullscreen }: { isFullscreen: boolean }) {
 }
 
 export function TopBarActions({
+  className,
   language,
   onLanguageChange,
   onProfileClick,
@@ -167,7 +169,9 @@ export function TopBarActions({
 
   return (
     <div
-      className="absolute right-4 top-4 z-30 flex items-start gap-3 sm:right-6 sm:top-6"
+      className={`z-30 flex items-start gap-3 ${
+        className ?? "absolute right-4 top-4 sm:right-6 sm:top-6"
+      }`}
       dir="ltr"
     >
       <button
@@ -180,13 +184,13 @@ export function TopBarActions({
         type="button"
       >
         <FullscreenIcon isFullscreen={isFullscreen} />
-        <span className="max-w-28 text-center text-[10px] uppercase leading-tight text-[#d9b46b]">
+        <span className="max-w-28 text-center text-xs uppercase leading-tight text-[#d9b46b]">
           {isFullscreen ? translations.exit : translations.enter}
         </span>
       </button>
 
       <button
-        className="grid min-h-16 min-w-44 grid-cols-[48px_minmax(0,1fr)] grid-rows-2 items-center px-3 py-2 text-left shadow-[0_0_0_3px_#050302,0_4px_0_3px_#111515,inset_0_3px_0_#374041,inset_0_-3px_0_#151819] hover:brightness-110 hover:shadow-[0_0_0_3px_#050302,0_4px_0_3px_#111515,inset_0_3px_0_#465253,inset_0_-3px_0_#151819] active:translate-y-1 active:shadow-[0_0_0_3px_#050302,0_1px_0_3px_#111515,inset_0_2px_0_#374041,inset_0_-2px_0_#151819]"
+        className="grid min-h-16 min-w-58 grid-cols-[48px_minmax(0,1fr)] grid-rows-2 items-center px-3 py-2 text-left shadow-[0_0_0_3px_#050302,0_4px_0_3px_#111515,inset_0_3px_0_#374041,inset_0_-3px_0_#151819] hover:brightness-110 hover:shadow-[0_0_0_3px_#050302,0_4px_0_3px_#111515,inset_0_3px_0_#465253,inset_0_-3px_0_#151819] active:translate-y-1 active:shadow-[0_0_0_3px_#050302,0_1px_0_3px_#111515,inset_0_2px_0_#374041,inset_0_-2px_0_#151819]"
         onClick={onProfileClick}
         style={brickWallStyle}
         type="button"
@@ -229,7 +233,7 @@ export function TopBarActions({
 
         {showLanguageMenu && (
           <div
-            className="absolute right-0 top-[4.75rem] flex w-32 flex-col gap-1 bg-[#151819] p-2 shadow-[0_0_0_3px_#050302,0_4px_0_3px_#111515,inset_0_2px_0_#374041,inset_0_-2px_0_#050302]"
+            className="menu-enter absolute right-0 top-[4.75rem] flex w-32 flex-col gap-1 bg-[#151819] p-2 shadow-[0_0_0_3px_#050302,0_4px_0_3px_#111515,inset_0_2px_0_#374041,inset_0_-2px_0_#050302]"
             role="menu"
           >
             {languageOptions.map((languageOption) => (

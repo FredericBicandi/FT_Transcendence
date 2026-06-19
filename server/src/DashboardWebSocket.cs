@@ -399,12 +399,13 @@ public sealed class DashboardWebSocketHub
             return;
         }
 
-        if (!connection.TryConsumeChatAllowance())
+        if (!connection.TryConsumeChatAllowance(out var retryAfter))
         {
             await SendErrorAsync(
                 connection,
                 "RATE_LIMITED",
-                "Too many messages. Please wait before sending again."
+                "Too many messages. Please wait before sending again.",
+                (int)Math.Ceiling(retryAfter.TotalSeconds)
             );
             return;
         }
@@ -516,13 +517,15 @@ public sealed class DashboardWebSocketHub
     private Task SendErrorAsync(
         DashboardConnection connection,
         string code,
-        string message
+        string message,
+        int? retryAfterSeconds = null
     ) =>
         SendJsonAsync(connection, new
         {
             type = "error",
             code,
-            message
+            message,
+            retry_after_seconds = retryAfterSeconds
         });
 
     private async Task<bool> SendBytesAsync(
@@ -839,10 +842,11 @@ internal sealed class DashboardConnection
         }
     }
 
-    public bool TryConsumeChatAllowance()
+    public bool TryConsumeChatAllowance(out TimeSpan retryAfter)
     {
         var now = timeProvider.GetUtcNow();
         var cutoff = now - options.RateLimitWindow;
+        retryAfter = TimeSpan.Zero;
 
         lock (rateLimitLock)
         {
@@ -850,7 +854,12 @@ internal sealed class DashboardConnection
                 recentChatMessages.Dequeue();
 
             if (recentChatMessages.Count >= options.RateLimitMessages)
+            {
+                retryAfter = recentChatMessages.Peek() + options.RateLimitWindow - now;
+                if (retryAfter < TimeSpan.Zero)
+                    retryAfter = TimeSpan.Zero;
                 return false;
+            }
 
             recentChatMessages.Enqueue(now);
             return true;

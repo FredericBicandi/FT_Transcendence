@@ -62,6 +62,7 @@ const PLAYER_PROFILE_STORAGE_KEY = "playerProfile";
 const AUTHENTICATED_PROFILE_CACHE_KEY_PREFIX = "authenticatedPlayerProfile:";
 const PLAYED_MATCHES_TABLE = "played_matches";
 const MAX_GUEST_NAME_LENGTH = 10;
+export const MAX_USERNAME_LENGTH = 12;
 const NEW_AUTHENTICATED_PLAYER_LEVEL = 0;
 const DEFAULT_XP_REQUIRED_FOR_NEXT_LEVEL = 100;
 const USERNAME_TAKEN_ERROR = "USERNAME_TAKEN";
@@ -108,9 +109,21 @@ function normalizePlayerName(value: unknown, fallback: string) {
 }
 
 function normalizeUsername(value: unknown, fallback: string) {
-  const normalizedName = normalizePlayerName(value, fallback);
+  if (typeof value !== "string") {
+    return fallback;
+  }
 
-  return normalizedName ? normalizedName.toLowerCase() : fallback;
+  const normalizedName = sanitizeUsernameInput(value);
+
+  return normalizedName || fallback;
+}
+
+export function sanitizeUsernameInput(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z]/g, "")
+    .slice(0, MAX_USERNAME_LENGTH);
 }
 
 function normalizePlayerLevel(value: unknown, fallback = 0) {
@@ -788,9 +801,13 @@ async function upsertProfileDetails({
 
 export function createPlayerProfileSearchParams(playerProfile: PlayerProfile) {
   // The game reads identity from the URL because it runs inside a static export.
+  const playerName = playerProfile.isGuest
+    ? playerProfile.playerName
+    : normalizeUsername(playerProfile.playerName, playerProfile.playerName);
+
   return new URLSearchParams({
     playerId: playerProfile.playerId,
-    playerName: normalizeUsername(playerProfile.playerName, playerProfile.playerName),
+    playerName,
     level: String(playerProfile.level),
     currentXp: String(playerProfile.currentXp),
   });

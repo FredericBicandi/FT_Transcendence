@@ -444,6 +444,7 @@ export function useHomeController({
 
   return {
     gameUrl,
+    chatCooldownSeconds: dashboardSocket.chatCooldownSeconds,
     chatMessages: dashboardSocket.chatMessages,
     chatError: dashboardSocket.error,
     isChatConnected: dashboardSocket.isConnected,

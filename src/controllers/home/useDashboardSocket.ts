@@ -23,6 +23,7 @@ export type DashboardChatMessage = {
 export type DashboardSocketError = {
   code: string;
   message: string;
+  retryAfterSeconds?: number;
 };
 
 type DashboardServerMessage =
@@ -45,6 +46,7 @@ type DashboardServerMessage =
       type: "error";
       code: string;
       message: string;
+      retryAfterSeconds?: number;
     };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -86,10 +88,18 @@ function parseServerMessage(value: string): DashboardServerMessage | null {
     typeof parsedValue.code === "string" &&
     typeof parsedValue.message === "string"
   ) {
+    const retryAfterSeconds =
+      typeof parsedValue.retry_after_seconds === "number" &&
+      Number.isFinite(parsedValue.retry_after_seconds) &&
+      parsedValue.retry_after_seconds > 0
+        ? Math.ceil(parsedValue.retry_after_seconds)
+        : undefined;
+
     return {
       type: "error",
       code: parsedValue.code,
       message: parsedValue.message,
+      retryAfterSeconds,
     };
   }
 
@@ -172,10 +182,39 @@ function getDashboardPresenceId() {
 
 export function useDashboardSocket() {
   const socketRef = useRef<WebSocket | null>(null);
+  const chatCooldownUntilRef = useRef(0);
   const [chatMessages, setChatMessages] = useState<DashboardChatMessage[]>([]);
+  const [chatCooldownSeconds, setChatCooldownSeconds] = useState(0);
   const [error, setError] = useState<DashboardSocketError | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [onlineCount, setOnlineCount] = useState(0);
+
+  useEffect(() => {
+    if (chatCooldownSeconds <= 0) {
+      return;
+    }
+
+    const updateCooldown = () => {
+      const secondsRemaining = Math.max(
+        0,
+        Math.ceil((chatCooldownUntilRef.current - Date.now()) / 1000),
+      );
+
+      setChatCooldownSeconds(secondsRemaining);
+
+      if (secondsRemaining === 0) {
+        chatCooldownUntilRef.current = 0;
+        setError((currentError) =>
+          currentError?.code === "RATE_LIMITED" ? null : currentError,
+        );
+      }
+    };
+    const timer = window.setInterval(updateCooldown, 250);
+
+    updateCooldown();
+
+    return () => window.clearInterval(timer);
+  }, [chatCooldownSeconds]);
 
   useEffect(() => {
     let disposed = false;
@@ -252,9 +291,19 @@ export function useDashboardSocket() {
         }
 
         if (message.type === "error") {
+          if (message.code === "RATE_LIMITED" && message.retryAfterSeconds) {
+            chatCooldownUntilRef.current =
+              Date.now() + message.retryAfterSeconds * 1000;
+            setChatCooldownSeconds(message.retryAfterSeconds);
+          } else {
+            chatCooldownUntilRef.current = 0;
+            setChatCooldownSeconds(0);
+          }
+
           setError({
             code: message.code,
             message: message.message,
+            retryAfterSeconds: message.retryAfterSeconds,
           });
           return;
         }
@@ -313,10 +362,12 @@ export function useDashboardSocket() {
   ) => {
     const socket = socketRef.current;
     const normalizedContent = content.trim();
+    const isCoolingDown = chatCooldownUntilRef.current > Date.now();
 
     if (
       !socket ||
       socket.readyState !== WebSocket.OPEN ||
+      isCoolingDown ||
       !normalizedContent ||
       Array.from(normalizedContent).length > 140
     ) {
@@ -337,6 +388,7 @@ export function useDashboardSocket() {
   }, []);
 
   return {
+    chatCooldownSeconds,
     chatMessages,
     error,
     isConnected,

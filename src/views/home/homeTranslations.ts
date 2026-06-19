@@ -17,6 +17,7 @@ export type HomeTranslations = {
     verifyingCode: string;
   };
   chat: {
+    cooldown: string;
     inputLabel: string;
     placeholder: string;
     signInToSend: string;
@@ -48,6 +49,7 @@ export type HomeTranslations = {
     deletingAccount: string;
     death: string;
     exp: string;
+    imageRequired: string;
     kills: string;
     level: string;
     logout: string;
@@ -74,7 +76,7 @@ export const homeTranslations: Record<HomeLanguage, HomeTranslations> = {
       code: "Code",
       codeRequired: "Enter the verification code",
       codeSent: "Verification code sent",
-      connectVia: "----Or Connect Via----",
+      connectVia: "Or Connect Via",
       email: "email",
       emailRequired: "Enter your email",
       sendCode: "Send Code",
@@ -83,14 +85,15 @@ export const homeTranslations: Record<HomeLanguage, HomeTranslations> = {
       verifyingCode: "Verifying...",
     },
     chat: {
+      cooldown: "Wait {seconds}s",
       inputLabel: "Global chat message",
       placeholder: "Type message...",
       signInToSend: "Sign in to chat",
       unavailable: "Chat unavailable",
     },
     fullscreen: {
-      enter: "Enter fullscreen",
-      exit: "Exit fullscreen",
+      enter: "Fullscreen",
+      exit: "Exit",
     },
     home: {
       loginSignup: "Login / Sign Up",
@@ -119,6 +122,7 @@ export const homeTranslations: Record<HomeLanguage, HomeTranslations> = {
       deletingAccount: "Deleting...",
       death: "Death",
       exp: "Exp",
+      imageRequired: "Choose a PNG, JPG, GIF, or WEBP image",
       kills: "Kills",
       level: "Level",
       logout: "Logout",
@@ -143,7 +147,7 @@ export const homeTranslations: Record<HomeLanguage, HomeTranslations> = {
       code: "Code",
       codeRequired: "Entrez le code",
       codeSent: "Code envoye",
-      connectVia: "----Ou Connectez-Vous Via----",
+      connectVia: "Ou Connectez-Vous Via",
       email: "email",
       emailRequired: "Entrez votre email",
       sendCode: "Envoyer Code",
@@ -152,14 +156,15 @@ export const homeTranslations: Record<HomeLanguage, HomeTranslations> = {
       verifyingCode: "Verification...",
     },
     chat: {
+      cooldown: "Attendez {seconds}s",
       inputLabel: "Message du chat global",
       placeholder: "Ecrire un message...",
       signInToSend: "Connectez-vous pour chatter",
       unavailable: "Chat indisponible",
     },
     fullscreen: {
-      enter: "Plein ecran",
-      exit: "Quitter le plein ecran",
+      enter: "Plein",
+      exit: "Quitter",
     },
     home: {
       loginSignup: "Connexion / Inscription",
@@ -188,6 +193,7 @@ export const homeTranslations: Record<HomeLanguage, HomeTranslations> = {
       deletingAccount: "Suppression...",
       death: "Mort",
       exp: "Exp",
+      imageRequired: "Choisissez une image PNG, JPG, GIF ou WEBP",
       kills: "Kills",
       level: "Niveau",
       logout: "Deconnexion",
@@ -212,7 +218,7 @@ export const homeTranslations: Record<HomeLanguage, HomeTranslations> = {
       code: "الرمز",
       codeRequired: "ادخل رمز التحقق",
       codeSent: "تم ارسال رمز التحقق",
-      connectVia: "----او اتصل عبر----",
+      connectVia: "او اتصل عبر",
       email: "البريد",
       emailRequired: "ادخل بريدك",
       sendCode: "ارسال الرمز",
@@ -221,14 +227,15 @@ export const homeTranslations: Record<HomeLanguage, HomeTranslations> = {
       verifyingCode: "جاري التحقق...",
     },
     chat: {
+      cooldown: "انتظر {seconds}ث",
       inputLabel: "رسالة الدردشة العامة",
       placeholder: "اكتب رسالة...",
       signInToSend: "سجل للدردشة",
       unavailable: "الدردشة غير متاحة",
     },
     fullscreen: {
-      enter: "ملء الشاشة",
-      exit: "الخروج من ملء الشاشة",
+      enter: "ملء",
+      exit: "الخروج",
     },
     home: {
       loginSignup: "دخول / تسجيل",
@@ -256,6 +263,7 @@ export const homeTranslations: Record<HomeLanguage, HomeTranslations> = {
       deletingAccount: "جاري الحذف...",
       death: "الموت",
       exp: "الخبرة",
+      imageRequired: "اختر صورة PNG او JPG او GIF او WEBP",
       kills: "قتل",
       level: "المستوى",
       logout: "خروج",

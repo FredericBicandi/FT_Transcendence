@@ -52,6 +52,7 @@ export function HomeView() {
     setShowProfileModal(true);
   }, []);
   const {
+    chatCooldownSeconds,
     chatError,
     chatMessages,
     clearMatchProgressAnimation,
@@ -170,6 +171,7 @@ export function HomeView() {
 
       {!showGame && (
         <TopBarActions
+          className="absolute right-4 top-4 sm:right-6 sm:top-6 lg:hidden"
           language={language}
           onLanguageChange={setLanguage}
           onProfileClick={() => {
@@ -187,13 +189,11 @@ export function HomeView() {
       )}
 
       {!showGame && (
-        <div
-          className="absolute inset-0 z-10 flex items-center justify-center gap-8 px-4"
-          dir="ltr"
-        >
-          <div className="hidden w-[28rem] lg:block" aria-hidden="true" />
-
-          <div className="flex flex-col items-center gap-6">
+        <>
+          <div
+            className="absolute left-1/2 top-1/2 z-10 flex -translate-x-1/2 -translate-y-[62%] flex-col items-center gap-6 px-4 sm:-translate-y-[66%] lg:left-[49%] lg:-translate-y-[91%]"
+            dir="ltr"
+          >
             <div className="flex flex-col items-center gap-4 text-center">
               <Image
                 src="/images/icon.png"
@@ -220,41 +220,64 @@ export function HomeView() {
               </div>
             </div>
 
-            {isPlayerProfileLoading ? (
-              <div className="bg-[#151819] px-6 py-4 text-sm uppercase text-[#f5dfad] shadow-[0_0_0_3px_#050302,0_4px_0_3px_#111515,inset_0_3px_0_#374041,inset_0_-3px_0_#050302]">
-                {translations.home.loading}
-              </div>
-            ) : (
-              <PlayButton
-                disabled={!gameUrl || needsUsernameSetup}
-                label={translations.home.play}
-                onClick={handlePlayGame}
-              />
-            )}
+            <div className="flex flex-col items-center gap-3">
+              {isPlayerProfileLoading ? (
+                <div className="bg-[#151819] px-6 py-4 text-sm uppercase text-[#f5dfad] shadow-[0_0_0_3px_#050302,0_4px_0_3px_#111515,inset_0_3px_0_#374041,inset_0_-3px_0_#050302]">
+                  {translations.home.loading}
+                </div>
+              ) : (
+                <PlayButton
+                  disabled={!gameUrl || needsUsernameSetup}
+                  label={translations.home.play}
+                  onClick={handlePlayGame}
+                />
+              )}
 
-            <OnlinePlayersBadge
-              label={translations.home.online}
-              onlineCount={onlineCount}
-            />
-
-            {playerProfile?.isGuest && (
-              <LoginSignupButton
-                label={translations.home.loginSignup}
-                onClick={() => setShowAuthModal(true)}
+              <OnlinePlayersBadge
+                label={translations.home.online}
+                onlineCount={onlineCount}
               />
-            )}
+
+              {playerProfile?.isGuest && (
+                <div className="translate-y-2">
+                  <LoginSignupButton
+                    label={translations.home.loginSignup}
+                    onClick={() => setShowAuthModal(true)}
+                  />
+                </div>
+              )}
+            </div>
           </div>
 
-          <GlobalChat
-            errorMessage={chatError?.message ?? null}
-            isConnected={isChatConnected}
-            messages={chatMessages}
-            onSendMessage={sendChatMessage}
-            playerProfile={playerProfile}
-            textDirection={language === "arabic" ? "rtl" : "ltr"}
-            translations={translations.chat}
-          />
-        </div>
+          <div className="absolute left-[70%] top-69 z-20 hidden w-[28rem] -translate-x-1/2 flex-col items-stretch gap-4 lg:flex">
+            <TopBarActions
+              className="justify-start"
+              language={language}
+              onLanguageChange={setLanguage}
+              onProfileClick={() => {
+                if (!isPlayerProfileLoading && !needsUsernameSetup) {
+                  setShowProfileModal(true);
+                }
+              }}
+              playerProfile={playerProfile}
+              translations={{
+                ...translations.fullscreen,
+                ...translations.language,
+                profile: translations.profile.profile,
+              }}
+            />
+            <GlobalChat
+              cooldownSeconds={chatCooldownSeconds}
+              errorMessage={chatError?.message ?? null}
+              isConnected={isChatConnected}
+              messages={chatMessages}
+              onSendMessage={sendChatMessage}
+              playerProfile={playerProfile}
+              textDirection={language === "arabic" ? "rtl" : "ltr"}
+              translations={translations.chat}
+            />
+          </div>
+        </>
       )}
 
       {showAuthModal && (

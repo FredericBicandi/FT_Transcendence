@@ -155,20 +155,23 @@ func send_move(x: float, y: float, angle: float, aim_frame: int) -> void:
 		}
 	)
 
-func send_idle(x: float, y: float, angle: float, aim_frame: int) -> void:
+func send_idle(x: float, y: float, angle: float, aim_frame: int, current_health: int, weapon_type: String) -> void:
 	if socket.get_ready_state() != WebSocketPeer.STATE_OPEN:
 		return
-	if not are_finite_numbers([x, y]) or not is_valid_angle(angle) or not is_valid_aim_frame(aim_frame):
+	var normalized_weapon_type := normalize_weapon_type(weapon_type)
+	if not are_finite_numbers([x, y]) or not is_valid_angle(angle) or not is_valid_aim_frame(aim_frame) or normalized_weapon_type == "":
 		return
 
 	_send_json(
 		{
-			# Low-frequency heartbeat for stationary players and late joiners.
+			# Passive full-state sync for stationary players and late joiners.
 			"type": "idle",
 			"x": x,
 			"y": y,
 			"angle": angle,
-			"aim_frame": aim_frame
+			"aim_frame": aim_frame,
+			"health": maxi(current_health, 0),
+			"weapon_type": normalized_weapon_type
 		}
 	)
 
