@@ -1,0 +1,180 @@
+[gd_scene format=3 uid="uid://vs4jvq30jo6l"]
+
+[ext_resource type="Script" uid="uid://ctmym8s10fkba" path="res://src/Scripts/Networks/network_client.gd" id="1_5v8gu"]
+[ext_resource type="Script" uid="uid://qtm6y4tdoh7y" path="res://src/Scripts/Networks/connection.gd" id="1_23con"]
+[ext_resource type="PackedScene" uid="uid://ctsjqy1slixm8" path="res://src/Scenes/map.tscn" id="2_map"]
+[ext_resource type="PackedScene" uid="uid://e3lcnmeh7xhk" path="res://src/Scenes/leaderboard.tscn" id="3_leaderboard"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_panel"]
+bg_color = Color(0, 0, 0, 0.72)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(1, 1, 1, 0.08)
+corner_radius_top_left = 16
+corner_radius_top_right = 16
+corner_radius_bottom_right = 16
+corner_radius_bottom_left = 16
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_ready_bar"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_join_button"]
+bg_color = Color(0.92, 0.658, 0.18, 1)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_join_button_pressed"]
+bg_color = Color(0.72, 0.49, 0.11, 1)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_join_button_hover"]
+bg_color = Color(1, 0.765, 0.25, 1)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_dashboard_button"]
+bg_color = Color(0.32, 0.34, 0.38, 1)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_dashboard_button_pressed"]
+bg_color = Color(0.22, 0.23, 0.27, 1)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_dashboard_button_hover"]
+bg_color = Color(0.42, 0.44, 0.49, 1)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+
+[node name="Connection" type="Node" unique_id=873768806]
+script = ExtResource("1_23con")
+
+[node name="Map" parent="." unique_id=433046130 instance=ExtResource("2_map")]
+
+[node name="BackgroundCamera" type="Camera2D" parent="." unique_id=1150641608]
+position = Vector2(173, -307)
+zoom = Vector2(4.5, 4.5)
+
+[node name="NetworkClient" type="Node" parent="." unique_id=1560488283]
+script = ExtResource("1_5v8gu")
+
+[node name="RoomLeaderboard" parent="." unique_id=498758644 instance=ExtResource("3_leaderboard")]
+tab_visibility_enabled = false
+panel_minimum_size = Vector2(760, 430)
+
+[node name="CanvasLayer" type="CanvasLayer" parent="." unique_id=104228190]
+layer = 20
+
+[node name="Overlay" type="ColorRect" parent="CanvasLayer" unique_id=1922337018]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0, 0, 0, 0.45)
+
+[node name="CenterContainer" type="CenterContainer" parent="CanvasLayer/Overlay" unique_id=1739811506]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="PanelContainer" type="PanelContainer" parent="CanvasLayer/Overlay/CenterContainer" unique_id=962721033]
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_panel")
+
+[node name="MarginContainer" type="MarginContainer" parent="CanvasLayer/Overlay/CenterContainer/PanelContainer" unique_id=684689054]
+layout_mode = 2
+theme_override_constants/margin_left = 20
+theme_override_constants/margin_top = 20
+theme_override_constants/margin_right = 20
+theme_override_constants/margin_bottom = 20
+
+[node name="VBoxContainer" type="VBoxContainer" parent="CanvasLayer/Overlay/CenterContainer/PanelContainer/MarginContainer" unique_id=782063690]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="TitleLabel" type="Label" parent="CanvasLayer/Overlay/CenterContainer/PanelContainer/MarginContainer/VBoxContainer" unique_id=1397677024]
+layout_mode = 2
+theme_override_font_sizes/font_size = 22
+text = "Multiplayer Connection"
+horizontal_alignment = 1
+
+[node name="StatusLabel" type="Label" parent="CanvasLayer/Overlay/CenterContainer/PanelContainer/MarginContainer/VBoxContainer" unique_id=2031792552]
+layout_mode = 2
+text = "Connecting..."
+horizontal_alignment = 1
+
+[node name="ReadyBar" type="PanelContainer" parent="CanvasLayer/Overlay" unique_id=961124473]
+visible = false
+layout_mode = 1
+anchors_preset = -1
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -166.0
+offset_top = 242.0
+offset_right = 166.0
+offset_bottom = 286.0
+grow_horizontal = 2
+grow_vertical = 0
+theme_override_styles/panel = SubResource("StyleBoxEmpty_ready_bar")
+
+[node name="ReadyMargin" type="MarginContainer" parent="CanvasLayer/Overlay/ReadyBar" unique_id=557122304]
+layout_mode = 2
+theme_override_constants/margin_left = 0
+theme_override_constants/margin_top = 0
+theme_override_constants/margin_right = 0
+theme_override_constants/margin_bottom = 0
+
+[node name="ReadyRow" type="HBoxContainer" parent="CanvasLayer/Overlay/ReadyBar/ReadyMargin" unique_id=81901645]
+layout_mode = 2
+theme_override_constants/separation = 12
+alignment = 1
+
+[node name="JoinButton" type="Button" parent="CanvasLayer/Overlay/ReadyBar/ReadyMargin/ReadyRow" unique_id=456610883]
+custom_minimum_size = Vector2(160, 44)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.12, 0.08, 0.02, 1)
+theme_override_colors/font_pressed_color = Color(0.12, 0.08, 0.02, 1)
+theme_override_colors/font_hover_color = Color(0.12, 0.08, 0.02, 1)
+theme_override_font_sizes/font_size = 18
+theme_override_styles/normal = SubResource("StyleBoxFlat_join_button")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_join_button_pressed")
+theme_override_styles/hover = SubResource("StyleBoxFlat_join_button_hover")
+theme_override_styles/disabled = SubResource("StyleBoxFlat_join_button_pressed")
+disabled = true
+text = "Join"
+
+[node name="DashboardButton" type="Button" parent="CanvasLayer/Overlay/ReadyBar/ReadyMargin/ReadyRow" unique_id=697055951]
+custom_minimum_size = Vector2(160, 44)
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 1, 1, 0.92)
+theme_override_colors/font_pressed_color = Color(1, 1, 1, 0.85)
+theme_override_colors/font_hover_color = Color(1, 1, 1, 1)
+theme_override_font_sizes/font_size = 18
+theme_override_styles/normal = SubResource("StyleBoxFlat_dashboard_button")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_dashboard_button_pressed")
+theme_override_styles/hover = SubResource("StyleBoxFlat_dashboard_button_hover")
+theme_override_styles/disabled = SubResource("StyleBoxFlat_dashboard_button_pressed")
+disabled = true
+text = "Dashboard"

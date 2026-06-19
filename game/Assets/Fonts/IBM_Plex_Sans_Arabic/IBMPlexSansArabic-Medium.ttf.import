@@ -2,13 +2,13 @@
 
 importer="font_data_dynamic"
 type="FontFile"
-uid="uid://bbh7uywdnxj4f"
-path="res://.godot/imported/IBMPlexSansArabic-Regular.ttf-5b58202e1e0701be1b973ca831d0b2e9.fontdata"
+uid="uid://c7x84heg8muwl"
+path="res://.godot/imported/IBMPlexSansArabic-Medium.ttf-f0437d3f6948c5489c34a087104d326c.fontdata"
 
 [deps]
 
-source_file="res://Assets/Fonts/IBM_Plex_Sans_Arabic/IBMPlexSansArabic-Regular.ttf"
-dest_files=["res://.godot/imported/IBMPlexSansArabic-Regular.ttf-5b58202e1e0701be1b973ca831d0b2e9.fontdata"]
+source_file="res://Assets/Fonts/IBM_Plex_Sans_Arabic/IBMPlexSansArabic-Medium.ttf"
+dest_files=["res://.godot/imported/IBMPlexSansArabic-Medium.ttf-f0437d3f6948c5489c34a087104d326c.fontdata"]
 
 [params]
 

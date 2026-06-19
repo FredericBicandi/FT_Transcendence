@@ -884,6 +884,7 @@ func _send_move_position() -> void:
 func _send_idle_position() -> void:
 	var aim_frame := _get_current_aim_frame()
 	last_sent_angle = _get_angle_for_aim_frame(aim_frame)
+	var active_weapon := weapon.get_active_weapon() if weapon != null else null
 	var weapon_type := active_weapon.get_weapon_name() if active_weapon != null else last_reported_weapon_type
 	network_client.send_idle(global_position.x, global_position.y, last_sent_angle, aim_frame, health, weapon_type)
 	move_sync_elapsed = 0.0
