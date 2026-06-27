@@ -10,6 +10,7 @@ run: stop
 		--name $(CONTAINER) \
 		--restart unless-stopped \
 		--init \
+		-v "$(CURDIR)/Properties/appsettings.json:/app/appsettings.json:ro" \
 		-p 127.0.0.1:$(PORT):$(PORT) \
 		$(IMAGE)
 
