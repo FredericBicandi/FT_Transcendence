@@ -1,11 +1,11 @@
 "use client";
 
 // HomeView owns the dashboard shell and embedded Godot iframe.
-// It communicates with useHomeController, browser fullscreen APIs, localStorage, and postMessage.
-// Do not casually change iframe origin checks, hydration timing, or fullscreen focus behavior.
+// It communicates with useHomeController, localStorage, and postMessage.
+// Do not casually change iframe origin checks or hydration timing.
 
 import Image from "next/image";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { AuthModal } from "@/components/home/AuthModal";
 import { LoginSignupButton } from "@/components/home/LoginSignupButton";
 import { GlobalChat } from "@/components/home/GlobalChat";
@@ -26,24 +26,8 @@ import {
 
 const LANGUAGE_STORAGE_KEY = "homeLanguage";
 const MODAL_CLOSE_ANIMATION_MS = 160;
-const FULLSCREEN_REQUEST_MESSAGE_TYPES = new Set([
-  "FULLSCREEN_REQUEST",
-  "REQUEST_FULLSCREEN",
-  "request_fullscreen",
-]);
-
 function isHomeLanguage(value: string | null): value is HomeLanguage {
   return value === "english" || value === "french" || value === "arabic";
-}
-
-function isFullscreenRequestMessage(value: unknown) {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "type" in value &&
-    typeof value.type === "string" &&
-    FULLSCREEN_REQUEST_MESSAGE_TYPES.has(value.type)
-  );
 }
 
 function isDisconnectedExtensionMessageError(reason: unknown) {
@@ -83,8 +67,6 @@ function ChatIcon() {
 }
 
 export function HomeView() {
-  const gameIframeRef = useRef<HTMLIFrameElement | null>(null);
-  const mainElementRef = useRef<HTMLElement | null>(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [isAuthModalClosing, setIsAuthModalClosing] = useState(false);
   const [showMobileChat, setShowMobileChat] = useState(false);
@@ -129,7 +111,6 @@ export function HomeView() {
     playerProfile.needsUsername;
   const handleGameFrameRef = useCallback(
     (frame: HTMLIFrameElement | null) => {
-      gameIframeRef.current = frame;
       // Keep the controller pointed at the active iframe window.
       registerGameWindow(frame?.contentWindow ?? null);
     },
@@ -168,54 +149,6 @@ export function HomeView() {
         "unhandledrejection",
         suppressDisconnectedExtensionMessage,
       );
-    };
-  }, []);
-
-  useEffect(() => {
-    function focusGameIframe() {
-      const frame = gameIframeRef.current;
-
-      frame?.focus();
-      frame?.contentWindow?.focus();
-    }
-
-    async function requestGameFullscreen() {
-      const fullscreenTarget =
-        gameIframeRef.current ?? mainElementRef.current ?? document.documentElement;
-
-      try {
-        if (!document.fullscreenElement) {
-          await fullscreenTarget.requestFullscreen();
-        }
-      } catch {
-        try {
-          await document.documentElement.requestFullscreen();
-        } catch {
-          // Fullscreen can be unavailable or blocked by browser policy.
-        }
-      } finally {
-        // Fullscreen changes can steal focus from the game iframe.
-        window.requestAnimationFrame(focusGameIframe);
-      }
-    }
-
-    function handleGameFullscreenMessage(event: MessageEvent<unknown>) {
-      if (
-        event.origin !== window.location.origin ||
-        event.source !== gameIframeRef.current?.contentWindow ||
-        !isFullscreenRequestMessage(event.data)
-      ) {
-        return;
-      }
-
-      // The static game cannot fullscreen the parent shell directly from inside the iframe.
-      void requestGameFullscreen();
-    }
-
-    window.addEventListener("message", handleGameFullscreenMessage);
-
-    return () => {
-      window.removeEventListener("message", handleGameFullscreenMessage);
     };
   }, []);
 
@@ -327,7 +260,6 @@ export function HomeView() {
 
   return (
     <main
-      ref={mainElementRef}
       className="relative h-screen w-screen overflow-hidden bg-black"
       dir={language === "arabic" ? "rtl" : "ltr"}
       lang={language === "arabic" ? "ar" : language === "french" ? "fr" : "en"}
