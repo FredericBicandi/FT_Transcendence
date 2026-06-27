@@ -5,6 +5,16 @@
 if (window.location.pathname === "/game") {
 	window.location.replace("/Game/index.html" + window.location.search + window.location.hash);
 }
+
+window.addEventListener(
+	"keydown",
+	function(event) {
+		if (event.key === "F11") {
+			event.stopImmediatePropagation();
+		}
+	},
+	true,
+);
 </script>
 
 <meta charset="utf-8">

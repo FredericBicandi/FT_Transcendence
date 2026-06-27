@@ -205,23 +205,6 @@ export function TopBarActions({
   }, []);
 
   useEffect(() => {
-    function handleFullscreenKey(event: KeyboardEvent) {
-      if (event.key !== "F11") {
-        return;
-      }
-
-      event.preventDefault();
-      void toggleFullscreen();
-    }
-
-    window.addEventListener("keydown", handleFullscreenKey, true);
-
-    return () => {
-      window.removeEventListener("keydown", handleFullscreenKey, true);
-    };
-  }, [toggleFullscreen]);
-
-  useEffect(() => {
     if (!showLanguageMenu) {
       return;
     }
