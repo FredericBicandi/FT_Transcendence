@@ -79,8 +79,8 @@ Open the editable game project with Godot from `game/project.godot`. The exporte
 
 ## Team Information
 
-- `fbicandy`: product owner, project manager, tech lead, full-stack developer. Responsible for repository organization, web dashboard, Supabase integration, authentication/profile flows, .NET WebSocket server, dashboard/game socket contracts, deployment workflow, and large parts of gameplay integration.
-- `dawwad`: developer. Responsible for Godot gameplay and asset work reflected in history, including map work, spawn points, weapon additions, projectile behavior, sprites, sounds, cursor/game feel improvements, and balancing support.
+- `fbicandy`: product owner and manager, full-stack developer. Responsible for repository organization, web dashboard, Supabase integration, authentication/profile flows, .NET WebSocket server, dashboard/game socket contracts, deployment workflow, and large parts of gameplay integration.
+- `dawwad`: developer. Responsible for Godot gameplay and asset work, including map work, spawn points, weapon additions, projectile behavior, sprites, sounds, cursor/game feel improvements, game balancing and stability.
 
 ## Project Management
 
@@ -139,13 +139,6 @@ Official module set:
 - IV.6 Gaming and user experience - Major: Implement a complete web-based game where users can play against each other, 2 pts. Implemented PixelFight as an embedded Godot web export: a top-down multiplayer shooter with live matches, movement, weapons, projectiles, health, medkits, deaths, respawns, kill feed, scoreboard, match timer, rules, win/loss results from final leaderboard state, and match persistence.
 - IV.6 Gaming and user experience - Major: Remote players - Enable two players on separate computers to play the same game in real-time, 2 pts. Implemented online multiplayer through the .NET WebSocket server and Godot network client. Remote players join shared rooms, exchange live movement/combat/chat events, receive authoritative health/death/leaderboard updates, and are cleaned up gracefully on disconnect or timeout.
 - IV.6 Gaming and user experience - Major: Multiplayer game (more than two players), 2 pts. Implemented game rooms with a maximum capacity of 8 players. The server synchronizes room membership, player state, combat events, medkit state, leaderboard snapshots, match timers, and final match results across all joined clients.
-
-Not counted as full modules:
-
-- IV.1 Web - Major: Allow users to interact with other users. The project has global chat, in-game chat, profiles, and online presence, but it does not include the required friends system.
-- IV.1 Web - Minor: Use an ORM for the database. The project uses Supabase client APIs and Supabase REST access, but no dedicated ORM layer is present in the repository.
-- IV.6 Gaming and user experience - Major: Add another game with user history and matchmaking. The project supports simultaneous rooms/matches for the same game, but not a second distinct game.
-- IV.6 Gaming and user experience - Minor: A gamification system to reward users for their actions. The project has persistent XP/levels and leaderboard feedback, but not three separate gamification features such as achievements, badges, daily challenges, or rewards.
 
 Total: 22 points.
 
