@@ -51,8 +51,8 @@ func _update_bullet_visual(bullet: Node2D, result: Dictionary) -> void:
 	var a := bullet as AnimatedSprite2D
 	Projectile.update_visual_for_velocity(a, get_weapon_config(), result["velocity"], get_bullet_frame())
 
-func _play_impact_effect(position: Vector2) -> void:
-	super._play_impact_effect(position)
+func _play_impact_effect(impact_position: Vector2) -> void:
+	super._play_impact_effect(impact_position)
 	var current_scene := get_tree().current_scene
 	if current_scene == null:
 		return
@@ -64,7 +64,7 @@ func _play_impact_effect(position: Vector2) -> void:
 			impact_scale_stored,
 			impact_speed_scale_stored,
 			int(get_weapon_config().get("impact_z_index", get_bullet_visual_z_index() + 1)),
-			position
+			impact_position
 		)
 	if impact_smoke_frames != null:
 		_spawn_impact_animation(
@@ -73,10 +73,10 @@ func _play_impact_effect(position: Vector2) -> void:
 			impact_smoke_scale_stored,
 			impact_smoke_speed_scale_stored,
 			int(get_weapon_config().get("impact_smoke_z_index", get_weapon_config().get("impact_z_index", get_bullet_visual_z_index() + 1))),
-			position
+			impact_position
 		)
 
-func _spawn_impact_animation(parent: Node, frames: SpriteFrames, animation_scale: Vector2, speed_scale: float, visual_z_index: int, position: Vector2) -> void:
+func _spawn_impact_animation(parent: Node, frames: SpriteFrames, animation_scale: Vector2, speed_scale: float, visual_z_index: int, impact_position: Vector2) -> void:
 	var impact := AnimatedSprite2D.new()
 	impact.sprite_frames = frames
 	impact.animation = &"default"
@@ -85,7 +85,7 @@ func _spawn_impact_animation(parent: Node, frames: SpriteFrames, animation_scale
 	impact.speed_scale = speed_scale
 	impact.z_index = visual_z_index
 	parent.add_child(impact)
-	impact.global_position = position
+	impact.global_position = impact_position
 	impact.animation_finished.connect(impact.queue_free)
 	impact.play(&"default")
 

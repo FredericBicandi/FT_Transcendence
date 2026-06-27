@@ -43,7 +43,7 @@ func shoot() -> void:
 		reload()
 
 func _get_pellet_damage(pellet_index: int) -> int:
-	var base_damage := TOTAL_DAMAGE / PELLET_COUNT
+	var base_damage := int(floorf(float(TOTAL_DAMAGE) / float(PELLET_COUNT)))
 	var remainder := TOTAL_DAMAGE % PELLET_COUNT
 	return base_damage + (1 if pellet_index < remainder else 0)
 

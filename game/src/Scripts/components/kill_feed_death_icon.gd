@@ -19,20 +19,20 @@ func _draw_icon(offset: Vector2, color: Color, hole_color: Color) -> void:
 	if draw_size == Vector2.ZERO:
 		draw_size = ICON_SIZE
 
-	var scale: float = minf(draw_size.x / ICON_SIZE.x, draw_size.y / ICON_SIZE.y)
+	var icon_scale: float = minf(draw_size.x / ICON_SIZE.x, draw_size.y / ICON_SIZE.y)
 	var center := draw_size * 0.5 + offset
 
-	var left_bone_start := center + Vector2(-9.0, 6.0) * scale
-	var left_bone_end := center + Vector2(9.0, 12.0) * scale
-	var right_bone_start := center + Vector2(9.0, 6.0) * scale
-	var right_bone_end := center + Vector2(-9.0, 12.0) * scale
-	draw_line(left_bone_start, left_bone_end, color, 2.0 * scale)
-	draw_line(right_bone_start, right_bone_end, color, 2.0 * scale)
+	var left_bone_start := center + Vector2(-9.0, 6.0) * icon_scale
+	var left_bone_end := center + Vector2(9.0, 12.0) * icon_scale
+	var right_bone_start := center + Vector2(9.0, 6.0) * icon_scale
+	var right_bone_end := center + Vector2(-9.0, 12.0) * icon_scale
+	draw_line(left_bone_start, left_bone_end, color, 2.0 * icon_scale)
+	draw_line(right_bone_start, right_bone_end, color, 2.0 * icon_scale)
 
-	var skull_center := center + Vector2(0.0, -2.0) * scale
-	draw_circle(skull_center, 6.0 * scale, color)
-	draw_rect(Rect2(skull_center + Vector2(-4.0, 2.0) * scale, Vector2(8.0, 5.0) * scale), color)
+	var skull_center := center + Vector2(0.0, -2.0) * icon_scale
+	draw_circle(skull_center, 6.0 * icon_scale, color)
+	draw_rect(Rect2(skull_center + Vector2(-4.0, 2.0) * icon_scale, Vector2(8.0, 5.0) * icon_scale), color)
 
-	draw_circle(skull_center + Vector2(-2.3, -1.2) * scale, 1.35 * scale, hole_color)
-	draw_circle(skull_center + Vector2(2.3, -1.2) * scale, 1.35 * scale, hole_color)
-	draw_rect(Rect2(skull_center + Vector2(-1.0, 1.0) * scale, Vector2(2.0, 1.8) * scale), hole_color)
+	draw_circle(skull_center + Vector2(-2.3, -1.2) * icon_scale, 1.35 * icon_scale, hole_color)
+	draw_circle(skull_center + Vector2(2.3, -1.2) * icon_scale, 1.35 * icon_scale, hole_color)
+	draw_rect(Rect2(skull_center + Vector2(-1.0, 1.0) * icon_scale, Vector2(2.0, 1.8) * icon_scale), hole_color)

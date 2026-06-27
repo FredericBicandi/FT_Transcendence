@@ -432,12 +432,12 @@ func _create_cursor_reload_ring() -> void:
 	cursor_reload_ring.set_script(CURSOR_RELOAD_RING_SCRIPT)
 	cursor.add_child(cursor_reload_ring)
 
-func _set_mouse_visible(is_visible: bool) -> void:
-	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE if is_visible else Input.MOUSE_MODE_HIDDEN)
+func _set_mouse_visible(should_show: bool) -> void:
+	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE if should_show else Input.MOUSE_MODE_HIDDEN)
 	if cursor != null and is_instance_valid(cursor):
 		# Hide the in-world cursor whenever the OS cursor is showing so we
 		# never paint two cursors at once (exit dialog, match end, etc.).
-		cursor.visible = not is_visible
+		cursor.visible = not should_show
 
 func _set_cursor_for_weapon(weapon: BaseWeapon) -> void:
 	if default_cursor == null:
@@ -616,13 +616,17 @@ func _on_chat_text_submitted(_submitted_text: String) -> void:
 	_submit_or_close_chat()
 
 func _on_chat_input_text_changed(next_text: String) -> void:
-	var font_sample := next_text if next_text != "" else chat_input.placeholder_text
+	var font_sample := chat_input.placeholder_text
+	if next_text != "":
+		font_sample = next_text
 	Localization.apply_readable_text_font(chat_input, font_sample, CHAT_FONT)
 	chat_input.add_theme_font_size_override("font_size", CHAT_INPUT_FONT_SIZE)
 
 func _send_chat_message(clean_message: String) -> void:
 	var sender_id: String = local_player_id
-	var sender_name: String = network_client.player_name if network_client != null else Localization.translate("default_player")
+	var sender_name: String = Localization.translate("default_player")
+	if network_client != null:
+		sender_name = network_client.player_name
 	if sender_name.strip_edges() == "":
 		sender_name = Localization.translate("default_player")
 
@@ -668,7 +672,10 @@ func _show_chat_message(sender_id: String, sender_name: String, content: String)
 	layout.add_theme_constant_override("separation", 5)
 	margin.add_child(layout)
 
-	var name_color: Color = _get_chat_name_color(sender_id if sender_id != "" else sender_name)
+	var chat_color_key := sender_name
+	if sender_id != "":
+		chat_color_key = sender_id
+	var name_color: Color = _get_chat_name_color(chat_color_key)
 	var name_label: Label = Label.new()
 	name_label.text = "%s:" % sender_name
 	name_label.add_theme_color_override("font_color", name_color)
@@ -851,7 +858,7 @@ func _show_kill_feed_entry(killer_name: String, killed_name: String, weapon_type
 	fade_in.tween_property(row, "modulate:a", 1.0, 0.12)
 	get_tree().create_timer(KILL_FEED_ENTRY_LIFETIME).timeout.connect(_expire_kill_feed_entry.bind(row))
 
-func _create_kill_feed_label(text: String, color: Color, alignment: int) -> Label:
+func _create_kill_feed_label(text: String, color: Color, alignment: HorizontalAlignment) -> Label:
 	var label := Label.new()
 	label.text = text
 	label.horizontal_alignment = alignment
@@ -1151,10 +1158,10 @@ func _apply_cached_medkits() -> void:
 		if typeof(medkit_variant) == TYPE_DICTIONARY:
 			_on_medkit_spawned(medkit_variant)
 
-func _spawn_server_medkit(medkit_id: String, position: Vector2) -> void:
+func _spawn_server_medkit(medkit_id: String, spawn_position: Vector2) -> void:
 	var existing := active_medkits.get(medkit_id) as Area2D
 	if existing != null and is_instance_valid(existing):
-		existing.global_position = position
+		existing.global_position = spawn_position
 		return
 
 	var layer := _get_medkit_layer()
@@ -1168,7 +1175,7 @@ func _spawn_server_medkit(medkit_id: String, position: Vector2) -> void:
 	medkit.monitorable = false
 	medkit.body_entered.connect(_on_server_medkit_body_entered.bind(medkit_id))
 	layer.add_child(medkit)
-	medkit.global_position = position
+	medkit.global_position = spawn_position
 
 	var sprite := Sprite2D.new()
 	sprite.texture = MEDKIT_TEXTURE
@@ -1356,8 +1363,8 @@ func _build_match_summary() -> Dictionary:
 
 func _build_match_saved_parent_payload(match_saved_message: Dictionary, match_ended_message: Dictionary) -> Dictionary:
 	var match_id := str(match_saved_message.get("match_id", "")).strip_edges()
-	var room_id := str(match_saved_message.get("room_id", "")).strip_edges()
-	if match_id == "" or room_id == "":
+	var saved_room_id := str(match_saved_message.get("room_id", "")).strip_edges()
+	if match_id == "" or saved_room_id == "":
 		return {}
 
 	var leaderboard_variant: Variant = match_ended_message.get("leaderboard", [])
@@ -1372,7 +1379,7 @@ func _build_match_saved_parent_payload(match_saved_message: Dictionary, match_en
 	return {
 		"type": "match_saved",
 		"match_id": match_id,
-		"room_id": room_id,
+		"room_id": saved_room_id,
 		"score": int(player_result.get("score", 0)),
 		"kills": int(player_result.get("kills", 0)),
 		"deaths": int(player_result.get("deaths", 0)),
@@ -1474,7 +1481,12 @@ func _get_bullet_weapon_type(message: Dictionary, remote_body: Player) -> String
 		if weapon_type != "":
 			return weapon_type
 
-	return remote_body.weapon.get_active_weapon().get_weapon_name() if remote_body.weapon != null and remote_body.weapon.get_active_weapon() != null else ""
+	if remote_body.weapon == null:
+		return ""
+	var active_weapon := remote_body.weapon.get_active_weapon()
+	if active_weapon == null:
+		return ""
+	return active_weapon.get_weapon_name()
 
 func _get_bullet_start_position(message: Dictionary) -> Variant:
 	# Support old and new server field names
@@ -1543,13 +1555,19 @@ func _apply_local_player_state(message: Dictionary, should_apply_position: bool 
 	var has_health := NetworkClient.has_authoritative_health(message)
 	var is_respawn_state := NetworkClient.is_respawn_state(message)
 	if has_health or message.has("is_dead") or is_respawn_state:
+		var fallback_health: int = player_body.health
+		if is_respawn_state:
+			fallback_health = player_body.max_health
 		var new_health := NetworkClient.get_authoritative_health(
 			message,
-			player_body.max_health if is_respawn_state else player_body.health
+			fallback_health
 		)
+		var fallback_is_dead: bool = player_body.is_dead
+		if is_respawn_state:
+			fallback_is_dead = false
 		player_body.apply_authoritative_health_state(
 			new_health,
-			bool(message.get("is_dead", false if is_respawn_state else player_body.is_dead)),
+			bool(message.get("is_dead", fallback_is_dead)),
 			NetworkClient.get_finite_int(message.get("damage", 0), 0),
 			NetworkClient.get_health_heal_amount(message, player_body.health, new_health),
 			_get_health_feedback_source(message)
@@ -1602,7 +1620,9 @@ func _apply_remote_player_state(message: Dictionary) -> void:
 	if remote_body == null and not has_position:
 		return
 
-	var remote_display_name: String = network_client.get_player_display_name(message, player_id) if network_client != null else ""
+	var remote_display_name := ""
+	if network_client != null:
+		remote_display_name = network_client.get_player_display_name(message, player_id)
 	if remote_body == null:
 		remote_body = _get_or_create_remote_player(player_id, remote_display_name)
 	if remote_body == null:
@@ -1619,7 +1639,10 @@ func _apply_remote_player_state(message: Dictionary) -> void:
 	var has_health := NetworkClient.has_authoritative_health(message)
 	var new_health := remote_body.health
 	var is_respawn_state := NetworkClient.is_respawn_state(message)
-	var authoritative_is_dead := bool(message.get("is_dead", false if is_respawn_state else remote_body.is_dead))
+	var fallback_is_dead := remote_body.is_dead
+	if is_respawn_state:
+		fallback_is_dead = false
+	var authoritative_is_dead := bool(message.get("is_dead", fallback_is_dead))
 	if has_health:
 		new_health = NetworkClient.get_authoritative_health(message, remote_body.health)
 	elif is_respawn_state:

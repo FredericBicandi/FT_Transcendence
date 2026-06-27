@@ -725,7 +725,7 @@ func _spawn_death_drop() -> void:
 	dead_scene.z_index = 0
 	active_death_drop.add_child(dead_scene)
 
-	get_tree().create_timer(maxf(respawn_delay, 0.1)).timeout.connect(_remove_death_drop.bind(active_death_drop))
+	get_tree().create_timer(maxf(respawn_delay, 0.1)).timeout.connect(_remove_death_drop_by_instance_id.bind(active_death_drop.get_instance_id()))
 
 func _get_death_medkit_layer() -> Node2D:
 	var layer_root := _get_death_medkit_layer_root()
@@ -764,7 +764,9 @@ func request_death_medkit_heal(medkit_id: String) -> bool:
 	if not can_collect_death_medkit() or network_client == null:
 		return false
 
-	var active_weapon := weapon.get_active_weapon() if weapon != null else null
+	var active_weapon: BaseWeapon = null
+	if weapon != null:
+		active_weapon = weapon.get_active_weapon()
 	if active_weapon == null:
 		return false
 
@@ -780,17 +782,25 @@ func request_death_medkit_heal(medkit_id: String) -> bool:
 		active_weapon.get_weapon_name()
 	)
 
-func _remove_death_drop(drop: Node2D = null) -> void:
-	if drop != null:
-		if not is_instance_valid(drop):
+func _remove_death_drop(drop: Node = null) -> void:
+	var drop_node := drop as Node2D
+	if drop_node != null:
+		if not is_instance_valid(drop_node):
 			return
-		if drop != active_death_drop:
-			drop.queue_free()
+		if drop_node != active_death_drop:
+			drop_node.queue_free()
 			return
 
 	if active_death_drop != null and is_instance_valid(active_death_drop):
 		active_death_drop.queue_free()
 	active_death_drop = null
+
+func _remove_death_drop_by_instance_id(drop_instance_id: int) -> void:
+	var drop_node := instance_from_id(drop_instance_id) as Node2D
+	if drop_node == null:
+		return
+
+	_remove_death_drop(drop_node)
 
 func update_auto_attack() -> void:
 	# AI picks a live target and keeps aiming at it
@@ -884,8 +894,12 @@ func _send_move_position() -> void:
 func _send_idle_position() -> void:
 	var aim_frame := _get_current_aim_frame()
 	last_sent_angle = _get_angle_for_aim_frame(aim_frame)
-	var active_weapon := weapon.get_active_weapon() if weapon != null else null
-	var weapon_type := active_weapon.get_weapon_name() if active_weapon != null else last_reported_weapon_type
+	var active_weapon: BaseWeapon = null
+	if weapon != null:
+		active_weapon = weapon.get_active_weapon()
+	var weapon_type := last_reported_weapon_type
+	if active_weapon != null:
+		weapon_type = active_weapon.get_weapon_name()
 	network_client.send_idle(global_position.x, global_position.y, last_sent_angle, aim_frame, health, weapon_type)
 	move_sync_elapsed = 0.0
 	last_sent_position = global_position
@@ -958,7 +972,9 @@ func _send_respawn_state() -> void:
 	if network_client == null:
 		return
 
-	var active_weapon := weapon.get_active_weapon() if weapon != null else null
+	var active_weapon: BaseWeapon = null
+	if weapon != null:
+		active_weapon = weapon.get_active_weapon()
 	if active_weapon == null:
 		return
 	var aim_frame := _get_current_aim_frame()
@@ -986,8 +1002,8 @@ func _request_server_respawn() -> void:
 	_remove_death_drop()
 	_send_respawn_state()
 
-func set_spawn_position(position: Vector2) -> void:
-	spawn_position = position
+func set_spawn_position(next_spawn_position: Vector2) -> void:
+	spawn_position = next_spawn_position
 
 func set_respawn_position_provider(provider: Callable) -> void:
 	respawn_position_provider = provider
@@ -1001,7 +1017,9 @@ func _resolve_respawn_position() -> Vector2:
 	return spawn_position
 
 func _send_full_player_state() -> bool:
-	var active_weapon := weapon.get_active_weapon() if weapon != null else null
+	var active_weapon: BaseWeapon = null
+	if weapon != null:
+		active_weapon = weapon.get_active_weapon()
 	if active_weapon == null or network_client == null:
 		return false
 
@@ -1340,13 +1358,13 @@ func _get_local_aim_center() -> Vector2:
 
 	return global_position
 
-func enqueue_remote_snapshot(position: Vector2, aim_angle_degrees: float = NAN) -> void:
+func enqueue_remote_snapshot(snapshot_position: Vector2, aim_angle_degrees: float = NAN) -> void:
 	if not is_nan(aim_angle_degrees):
 		remote_latest_angle_degrees = aim_angle_degrees
 
 	if not has_received_remote_snapshot:
 		# First remote packet should snap, not slide from origin
-		snap_remote_snapshot(position, remote_latest_angle_degrees)
+		snap_remote_snapshot(snapshot_position, remote_latest_angle_degrees)
 		return
 
 	if _get_remote_snapshot_count() >= MAX_REMOTE_SNAPSHOTS:
@@ -1354,17 +1372,17 @@ func enqueue_remote_snapshot(position: Vector2, aim_angle_degrees: float = NAN) 
 		_pop_next_remote_snapshot()
 
 	remote_snapshot_queue.append({
-		"position": position,
+		"position": snapshot_position,
 		"aim_angle_degrees": remote_latest_angle_degrees
 	})
 
-func snap_remote_snapshot(position: Vector2, aim_angle_degrees: float = NAN) -> void:
+func snap_remote_snapshot(snapshot_position: Vector2, aim_angle_degrees: float = NAN) -> void:
 	if not is_nan(aim_angle_degrees):
 		remote_latest_angle_degrees = aim_angle_degrees
 
 	has_received_remote_snapshot = true
 	_clear_remote_snapshots()
-	global_position = position
+	global_position = snapshot_position
 	velocity = Vector2.ZERO
 	remote_last_move_direction = Vector2.ZERO
 	remote_walk_animation_hold_remaining = 0.0
@@ -1412,16 +1430,16 @@ func _normalize_weapon_type(weapon_type: String) -> String:
 		_:
 			return weapon_type
 
-func spawn_remote_bullet_from_server(position: Vector2, angle_radians: float, weapon_type: String, target_position: Variant = null, start_position: Variant = null) -> void:
+func spawn_remote_bullet_from_server(shooter_position: Vector2, angle_radians: float, weapon_type: String, target_position: Variant = null, start_position: Variant = null) -> void:
 	# Server bullet messages include the shooter position, but blindly snapping
 	# warps the player whenever a move/bullet packet pair arrives out of order.
 	# Only snap when we have not yet placed the player or when the reported
 	# position is far from where the interpolation has us — otherwise let the
 	# normal snapshot queue keep the motion smooth.
 	if not has_received_remote_snapshot:
-		snap_remote_snapshot(position, NAN)
-	elif global_position.distance_to(position) > BULLET_SPAWN_SNAP_DISTANCE:
-		snap_remote_snapshot(position, NAN)
+		snap_remote_snapshot(shooter_position, NAN)
+	elif global_position.distance_to(shooter_position) > BULLET_SPAWN_SNAP_DISTANCE:
+		snap_remote_snapshot(shooter_position, NAN)
 
 	set_remote_weapon(weapon_type)
 	var has_target_position := target_position is Vector2
@@ -1478,11 +1496,11 @@ func _process_remote_movement(delta: float) -> void:
 
 	var next_snapshot := _get_next_remote_snapshot()
 	var target_position: Vector2 = next_snapshot["position"]
-	var offset := target_position - global_position
-	var direction := offset.normalized()
+	var remote_offset := target_position - global_position
+	var direction := remote_offset.normalized()
 	var step_distance := move_speed * delta
 	var previous_position := global_position
-	if offset.length() <= step_distance:
+	if remote_offset.length() <= step_distance:
 		global_position = target_position
 		_pop_next_remote_snapshot()
 	else:

@@ -61,8 +61,8 @@ func set_local_player_id(player_id: String) -> void:
 	_schedule_leaderboard_rows_refresh()
 
 
-func set_leaderboard_visible(is_visible: bool) -> void:
-	leaderboard_overlay.visible = is_visible
+func set_leaderboard_visible(should_show: bool) -> void:
+	leaderboard_overlay.visible = should_show
 
 
 func set_leaderboard_entries(entries: Array) -> void:
@@ -136,7 +136,7 @@ func _configure_leaderboard_header() -> void:
 		label.size_flags_horizontal = 0
 		label.text = Localization.translate(str(column["title_key"]))
 		Localization.apply_readable_text_font(label, label.text)
-		label.horizontal_alignment = int(column["alignment"])
+		label.horizontal_alignment = int(column["alignment"]) as HorizontalAlignment
 
 
 func _refresh_leaderboard_rows() -> void:
@@ -191,7 +191,7 @@ func _create_leaderboard_row(entry: Dictionary) -> Control:
 		label.add_theme_font_size_override("font_size", 17)
 		label.text = str(entry.get(str(typed_column["key"]), ""))
 		Localization.apply_readable_text_font(label, label.text)
-		label.horizontal_alignment = int(typed_column["alignment"])
+		label.horizontal_alignment = int(typed_column["alignment"]) as HorizontalAlignment
 		columns.add_child(label)
 
 	return row_margin

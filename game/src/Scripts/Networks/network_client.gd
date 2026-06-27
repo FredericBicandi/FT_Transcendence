@@ -44,6 +44,7 @@ const VALID_WEAPON_TYPES: Array[String] = [
 
 # Keep the server endpoint editable from the inspector
 @export var server_url: String = "wss://pixelfight.live/ws"
+@export var native_server_url: String = "ws://localhost:5000/ws"
 @export var bypass_tls_validation: bool = false
 @export var connection_timeout_seconds: float = 30.0
 @export var max_packets_per_frame: int = 128
@@ -120,15 +121,23 @@ func connect_to_server() -> Error:
 	seconds_since_last_server_activity = 0.0
 	is_connection_closed_manually = false
 
-	var error := socket.connect_to_url(server_url, _create_tls_options())
+	var effective_server_url := _get_effective_server_url()
+	var error := socket.connect_to_url(effective_server_url, _create_tls_options(effective_server_url))
 	if error != OK:
-		push_error("NetworkClient: failed to connect to %s (error %d)" % [server_url, error])
+		push_error("NetworkClient: failed to connect to %s (error %d)" % [effective_server_url, error])
 		connection_failed.emit()
 
 	return error
 
-func _create_tls_options() -> TLSOptions:
-	if not server_url.begins_with("wss://"):
+func _get_effective_server_url() -> String:
+	if OS.has_feature("web"):
+		return get_url_param("serverUrl", server_url).strip_edges()
+
+	var local_url := native_server_url.strip_edges()
+	return local_url if local_url != "" else server_url
+
+func _create_tls_options(effective_server_url: String) -> TLSOptions:
+	if not effective_server_url.begins_with("wss://"):
 		return null
 
 	if bypass_tls_validation:
@@ -585,7 +594,9 @@ static func _find_non_snake_case_key(value: Variant, path: String = "") -> Strin
 		var dictionary := value as Dictionary
 		for key_variant in dictionary.keys():
 			var key := str(key_variant)
-			var key_path := key if path == "" else "%s.%s" % [path, key]
+			var key_path := key
+			if path != "":
+				key_path = "%s.%s" % [path, key]
 			if not _is_snake_case_key(key):
 				return key_path
 
@@ -914,7 +925,9 @@ func get_url_param(param_name: String, fallback: String = "") -> String:
 	""" % [_escape_js_string(param_name), _escape_js_string(fallback)]
 
 	var value: Variant = JavaScriptBridge.eval(js_code, true)
-	return str(value) if value != null else fallback
+	if value == null:
+		return fallback
+	return str(value)
 
 func _escape_js_string(value: String) -> String:
 	return value.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r")
@@ -926,10 +939,15 @@ func _generate_fallback_player_id() -> String:
 
 func _apply_room_assignment(message: Dictionary) -> void:
 	var assigned_player_id := _extract_player_id(message)
-	local_player_id = assigned_player_id if assigned_player_id != "" else player_id
+	local_player_id = player_id
+	if assigned_player_id != "":
+		local_player_id = assigned_player_id
 	local_room_id = str(message.get("room_id", local_room_id))
 	match_duration_seconds = get_finite_int(message.get("duration_seconds", match_duration_seconds), match_duration_seconds)
-	remaining_seconds = get_finite_float(message.get("remaining_seconds", remaining_seconds if remaining_seconds > 0.0 else match_duration_seconds), remaining_seconds)
+	var fallback_remaining_seconds := remaining_seconds
+	if fallback_remaining_seconds <= 0.0:
+		fallback_remaining_seconds = float(match_duration_seconds)
+	remaining_seconds = get_finite_float(message.get("remaining_seconds", fallback_remaining_seconds), remaining_seconds)
 	match_finished = false
 	last_room_joined_message = message.duplicate(true)
 	if message.has("medkits"):
@@ -969,14 +987,14 @@ func clear_match_state() -> void:
 	active_medkits.clear()
 
 func _store_remote_player_snapshot(message: Dictionary) -> void:
-	var player_id := _extract_player_id(message)
-	if player_id == "":
+	var snapshot_player_id := _extract_player_id(message)
+	if snapshot_player_id == "":
 		return
 
 	# Merge partial updates so recreated scenes can rebuild remote proxies later.
 	# Health packets may describe the attacker weapon, so those ambiguous weapon
 	# fields are intentionally not cached as the target player's equipped weapon.
-	var existing_snapshot_variant: Variant = remote_player_snapshots.get(player_id, {})
+	var existing_snapshot_variant: Variant = remote_player_snapshots.get(snapshot_player_id, {})
 	var existing_snapshot: Dictionary = {}
 	if typeof(existing_snapshot_variant) == TYPE_DICTIONARY:
 		existing_snapshot = existing_snapshot_variant as Dictionary
@@ -991,7 +1009,7 @@ func _store_remote_player_snapshot(message: Dictionary) -> void:
 
 		merged_snapshot[key_variant] = message[key_variant]
 
-	remote_player_snapshots[player_id] = merged_snapshot
+	remote_player_snapshots[snapshot_player_id] = merged_snapshot
 
 func _is_ambiguous_health_weapon_field(key: String) -> bool:
 	return ["weapon", "weapon_type", "weapon_id", "weapon_holding", "current_weapon", "equipped_weapon", "active_weapon"].has(key)

@@ -109,8 +109,8 @@ static func build_runtime_data(config: Dictionary, bullet: Node2D, direction: Ve
 		"speed": speed,
 		"lifetime": bullet_lifetime,
 		"age": 0.0,
-		"collision_mask": collision_mask_override if should_collide and collision_mask_override >= 0 else int(config.get("bullet_collision_mask", 1)) if should_collide else 0,
-		"damage": damage_override if damage_override >= 0 else int(config.get("damage", 1)) if should_collide else 0,
+		"collision_mask": _get_collision_mask(config, should_collide, collision_mask_override),
+		"damage": _get_damage(config, should_collide, damage_override),
 		"collides": should_collide,
 		"pass_over_layers": pass_over_layers,
 		"gravity": float(config.get("gravity", 0.0))
@@ -127,6 +127,20 @@ static func build_runtime_data(config: Dictionary, bullet: Node2D, direction: Ve
 		runtime_data["arc_height"] = float(config.get("arc_height", 64.0))
 
 	return runtime_data
+
+static func _get_collision_mask(config: Dictionary, should_collide: bool, collision_mask_override: int) -> int:
+	if not should_collide:
+		return 0
+	if collision_mask_override >= 0:
+		return collision_mask_override
+	return int(config.get("bullet_collision_mask", 1))
+
+static func _get_damage(config: Dictionary, should_collide: bool, damage_override: int) -> int:
+	if not should_collide:
+		return 0
+	if damage_override >= 0:
+		return damage_override
+	return int(config.get("damage", 1))
 
 static func configure_visual(bullet: AnimatedSprite2D, sprite_frames: SpriteFrames, bullet_scale: Vector2, config: Dictionary, fallback_frame: int, fallback_z_index: int, direction: Vector2, start_position: Vector2) -> void:
 	bullet.sprite_frames = sprite_frames
@@ -150,7 +164,8 @@ static func tick(runtime_data: Dictionary, delta: float) -> Dictionary:
 	var end_position: Vector2 = start_position + velocity * delta
 	var age: float = float(runtime_data.get("age", 0.0)) + delta
 	var lifetime: float = float(runtime_data.get("lifetime", 0.0))
-	var direction: Vector2 = velocity.normalized() if velocity.length_squared() > 0.0 else runtime_data.get("direction", Vector2.RIGHT)
+	var fallback_direction: Vector2 = runtime_data.get("direction", Vector2.RIGHT)
+	var direction: Vector2 = velocity.normalized() if velocity.length_squared() > 0.0 else fallback_direction
 
 	runtime_data["position"] = end_position
 	runtime_data["velocity"] = velocity
@@ -189,7 +204,8 @@ static func _tick_target_arc(runtime_data: Dictionary, delta: float) -> Dictiona
 	var ground_end_position := launch_position.lerp(target_position, progress)
 	var end_position := ground_end_position - Vector2(0.0, sin(progress * PI) * arc_height)
 	var velocity := (end_position - start_position) / maxf(delta, 0.0001)
-	var direction: Vector2 = velocity.normalized() if velocity.length_squared() > 0.0 else runtime_data.get("direction", Vector2.RIGHT)
+	var fallback_direction: Vector2 = runtime_data.get("direction", Vector2.RIGHT)
+	var direction: Vector2 = velocity.normalized() if velocity.length_squared() > 0.0 else fallback_direction
 
 	runtime_data["position"] = end_position
 	runtime_data["ground_position"] = ground_end_position

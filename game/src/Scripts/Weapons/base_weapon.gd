@@ -5,8 +5,6 @@ extends Node2D
 # ticking, and hit reporting. Subclasses mostly provide visuals/templates; keep
 # shot_fired semantics stable because Player uses it to send shoot packets.
 
-const WeaponData = preload("res://src/Scripts/Weapons/weapon_data.gd")
-const Projectile = preload("res://src/Scripts/Weapons/projectile.gd")
 const TargetArcIndicatorScript = preload("res://src/Scripts/Weapons/target_arc_indicator.gd")
 const DAMAGEABLE_PLAYER_GROUP := "damageable_player"
 const DEFAULT_MUZZLE_COLLISION_MASK := 1
@@ -132,7 +130,7 @@ func _process(delta: float) -> void:
 func _load_bullet_template() -> void:
 	pass
 
-func _configure_spawned_bullet(bullet: Node2D, direction: Vector2, start_position: Vector2) -> void:
+func _configure_spawned_bullet(_bullet: Node2D, _direction: Vector2, _start_position: Vector2) -> void:
 	pass
 
 func _build_bullet_runtime_data(bullet: Node2D, direction: Vector2, bullet_lifetime: float, should_collide: bool, damage_override: int, pass_over_layers: Array[String], target_position: Variant = null) -> Dictionary:
@@ -141,12 +139,12 @@ func _build_bullet_runtime_data(bullet: Node2D, direction: Vector2, bullet_lifet
 func _create_bullet_node() -> Node2D:
 	return Node2D.new()
 
-func _update_bullet_visual(bullet: Node2D, result: Dictionary) -> void:
+func _update_bullet_visual(_bullet: Node2D, _result: Dictionary) -> void:
 	pass
 
-func _play_impact_effect(position: Vector2) -> void:
-	_apply_impact_screen_shake(position)
-	_play_impact_sound(position)
+func _play_impact_effect(impact_position: Vector2) -> void:
+	_apply_impact_screen_shake(impact_position)
+	_play_impact_sound(impact_position)
 
 func _free_bullet_node(bullet_instance_id: int) -> void:
 	var bullet := instance_from_id(bullet_instance_id) as Node2D
@@ -304,7 +302,9 @@ func spawn_remote_bullet(angle_radians: float, target_position: Variant = null, 
 	apply_recoil(bullet_direction, config)
 	_play_fire_sound()
 
-	var replay_target: Variant = aim_target if has_target_position else null
+	var replay_target: Variant = null
+	if has_target_position:
+		replay_target = aim_target
 	_spawn_bullet(bullet_direction, shot_start_position, true, 0, replay_target)
 
 func _play_fire_sound() -> void:
@@ -325,7 +325,7 @@ func _clear_active_bullets() -> void:
 
 	active_bullets.clear()
 
-func _play_impact_sound(position: Vector2) -> void:
+func _play_impact_sound(impact_position: Vector2) -> void:
 	var impact_sound: AudioStream = get_weapon_config().get("impact_sound")
 	if impact_sound == null:
 		return
@@ -340,11 +340,11 @@ func _play_impact_sound(position: Vector2) -> void:
 	impact_audio.attenuation = float(get_weapon_config().get("impact_sound_attenuation", 1.0))
 	impact_audio.volume_db = float(get_weapon_config().get("impact_sound_volume_db", 0.0))
 	current_scene.add_child(impact_audio)
-	impact_audio.global_position = position
+	impact_audio.global_position = impact_position
 	impact_audio.finished.connect(impact_audio.queue_free)
 	impact_audio.play()
 
-func _apply_impact_screen_shake(position: Vector2) -> void:
+func _apply_impact_screen_shake(impact_position: Vector2) -> void:
 	var config := get_weapon_config()
 	var shake_radius := float(config.get("impact_shake_radius", 0.0))
 	var shake_strength := float(config.get("impact_shake_strength", 0.0))
@@ -354,7 +354,7 @@ func _apply_impact_screen_shake(position: Vector2) -> void:
 
 	for candidate in get_tree().get_nodes_in_group("player"):
 		if candidate != null and candidate.has_method("apply_screen_shake"):
-			candidate.call("apply_screen_shake", position, shake_radius, shake_strength, shake_duration)
+			candidate.call("apply_screen_shake", impact_position, shake_radius, shake_strength, shake_duration)
 
 func apply_recoil(direction: Vector2, config: Dictionary) -> void:
 	var recoil_distance: float = float(config.get("recoil_distance", 2.5))
@@ -491,7 +491,9 @@ func _free_target_arc_indicator() -> void:
 
 func _get_color_config(config: Dictionary, key: String, fallback: Color) -> Color:
 	var value: Variant = config.get(key, fallback)
-	return value if value is Color else fallback
+	if value is Color:
+		return value as Color
+	return fallback
 
 func _to_string_array(values: Variant) -> Array[String]:
 	var result: Array[String] = []

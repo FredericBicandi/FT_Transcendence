@@ -14,10 +14,10 @@ func _process(delta: float) -> void:
 	if player.is_sniper_scope_active():
 		var mouse_pos := get_global_mouse_position()
 
-		var offset := mouse_pos - player.global_position
-		offset = offset.limit_length(focus_distance)
+		var focus_offset := mouse_pos - player.global_position
+		focus_offset = focus_offset.limit_length(focus_distance)
 
-		target += offset
+		target += focus_offset
 
 	global_position = global_position.lerp(
 		target,

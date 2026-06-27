@@ -212,15 +212,15 @@ func _start_game() -> void:
 	add_child(game_instance)
 	$CanvasLayer.visible = false
 
-func _set_room_ready_ui_visible(is_visible: bool) -> void:
-	if is_visible:
+func _set_room_ready_ui_visible(should_show: bool) -> void:
+	if should_show:
 		_show_lobby_cursor()
 
-	connection_panel.visible = not is_visible
-	ready_bar.visible = is_visible
-	join_button.disabled = not is_visible
-	dashboard_button.disabled = not is_visible
-	leaderboard_ui.call("set_leaderboard_visible", is_visible)
+	connection_panel.visible = not should_show
+	ready_bar.visible = should_show
+	join_button.disabled = not should_show
+	dashboard_button.disabled = not should_show
+	leaderboard_ui.call("set_leaderboard_visible", should_show)
 
 func _show_lobby_cursor() -> void:
 	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
@@ -241,14 +241,14 @@ func _apply_localized_static_text() -> void:
 	dashboard_button.text = Localization.translate("dashboard")
 	Localization.apply_readable_text_font(dashboard_button, dashboard_button.text)
 
-func _set_background_visible(is_visible: bool) -> void:
-	background_map.visible = is_visible
-	background_camera.enabled = is_visible
+func _set_background_visible(should_show: bool) -> void:
+	background_map.visible = should_show
+	background_camera.enabled = should_show
 
 	for preview_wrapper in preview_remote_players.values():
 		var preview_canvas_item := preview_wrapper as CanvasItem
 		if preview_canvas_item != null and is_instance_valid(preview_canvas_item):
-			preview_canvas_item.visible = is_visible
+			preview_canvas_item.visible = should_show
 
 func _apply_leaderboard_snapshot(message: Dictionary) -> void:
 	if message.is_empty():
@@ -360,7 +360,10 @@ func _apply_preview_remote_player_state(message: Dictionary) -> void:
 	var has_health := NetworkClient.has_authoritative_health(message)
 	var new_health := remote_body.health
 	var is_respawn_state := NetworkClient.is_respawn_state(message)
-	var authoritative_is_dead := bool(message.get("is_dead", false if is_respawn_state else remote_body.is_dead))
+	var fallback_is_dead := remote_body.is_dead
+	if is_respawn_state:
+		fallback_is_dead = false
+	var authoritative_is_dead := bool(message.get("is_dead", fallback_is_dead))
 	if has_health:
 		new_health = NetworkClient.get_authoritative_health(message, remote_body.health)
 	elif is_respawn_state:
@@ -454,7 +457,9 @@ func _exit_to_dashboard(reason: String, should_notify_server: bool = true) -> vo
 	var play_time_ms := get_player_play_time_ms()
 	var player_stats := _get_local_player_stats()
 	var exit_room_id := network_client.local_room_id
-	var exit_player_id := local_player_id if local_player_id != "" else network_client.local_player_id
+	var exit_player_id := network_client.local_player_id
+	if local_player_id != "":
+		exit_player_id = local_player_id
 	if should_notify_server and _is_in_room():
 		network_client.send_leave_match()
 		network_client.clear_match_state()
@@ -502,7 +507,9 @@ func _get_local_player_stats() -> Dictionary:
 	if leaderboard_ui == null:
 		return {"kills": 0, "deaths": 0, "score": 0}
 
-	var target_player_id := local_player_id if local_player_id != "" else network_client.local_player_id
+	var target_player_id := network_client.local_player_id
+	if local_player_id != "":
+		target_player_id = local_player_id
 	var entry_variant: Variant = leaderboard_ui.call("get_entry_for_player", target_player_id)
 	if typeof(entry_variant) != TYPE_DICTIONARY:
 		return {"kills": 0, "deaths": 0, "score": 0}

@@ -30,10 +30,10 @@ func set_progress(new_progress: float) -> void:
 	progress = clamped_progress
 	queue_redraw()
 
-func set_ring_visible(is_visible: bool) -> void:
-	if ring_visible == is_visible:
+func set_ring_visible(should_show: bool) -> void:
+	if ring_visible == should_show:
 		return
-	ring_visible = is_visible
+	ring_visible = should_show
 	queue_redraw()
 
 func _draw() -> void:
