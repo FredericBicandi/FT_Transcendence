@@ -49,6 +49,8 @@ const VALID_WEAPON_TYPES: Array[String] = [
 @export var connection_timeout_seconds: float = 30.0
 @export var max_packets_per_frame: int = 128
 @export var max_packet_bytes: int = 65536
+@export var inbound_buffer_size_bytes: int = 4 * 1024 * 1024
+@export var max_queued_packets: int = 16384
 @export var player_id: String = ""
 @export var player_name: String = "Player"
 @export var player_level: int = 1
@@ -75,6 +77,7 @@ var is_connection_closed_manually: bool = false
 func _ready() -> void:
 	# Let gameplay scenes find the websocket client without a hard path
 	add_to_group("network_client")
+	_configure_socket_buffers(socket)
 
 func _process(delta: float) -> void:
 	var state := socket.get_ready_state()
@@ -104,7 +107,7 @@ func connect_to_server() -> Error:
 	# in the engine's internal poll list.
 	if socket != null and socket.get_ready_state() != WebSocketPeer.STATE_CLOSED:
 		socket.close()
-	socket = WebSocketPeer.new()
+	socket = _create_socket()
 	was_open_last_frame = false
 	has_reported_closed_state = false
 	has_connected_once = false
@@ -135,6 +138,21 @@ func _get_effective_server_url() -> String:
 
 	var local_url := native_server_url.strip_edges()
 	return local_url if local_url != "" else server_url
+
+func _create_socket() -> WebSocketPeer:
+	var peer := WebSocketPeer.new()
+	_configure_socket_buffers(peer)
+	return peer
+
+func _configure_socket_buffers(peer: WebSocketPeer) -> void:
+	if peer == null:
+		return
+
+	# Browsers can suspend the Godot main loop in a background tab. Reserve
+	# enough bounded space for traffic received until the server's inactivity
+	# timeout closes a fully suspended client.
+	peer.inbound_buffer_size = maxi(inbound_buffer_size_bytes, 65535)
+	peer.max_queued_packets = maxi(max_queued_packets, 4096)
 
 func _create_tls_options(effective_server_url: String) -> TLSOptions:
 	if not effective_server_url.begins_with("wss://"):
@@ -1039,4 +1057,4 @@ func disconnect_multiplayer() -> void:
 	seconds_since_last_server_activity = 0.0
 	has_sent_room_reservation_request = false
 	# Replace the peer so no stale close state leaks into the next connect cycle.
-	socket = WebSocketPeer.new()
+	socket = _create_socket()
