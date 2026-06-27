@@ -42,8 +42,8 @@ yarn-error.log*
 .env
 .env.*
 !.env.example
-/server/appsettings.Development.json
-/server/appsettings.json
+/server/Properties/appsettings.Development.json
+/server/Properties/appsettings.json
 *.pem
 certificates/
 
