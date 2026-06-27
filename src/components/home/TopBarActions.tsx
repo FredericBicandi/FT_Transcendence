@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { PlayerProfile } from "@/models/player/playerProfile.model";
 import type {
   HomeLanguage,
@@ -25,6 +25,54 @@ const brickWallStyle = {
 };
 
 const LANGUAGE_MENU_ANIMATION_MS = 140;
+
+type FullscreenDocument = Document & {
+  webkitFullscreenElement?: Element | null;
+  mozFullScreenElement?: Element | null;
+  msFullscreenElement?: Element | null;
+  webkitExitFullscreen?: () => Promise<void> | void;
+  mozCancelFullScreen?: () => Promise<void> | void;
+  msExitFullscreen?: () => Promise<void> | void;
+};
+
+type FullscreenElement = HTMLElement & {
+  webkitRequestFullscreen?: () => Promise<void> | void;
+  mozRequestFullScreen?: () => Promise<void> | void;
+  msRequestFullscreen?: () => Promise<void> | void;
+};
+
+function getFullscreenElement() {
+  const fullscreenDocument = document as FullscreenDocument;
+
+  return (
+    document.fullscreenElement ??
+    fullscreenDocument.webkitFullscreenElement ??
+    fullscreenDocument.mozFullScreenElement ??
+    fullscreenDocument.msFullscreenElement ??
+    null
+  );
+}
+
+async function requestFullscreen(element: FullscreenElement) {
+  const request =
+    element.requestFullscreen ??
+    element.webkitRequestFullscreen ??
+    element.mozRequestFullScreen ??
+    element.msRequestFullscreen;
+
+  await request?.call(element);
+}
+
+async function exitFullscreen() {
+  const fullscreenDocument = document as FullscreenDocument;
+  const exit =
+    document.exitFullscreen ??
+    fullscreenDocument.webkitExitFullscreen ??
+    fullscreenDocument.mozCancelFullScreen ??
+    fullscreenDocument.msExitFullscreen;
+
+  await exit?.call(document);
+}
 
 function AvatarIcon() {
   return (
@@ -120,19 +168,58 @@ export function TopBarActions({
   const playerName = playerProfile?.playerName ?? "Player";
   const avatarUrl = playerProfile?.isGuest ? undefined : playerProfile?.avatarUrl;
   const languageOptions: HomeLanguage[] = ["english", "french", "arabic"];
+  const toggleFullscreen = useCallback(async () => {
+    try {
+      if (getFullscreenElement()) {
+        await exitFullscreen();
+      } else {
+        await requestFullscreen(document.documentElement);
+      }
+
+      setIsFullscreen(getFullscreenElement() !== null);
+    } catch {
+      // Fullscreen can be unavailable or blocked by browser policy.
+    }
+  }, []);
 
   useEffect(() => {
     function updateFullscreenState() {
-      setIsFullscreen(document.fullscreenElement !== null);
+      setIsFullscreen(getFullscreenElement() !== null);
     }
 
     updateFullscreenState();
     document.addEventListener("fullscreenchange", updateFullscreenState);
+    document.addEventListener("webkitfullscreenchange", updateFullscreenState);
+    document.addEventListener("mozfullscreenchange", updateFullscreenState);
+    document.addEventListener("MSFullscreenChange", updateFullscreenState);
 
     return () => {
       document.removeEventListener("fullscreenchange", updateFullscreenState);
+      document.removeEventListener(
+        "webkitfullscreenchange",
+        updateFullscreenState,
+      );
+      document.removeEventListener("mozfullscreenchange", updateFullscreenState);
+      document.removeEventListener("MSFullscreenChange", updateFullscreenState);
     };
   }, []);
+
+  useEffect(() => {
+    function handleFullscreenKey(event: KeyboardEvent) {
+      if (event.key !== "F11") {
+        return;
+      }
+
+      event.preventDefault();
+      void toggleFullscreen();
+    }
+
+    window.addEventListener("keydown", handleFullscreenKey, true);
+
+    return () => {
+      window.removeEventListener("keydown", handleFullscreenKey, true);
+    };
+  }, [toggleFullscreen]);
 
   useEffect(() => {
     if (!showLanguageMenu) {
@@ -179,18 +266,6 @@ export function TopBarActions({
   function toggleLanguageMenu() {
     setRenderLanguageMenu(true);
     setShowLanguageMenu((currentValue) => !currentValue);
-  }
-
-  async function toggleFullscreen() {
-    try {
-      if (document.fullscreenElement) {
-        await document.exitFullscreen();
-      } else {
-        await document.documentElement.requestFullscreen();
-      }
-    } catch {
-      // Fullscreen can be unavailable or blocked by browser policy.
-    }
   }
 
   return (

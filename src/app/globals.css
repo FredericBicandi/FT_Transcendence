@@ -218,3 +218,7 @@ select:disabled,
 :lang(ar) .chat-font {
   font-family: "IBM Plex Sans Arabic", Tahoma, Arial, sans-serif;
 }
+
+.pixel-title-font {
+  font-family: "Upheaval", monospace;
+}

@@ -42,6 +42,19 @@ function isFullscreenRequestMessage(value: unknown) {
   );
 }
 
+function isDisconnectedExtensionMessageError(reason: unknown) {
+  const message =
+    reason instanceof Error
+      ? reason.message
+      : typeof reason === "string"
+        ? reason
+        : "";
+
+  return message.includes(
+    "Could not establish connection. Receiving end does not exist.",
+  );
+}
+
 function ChatIcon() {
   return (
     <svg
@@ -127,6 +140,28 @@ export function HomeView() {
   useEffect(() => {
     window.localStorage.setItem(LANGUAGE_STORAGE_KEY, language);
   }, [language]);
+
+  useEffect(() => {
+    function suppressDisconnectedExtensionMessage(
+      event: PromiseRejectionEvent,
+    ) {
+      if (isDisconnectedExtensionMessageError(event.reason)) {
+        event.preventDefault();
+      }
+    }
+
+    window.addEventListener(
+      "unhandledrejection",
+      suppressDisconnectedExtensionMessage,
+    );
+
+    return () => {
+      window.removeEventListener(
+        "unhandledrejection",
+        suppressDisconnectedExtensionMessage,
+      );
+    };
+  }, []);
 
   useEffect(() => {
     function focusGameIframe() {
@@ -307,7 +342,7 @@ export function HomeView() {
                     className="h-24 w-24 animate-[float_3s_ease-in-out_infinite] drop-shadow-[0_6px_0_rgba(5,3,2,0.65)] [image-rendering:pixelated] sm:h-28 sm:w-28 max-[760px]:h-20 max-[760px]:w-20 max-[520px]:h-16 max-[520px]:w-16"
                   />
                   <div className="flex flex-col items-center gap-2">
-                    <h1 className="text-4xl font-bold uppercase leading-none tracking-[0.08em] text-[#f5dfad] [text-shadow:0_4px_0_#050302,4px_0_0_#050302,0_-4px_0_#050302,-4px_0_0_#050302,4px_4px_0_#050302] min-[360px]:text-5xl sm:text-7xl max-[760px]:text-5xl max-[520px]:text-4xl">
+                    <h1 className="pixel-title-font text-4xl font-bold uppercase leading-none tracking-[0.08em] text-[#f5dfad] [text-shadow:0_4px_0_#050302,4px_0_0_#050302,0_-4px_0_#050302,-4px_0_0_#050302,4px_4px_0_#050302] min-[360px]:text-5xl sm:text-7xl max-[760px]:text-5xl max-[520px]:text-4xl">
                       PIXEL FIGHT
                     </h1>
                     <div className="flex w-full items-center justify-center gap-3">

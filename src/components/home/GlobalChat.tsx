@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { DashboardChatMessage } from "@/controllers/home/useDashboardSocket";
 import type { PlayerProfile } from "@/models/player/playerProfile.model";
 import type { HomeTranslations } from "@/views/home/homeTranslations";
@@ -76,6 +76,7 @@ export function GlobalChat({
   translations,
 }: GlobalChatProps) {
   const [draftMessage, setDraftMessage] = useState("");
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const isAuthenticated = playerProfile ? !playerProfile.isGuest : false;
   const isCoolingDown = cooldownSeconds > 0;
   const canSendMessages = isAuthenticated && isConnected && !isCoolingDown;
@@ -94,6 +95,16 @@ export function GlobalChat({
       })),
     [messages],
   );
+
+  useLayoutEffect(() => {
+    const messagesContainer = messagesContainerRef.current;
+
+    if (!messagesContainer) {
+      return;
+    }
+
+    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+  }, [coloredMessages.length]);
 
   function sendMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -146,6 +157,7 @@ export function GlobalChat({
       <div
         className="min-h-0 flex-1 overflow-y-auto px-3 py-3 text-xs leading-6 [scrollbar-color:#b8893b_rgba(0,0,0,0.35)] sm:px-4"
         dir="ltr"
+        ref={messagesContainerRef}
       >
         {coloredMessages.map((message) => (
           <div

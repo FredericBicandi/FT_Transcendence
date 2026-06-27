@@ -123,19 +123,31 @@ Relationship summary: one auth user has one profile, one match can have many pla
 
 ## Modules
 
-Chosen module set:
+Official module set:
 
-- Major - Real-time multiplayer gameplay, 2 pts: implemented with .NET WebSockets, Godot client messages, room state, matchmaking, and live leaderboard updates. Contributors: `fbicandy`, `dawwad`.
-- Major - User management, 2 pts: implemented with Supabase Auth, OAuth callback handling, profile setup, account deletion, guest fallback, and cached authenticated profiles. Contributor: `fbicandy`.
-- Major - Persistent data and match history, 2 pts: implemented with Supabase tables for profiles, matches, and played matches. Contributor: `fbicandy`.
-- Major - Server-authoritative gameplay logic, 2 pts: implemented in the .NET server for hit/death/medkit/projectile/score events and room lifecycle. Contributor: `fbicandy`.
-- Major - Web dashboard integration, 2 pts: implemented with Next.js, embedded Godot export, dashboard WebSocket presence, global chat, and profile UI. Contributor: `fbicandy`.
-- Minor - Accessibility and internationalization support, 1 pt: implemented with multilingual/dashboard and game text support plus additional fonts. Contributors: `fbicandy`, `dawwad`.
-- Minor - Game user experience polish, 1 pt: implemented with custom cursor, sounds, HUD feedback, kill feed, scoreboard, weapon effects, and map polish. Contributors: `fbicandy`, `dawwad`.
-- Minor - Containerized build/run workflow, 1 pt: implemented with Dockerfiles and Makefile targets for web and server. Contributor: `fbicandy`.
-- Minor - Deployment/export integration, 1 pt: implemented by keeping the Godot web export in `public/Game` and wiring dashboard-to-game player data. Contributor: `fbicandy`.
+- IV.1 Web - Major: Use a framework for both the frontend and backend, 2 pts. Implemented with Next.js 16, React 19, and TypeScript for the frontend dashboard, plus an ASP.NET Core/.NET 8 backend framework for the real-time game server.
+- IV.1 Web - Major: Implement real-time features using WebSockets or similar technology, 2 pts. Implemented with `/ws` for multiplayer gameplay and `/ws/dashboard` for live lobby presence/global chat. The server broadcasts room state, movement, combat events, medkit state, timers, leaderboard snapshots, chat messages, and online counts while handling disconnect cleanup, heartbeat/inactivity timeouts, message size limits, and chat rate limits.
+- IV.1 Web - Major: A public API to interact with the database with a secured API key, rate limiting, documentation, and at least 5 endpoints, 2 pts. Implemented through Supabase's secured REST/PostgREST API for the project database. Supabase exposes authenticated table endpoints for `profiles`, `matches`, and `played_matches`, protects access with project API keys and row-level security, and provides the generated API documentation used by the team.
+- IV.1 Web - Minor: Server-Side Rendering (SSR) for improved performance and SEO, 1 pt. Implemented through Next.js app routing/server rendering for the dashboard shell and server routes such as the auth callback and account API.
+- IV.1 Web - Minor: Custom-made design system with reusable components, including a proper color palette, typography, and icons, 1 pt. Implemented with custom dashboard UI components including auth modal, profile modal, username setup modal, global chat, online players badge, play button, login/signup button, top bar actions, language controls, XP/progress UI, and reusable pixel-style visual treatment in Tailwind/CSS.
+- IV.2 Accessibility and Internationalization - Minor: Support for multiple languages, 1 pt. Implemented an i18n system for English, French, and Arabic in `src/views/home/homeTranslations.ts`, with a language switcher in the UI. The Godot game also has localization helpers for translated in-game text and language-specific fonts.
+- IV.2 Accessibility and Internationalization - Minor: Right-to-left (RTL) language support, 1 pt. Implemented Arabic RTL support in the dashboard with `dir="rtl"`/`lang="ar"` switching and RTL-aware chat layout. The Godot game applies Arabic fonts and RTL layout direction through its localization helper.
+- IV.2 Accessibility and Internationalization - Minor: Support for additional browsers, 1 pt. Tested and adjusted the web dashboard/game export for Chromium-based browsers and Firefox-based browsers, with consistent UI and gameplay behavior across the supported browsers.
+- IV.3 User Management - Major: Standard user management and authentication, 2 pts. Implemented Supabase authentication, email OTP login, Google/GitHub OAuth login, profile creation, username updates, avatar updates, default guest/authenticated profile handling, account deletion, online status/presence, and a profile page showing user information, level, XP, and match history.
+- IV.3 User Management - Minor: Game statistics and match history, 1 pt. Implemented Supabase-backed player progression and match logs through `profiles`, `matches`, and `played_matches`. The dashboard displays XP, level, score, kills, deaths, play time, saved match history, and leaderboard-derived match results.
+- IV.3 User Management - Minor: Implement remote authentication with OAuth 2.0, 1 pt. Implemented Supabase OAuth login with Google and GitHub providers, plus email OTP authentication and an OAuth callback route that returns users to the dashboard after authentication.
+- IV.6 Gaming and user experience - Major: Implement a complete web-based game where users can play against each other, 2 pts. Implemented PixelFight as an embedded Godot web export: a top-down multiplayer shooter with live matches, movement, weapons, projectiles, health, medkits, deaths, respawns, kill feed, scoreboard, match timer, rules, win/loss results from final leaderboard state, and match persistence.
+- IV.6 Gaming and user experience - Major: Remote players - Enable two players on separate computers to play the same game in real-time, 2 pts. Implemented online multiplayer through the .NET WebSocket server and Godot network client. Remote players join shared rooms, exchange live movement/combat/chat events, receive authoritative health/death/leaderboard updates, and are cleaned up gracefully on disconnect or timeout.
+- IV.6 Gaming and user experience - Major: Multiplayer game (more than two players), 2 pts. Implemented game rooms with a maximum capacity of 8 players. The server synchronizes room membership, player state, combat events, medkit state, leaderboard snapshots, match timers, and final match results across all joined clients.
 
-Total: 14 points.
+Not counted as full modules:
+
+- IV.1 Web - Major: Allow users to interact with other users. The project has global chat, in-game chat, profiles, and online presence, but it does not include the required friends system.
+- IV.1 Web - Minor: Use an ORM for the database. The project uses Supabase client APIs and Supabase REST access, but no dedicated ORM layer is present in the repository.
+- IV.6 Gaming and user experience - Major: Add another game with user history and matchmaking. The project supports simultaneous rooms/matches for the same game, but not a second distinct game.
+- IV.6 Gaming and user experience - Minor: A gamification system to reward users for their actions. The project has persistent XP/levels and leaderboard feedback, but not three separate gamification features such as achievements, badges, daily challenges, or rewards.
+
+Total: 22 points.
 
 ## Individual Contributions
 
