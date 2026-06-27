@@ -322,7 +322,6 @@ bg_color = Color(0.160784, 0.776471, 0.286275, 1)
 position = Vector2(2, 0)
 collision_layer = 2
 script = ExtResource("1_4o2qk")
-camera_zoom = Vector2(7.0, 7.0)
 
 [node name="Leg" type="AnimatedSprite2D" parent="CharacterBody2D" unique_id=1021202293]
 position = Vector2(-1, 7)
@@ -355,7 +354,7 @@ scale = Vector2(0.51959234, 0.52162844)
 sprite_frames = SubResource("SpriteFrames_vun6k")
 
 [node name="Camera2D" type="Camera2D" parent="CharacterBody2D" unique_id=464962696]
-zoom = Vector2(7.0, 7.0)
+zoom = Vector2(5, 5)
 script = ExtResource("6_41rav")
 
 [node name="ShootSound" type="AudioStreamPlayer2D" parent="CharacterBody2D" unique_id=827025043]
