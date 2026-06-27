@@ -44,7 +44,6 @@ const VALID_WEAPON_TYPES: Array[String] = [
 
 # Keep the server endpoint editable from the inspector
 @export var server_url: String = "wss://pixelfight.live/ws"
-@export var native_server_url: String = "ws://localhost:5000/ws"
 @export var bypass_tls_validation: bool = false
 @export var connection_timeout_seconds: float = 30.0
 @export var max_packets_per_frame: int = 128
@@ -124,20 +123,12 @@ func connect_to_server() -> Error:
 	seconds_since_last_server_activity = 0.0
 	is_connection_closed_manually = false
 
-	var effective_server_url := _get_effective_server_url()
-	var error := socket.connect_to_url(effective_server_url, _create_tls_options(effective_server_url))
+	var error := socket.connect_to_url(server_url, _create_tls_options())
 	if error != OK:
-		push_error("NetworkClient: failed to connect to %s (error %d)" % [effective_server_url, error])
+		push_error("NetworkClient: failed to connect to %s (error %d)" % [server_url, error])
 		connection_failed.emit()
 
 	return error
-
-func _get_effective_server_url() -> String:
-	if OS.has_feature("web"):
-		return get_url_param("serverUrl", server_url).strip_edges()
-
-	var local_url := native_server_url.strip_edges()
-	return local_url if local_url != "" else server_url
 
 func _create_socket() -> WebSocketPeer:
 	var peer := WebSocketPeer.new()
@@ -154,8 +145,8 @@ func _configure_socket_buffers(peer: WebSocketPeer) -> void:
 	peer.inbound_buffer_size = maxi(inbound_buffer_size_bytes, 65535)
 	peer.max_queued_packets = maxi(max_queued_packets, 4096)
 
-func _create_tls_options(effective_server_url: String) -> TLSOptions:
-	if not effective_server_url.begins_with("wss://"):
+func _create_tls_options() -> TLSOptions:
+	if not server_url.begins_with("wss://"):
 		return null
 
 	if bypass_tls_validation:
