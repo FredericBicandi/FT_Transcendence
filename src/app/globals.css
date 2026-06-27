@@ -222,3 +222,21 @@ select:disabled,
 .pixel-title-font {
   font-family: "Upheaval", monospace;
 }
+
+.legal-scrollbar {
+  scrollbar-color: #d9b46b rgba(0, 0, 0, 0.45);
+  scrollbar-width: thin;
+}
+
+.legal-scrollbar::-webkit-scrollbar {
+  width: 12px;
+}
+
+.legal-scrollbar::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.legal-scrollbar::-webkit-scrollbar-thumb {
+  background: #d9b46b;
+  border: 3px solid #151819;
+}

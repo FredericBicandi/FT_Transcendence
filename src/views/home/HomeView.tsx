@@ -9,6 +9,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AuthModal } from "@/components/home/AuthModal";
 import { LoginSignupButton } from "@/components/home/LoginSignupButton";
 import { GlobalChat } from "@/components/home/GlobalChat";
+import {
+  LegalModal,
+  type LegalDocument,
+} from "@/components/home/LegalModal";
 import { OnlinePlayersBadge } from "@/components/home/OnlinePlayersBadge";
 import { PlayButton } from "@/components/home/PlayButton";
 import { ProfileModal } from "@/components/home/ProfileModal";
@@ -86,6 +90,10 @@ export function HomeView() {
   const [showMobileChat, setShowMobileChat] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [isProfileModalClosing, setIsProfileModalClosing] = useState(false);
+  const [legalDocument, setLegalDocument] = useState<LegalDocument | null>(
+    null,
+  );
+  const [isLegalModalClosing, setIsLegalModalClosing] = useState(false);
   const [language, setLanguage] = useState<HomeLanguage>("english");
   const translations = homeTranslations[language];
   const openProfileAfterMatch = useCallback(() => {
@@ -254,9 +262,32 @@ export function HomeView() {
     }, MODAL_CLOSE_ANIMATION_MS);
   }, [isProfileModalClosing]);
 
+  function openLegalModal(document: LegalDocument) {
+    setIsLegalModalClosing(false);
+    setLegalDocument(document);
+  }
+
+  const closeLegalModal = useCallback(() => {
+    if (isLegalModalClosing || legalDocument === null) {
+      return;
+    }
+
+    setIsLegalModalClosing(true);
+    window.setTimeout(() => {
+      setLegalDocument(null);
+      setIsLegalModalClosing(false);
+    }, MODAL_CLOSE_ANIMATION_MS);
+  }, [isLegalModalClosing, legalDocument]);
+
   useEffect(() => {
     function handleEscapeKey(event: KeyboardEvent) {
       if (event.key !== "Escape") {
+        return;
+      }
+
+      if (legalDocument !== null) {
+        event.preventDefault();
+        closeLegalModal();
         return;
       }
 
@@ -285,7 +316,9 @@ export function HomeView() {
     };
   }, [
     closeAuthModal,
+    closeLegalModal,
     closeProfileModal,
+    legalDocument,
     showAuthModal,
     showGame,
     showMobileChat,
@@ -355,6 +388,28 @@ export function HomeView() {
                     <span className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#f5dfad]/65 [text-shadow:0_2px_0_#050302] sm:text-xs">
                       v2.0.3
                     </span>
+                    <div className="flex flex-col items-center gap-1 text-[9px] uppercase tracking-[0.12em] sm:text-[10px]">
+                      <a
+                        className="text-[#e2b84f] underline decoration-[#e2b84f]/60 underline-offset-4 hover:text-[#f5dfad] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#e2b84f]"
+                        href="#terms-of-service"
+                        onClick={(event) => {
+                          event.preventDefault();
+                          openLegalModal("terms");
+                        }}
+                      >
+                        {translations.legal.termsOfService}
+                      </a>
+                      <a
+                        className="text-[#e2b84f] underline decoration-[#e2b84f]/60 underline-offset-4 hover:text-[#f5dfad] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#e2b84f]"
+                        href="#privacy-policy"
+                        onClick={(event) => {
+                          event.preventDefault();
+                          openLegalModal("privacy");
+                        }}
+                      >
+                        {translations.legal.privacyPolicy}
+                      </a>
+                    </div>
                   </div>
                 </div>
 
@@ -482,6 +537,14 @@ export function HomeView() {
           playerProfile={playerProfile}
           progressAnimation={matchProgressAnimation}
           translations={translations.profile}
+        />
+      )}
+      {legalDocument !== null && !showGame && (
+        <LegalModal
+          document={legalDocument}
+          isClosing={isLegalModalClosing}
+          onClose={closeLegalModal}
+          translations={translations.legal}
         />
       )}
       {needsUsernameSetup && (
