@@ -326,7 +326,7 @@ export function TopBarActions({
           >
             {languageOptions.map((languageOption) => (
               <button
-                className="bg-[#212627] px-3 py-2 text-left text-xs uppercase text-[#f5dfad] shadow-[inset_0_2px_0_#374041,inset_0_-2px_0_#151819] hover:bg-[#2a3031]"
+                className="bg-[#212627] px-3 py-2 text-left text-xs uppercase text-[#f5dfad] shadow-[0_0_0_1px_#050302,inset_0_2px_0_#374041,inset_0_-2px_0_#151819] hover:bg-[#2a3031]"
                 key={languageOption}
                 onClick={() => {
                   onLanguageChange(languageOption);

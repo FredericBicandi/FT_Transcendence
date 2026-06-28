@@ -294,7 +294,7 @@ export function HomeView() {
         <div className={showMobileChat ? "hidden lg:contents" : "contents"}>
           <div className="absolute inset-0 z-10 flex items-center justify-center px-4 py-20 max-[760px]:py-16 max-[520px]:py-14">
             <div
-              className="flex w-full max-w-[38rem] -translate-x-7 flex-col items-center gap-5 sm:gap-6 max-[760px]:gap-4 max-[520px]:gap-3 xl:-translate-y-45"
+              className="flex w-full max-w-[38rem] -translate-x-7 flex-col items-center gap-5 sm:gap-6 max-[760px]:gap-4 max-[520px]:gap-3 xl:translate-y-[clamp(-11.25rem,calc((48rem-100vh)*0.55),0rem)]"
               dir="ltr"
             >
                 <div className="flex flex-col items-center gap-4 text-center max-[760px]:gap-3 max-[520px]:gap-2">

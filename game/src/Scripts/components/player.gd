@@ -142,6 +142,7 @@ func _ready() -> void:
 	# Match camera and weapon input to this player's control mode
 	player_camera.enabled = enable_player_camera
 	if enable_player_camera:
+		camera_zoom = Vector2(5.0, 5.0)
 		player_camera.zoom = camera_zoom
 	camera_base_offset = player_camera.offset
 	camera_shake_rng.randomize()

@@ -30,7 +30,6 @@ public sealed class Ws
     private const int MinPlayerLevel = 0;
     private const int MaxPlayerLevel = 1000;
     private const double DefaultPlayerHealth = 100.0;
-    private const double MaxHitDamage = DefaultPlayerHealth;
     private const double MedkitPickupDistance = 64.0;
     private const double PlayerPositionTolerance = 64.0;
     private const double MinRocketLauncherDamage = 1.0;
@@ -51,6 +50,17 @@ public sealed class Ws
             [SniperWeaponType] = SniperWeaponType,
             [RocketLauncherWeaponType] = RocketLauncherWeaponType,
             [ShotgunWeaponType] = ShotgunWeaponType
+        };
+
+    // Damage is still reported by the Godot collision code, but the server owns
+    // the maximum damage that one hit from each weapon may apply.
+    private static readonly IReadOnlyDictionary<string, double> MaxHitDamageByWeapon =
+        new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase)
+        {
+            [AssultRifleWeaponType] = 20.0,
+            [SniperWeaponType] = 50.0,
+            [RocketLauncherWeaponType] = MaxRocketLauncherDamage,
+            [ShotgunWeaponType] = 9.0
         };
 
     private readonly ConcurrentDictionary<string, ClientConnection> clients;
@@ -1191,8 +1201,12 @@ public sealed class Ws
             "message" or
             "chat_message" or
             "leave_match" or
+            "leaderboard_request" or
             "move" or
             "angle" or
+            "idle" or
+            "ping" or
+            "heartbeat" or
             "hit" or
             "heal" or
             "player_death" or
@@ -1350,8 +1364,16 @@ public sealed class Ws
             return;
         }
 
-        if (hit.ShotId is not null &&
-            !currentShooter.TryMarkShotHit(hit.ShotId, hit.TargetPlayerId))
+        if (!currentShooter.CanReportHitWithWeapon(hit.WeaponType))
+        {
+            currentShooter.TryGetStateSnapshot(out var shooterState);
+            Console.WriteLine(
+                $"Rejected hit from {shooter.PlayerId}: reported weapon {hit.WeaponType} " +
+                $"does not match equipped weapon {shooterState.Weapon}");
+            return;
+        }
+
+        if (!currentShooter.TryMarkShotHit(hit.ShotId, hit.TargetPlayerId))
         {
             Console.WriteLine($"Rejected duplicate shot {hit.ShotId} against {hit.TargetPlayerId} from {shooter.PlayerId}");
             return;
@@ -1421,10 +1443,10 @@ public sealed class Ws
 
     private static double ResolveDamage(string weaponType, double requestedDamage)
     {
-        if (IsRocketLauncher(weaponType))
-            return Math.Clamp(requestedDamage, MinRocketLauncherDamage, MaxRocketLauncherDamage);
+        if (!MaxHitDamageByWeapon.TryGetValue(weaponType, out var maxDamage))
+            return 0;
 
-        return Math.Clamp(requestedDamage, 0, MaxHitDamage);
+        return Math.Clamp(requestedDamage, 0, maxDamage);
     }
 
     private static bool IsRocketLauncher(string weaponType) =>
@@ -1849,36 +1871,32 @@ public sealed class Ws
             return false;
         }
 
-        if (IsRocketLauncher(weapon) &&
-            (damage < MinRocketLauncherDamage ||
-             damage > MaxRocketLauncherDamage))
+        if (!MaxHitDamageByWeapon.TryGetValue(weapon, out var maxDamage) ||
+            damage <= 0 ||
+            damage > maxDamage)
+        {
+            Console.WriteLine($"Invalid {weapon} hit damage from {playerId}: {message}");
+            return false;
+        }
+
+        if (IsRocketLauncher(weapon) && damage < MinRocketLauncherDamage)
         {
             Console.WriteLine($"Invalid rocket hit damage from {playerId}: {message}");
             return false;
         }
 
-        if (!IsRocketLauncher(weapon) &&
-            (damage < 0 || damage > MaxHitDamage))
+        if (!root.TryGetProperty("shot_id", out var shotIdElement) ||
+            shotIdElement.ValueKind != JsonValueKind.String)
         {
-            Console.WriteLine($"Invalid hit damage from {playerId}: {message}");
+            Console.WriteLine($"Missing or invalid hit shotId from {playerId}: {message}");
             return false;
         }
 
-        string? shotId = null;
-        if (root.TryGetProperty("shot_id", out var shotIdElement))
+        var shotId = shotIdElement.GetString()?.Trim();
+        if (string.IsNullOrWhiteSpace(shotId) || shotId.Length > MaxShotIdLength)
         {
-            if (shotIdElement.ValueKind != JsonValueKind.String)
-            {
-                Console.WriteLine($"Invalid hit shotId from {playerId}: {message}");
-                return false;
-            }
-
-            shotId = shotIdElement.GetString()?.Trim();
-            if (string.IsNullOrWhiteSpace(shotId) || shotId.Length > MaxShotIdLength)
-            {
-                Console.WriteLine($"Invalid hit shotId from {playerId}: {message}");
-                return false;
-            }
+            Console.WriteLine($"Invalid hit shotId from {playerId}: {message}");
+            return false;
         }
 
         if (root.TryGetProperty("x", out _) &&
@@ -2379,7 +2397,7 @@ public readonly record struct HitRequest(
     string TargetPlayerId,
     string WeaponType,
     double Damage,
-    string? ShotId);
+    string ShotId);
 
 public readonly record struct MedkitHealRequestData(
     string MedkitId,
@@ -2508,6 +2526,10 @@ public readonly record struct LeaderboardEntry(
 
 public sealed class ClientConnection
 {
+    // Projectiles live for at most 1.5 seconds in Godot. Keep the previous weapon
+    // valid briefly so a projectile is not rejected when its owner switches weapons.
+    private static readonly TimeSpan PreviousWeaponHitGracePeriod = TimeSpan.FromSeconds(2);
+
     public ClientConnection(string connectionId, WebSocket socket)
     {
         ConnectionId = connectionId;
@@ -2561,11 +2583,13 @@ public sealed class ClientConnection
     private double angle;
     private int aimFrame;
     private string weapon = string.Empty;
+    private string previousWeapon = string.Empty;
+    private long previousWeaponValidUntilUtcTicks;
     private double health = 100.0;
     private bool isDead;
     private bool deathMedkitClaimed;
-    // Optional shot_id dedupe is per shooter/target so one pellet/explosion cannot
-    // report the same target repeatedly while still allowing multi-target explosions.
+    // Shot dedupe is per shooter/target so one pellet/explosion cannot report the
+    // same target repeatedly while still allowing multi-target explosions.
     private readonly HashSet<ShotTargetKey> processedShotHits = new();
 
     public void Identify(string playerId, string playerName, int level)
@@ -2637,6 +2661,8 @@ public sealed class ClientConnection
             this.angle = angle;
             this.aimFrame = aimFrame;
             this.weapon = weapon;
+            previousWeapon = string.Empty;
+            previousWeaponValidUntilUtcTicks = 0;
             health = 100.0;
             isDead = false;
             deathMedkitClaimed = false;
@@ -2670,7 +2696,23 @@ public sealed class ClientConnection
     {
         lock (stateLock)
         {
+            if (string.Equals(this.weapon, weapon, StringComparison.OrdinalIgnoreCase))
+                return;
+
+            previousWeapon = this.weapon;
+            previousWeaponValidUntilUtcTicks =
+                DateTimeOffset.UtcNow.Add(PreviousWeaponHitGracePeriod).UtcTicks;
             this.weapon = weapon;
+        }
+    }
+
+    public bool CanReportHitWithWeapon(string weapon)
+    {
+        lock (stateLock)
+        {
+            return string.Equals(this.weapon, weapon, StringComparison.OrdinalIgnoreCase) ||
+                (DateTimeOffset.UtcNow.UtcTicks <= previousWeaponValidUntilUtcTicks &&
+                 string.Equals(previousWeapon, weapon, StringComparison.OrdinalIgnoreCase));
         }
     }
 
@@ -2790,6 +2832,8 @@ public sealed class ClientConnection
             this.angle = angle;
             this.aimFrame = aimFrame;
             this.weapon = weapon;
+            previousWeapon = string.Empty;
+            previousWeaponValidUntilUtcTicks = 0;
             deathMedkitClaimed = false;
             // Respawn starts a fresh damage window; old shot ids should not suppress
             // legitimate hits after the player returns.
