@@ -3,12 +3,13 @@
 # FT Transcendence - PixelFight
 
 <p align="center">
-  <img src="https://github.com/FreddyBicandy50/FreddyBicandy50/blob/main/42_badges/ft_transcendencee.png" alt="ft_transcendencee 42 project badge"/>
+  <img src="https://raw.githubusercontent.com/FredericBicandi/FredericBicandi/refs/heads/main/42_badges/ft_transcendencee.png" alt="ft_transcendencee 42 project badge"/>
 </p>
 
 ## Description
 
-PixelFight is a full-stack multiplayer web game built for ft_transcendence. The project combines a Next.js dashboard, a Godot web game export, a Godot source project, a .NET 8 WebSocket server, and Supabase-backed authentication and persistence hosted on google cloud services.
+PixelFight is a co-developed real-time multiplayer 2D pixel-art shooter game built as part of the 42 Beirut FT_Transcendence project. Players can join online matches, move, aim, shoot, respawn, heal, and communicate through an in-game chat system. It uses .NET authoritative WebSocket server, Supabase backend, and Next.js dashboard, focusing on reliable gameplay, player synchronization, combat events, authentication, deployment, and performance optimization.
+
 
 Key features:
 
@@ -191,6 +192,7 @@ legacy rows.
 ### Game
 
 - Pixel art and visual assets: `dawwad`.
+- Map design and layout: `dawwad`.
 - Weapons and player sprites: `dawwad`.
 - Game balancing and gameplay features: `dawwad`.
 
