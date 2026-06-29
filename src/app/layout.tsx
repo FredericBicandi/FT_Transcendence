@@ -3,7 +3,8 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "PXIELFIGHT",
-  description: "Game dashboard",
+  description:
+    "PixelFight is a fast-paced multiplayer 2D pixel-art shooter. Battle online, climb the leaderboard, track your stats, and chat with other players.",
   icons: {
     icon: "/icon.png",
     shortcut: "/favicon.ico",
