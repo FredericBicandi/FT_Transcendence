@@ -431,7 +431,6 @@ export function ProfileModal({
     try {
       await saveAuthenticatedPlayerProfile({
         avatarUrl: avatarDataUrl ?? playerProfile?.avatarUrl,
-        playerId: playerProfile.playerId,
         playerName: normalizedPlayerName,
       });
 

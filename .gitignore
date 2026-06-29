@@ -17,7 +17,9 @@
 next-env.d.ts
 
 # .NET server
-/server/Properties/
+/server/Properties/*
+!/server/Properties/examples/
+!/server/Properties/examples/**
 /server/bin/
 /server/obj/
 /server/**/bin/
@@ -43,8 +45,6 @@ yarn-error.log*
 .env
 .env.*
 !.env.example
-/server/Properties/appsettings.Development.json
-/server/Properties/appsettings.json
 *.pem
 certificates/
 

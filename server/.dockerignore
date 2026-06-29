@@ -16,6 +16,8 @@ tests/
 *.suo
 .env
 .env.*
+Properties/appsettings.json
+Properties/appsettings.Development.json
 README.md
 LICENSE
 web-dashboard.patch

@@ -179,17 +179,6 @@ function formatPlayTime(durationSeconds: number) {
   return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
-function formatInterval(durationSeconds: number) {
-  const totalSeconds = Math.max(0, Math.floor(durationSeconds));
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-
-  return [hours, minutes, seconds]
-    .map((value) => String(value).padStart(2, "0"))
-    .join(":");
-}
-
 function parseIntervalSeconds(value: unknown) {
   if (typeof value !== "string") {
     return Math.max(0, Math.floor(normalizeFiniteNumber(value)));
@@ -618,45 +607,6 @@ export async function loadAuthenticatedPlayerProfileDetails({
   };
 }
 
-export async function saveAuthenticatedMatchLog({
-  deaths,
-  durationSeconds,
-  kills,
-  matchId,
-  score,
-}: MatchStatsPayload): Promise<MatchLog | null> {
-  const supabase = createSupabaseClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    // Guests can finish matches, but only signed-in users persist logs.
-    return null;
-  }
-
-  const { data, error } = await supabase
-    .from(PLAYED_MATCHES_TABLE)
-    .insert({
-      match_id: matchId,
-      user_id: user.id,
-      score,
-      kills,
-      deaths,
-      time_played: formatInterval(durationSeconds),
-    })
-    .select(
-      "id, match_id, user_id, score, kills, deaths, time_played, created_at",
-    )
-    .single<PlayedMatchRow>();
-
-  if (error) {
-    throw error;
-  }
-
-  return createMatchLog(data);
-}
-
 export function createOptimisticMatchProgressUpdate(
   playerProfile: PlayerProfile,
   score: number,
@@ -675,31 +625,34 @@ export function createOptimisticMatchProgressUpdate(
   });
 }
 
-export async function saveAuthenticatedMatchProgress(
-  playerId: string,
-  progressUpdate: MatchProgressUpdate,
-): Promise<MatchProgressUpdate | null> {
-  const supabase = createSupabaseClient();
+export async function saveAuthenticatedMatchResult(
+  matchStats: MatchStatsPayload,
+): Promise<{
+  matchLog: MatchLog | null;
+  progressUpdate: MatchProgressUpdate | null;
+}> {
+  const response = await fetch("/api/matches", {
+    body: JSON.stringify(matchStats),
+    headers: {
+      "Content-Type": "application/json",
+    },
+    method: "POST",
+  });
+  const payload: unknown = await response.json().catch(() => null);
 
-  if (!playerId) {
-    return null;
+  if (!response.ok || typeof payload !== "object" || payload === null) {
+    throw new Error("MATCH_SAVE_FAILED");
   }
 
-  // Persist the already-computed result so optimistic UI and server state use the same XP step.
-  const { error } = await supabase
-    .from("profiles")
-    .update({
-      current_xp: progressUpdate.currentXp,
-      level: progressUpdate.level,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", playerId);
+  const result = payload as {
+    playedMatch?: PlayedMatchRow;
+    progressUpdate?: MatchProgressUpdate;
+  };
 
-  if (error) {
-    throw error;
-  }
-
-  return progressUpdate;
+  return {
+    matchLog: result.playedMatch ? createMatchLog(result.playedMatch) : null,
+    progressUpdate: result.progressUpdate ?? null,
+  };
 }
 
 export async function loadPlayerProfile({
@@ -774,31 +727,6 @@ export async function loadPlayerProfile({
   return loadGuestPlayerProfile();
 }
 
-async function upsertProfileDetails({
-  avatarUrl,
-  playerId,
-  playerName,
-}: {
-  avatarUrl?: string;
-  playerId: string;
-  playerName: string;
-}) {
-  const supabase = createSupabaseClient();
-  // Use upsert because profile setup can run before the row exists.
-  const { error } = await supabase.from("profiles").upsert(
-    {
-      id: playerId,
-      username: playerName,
-      picture_url: avatarUrl ?? null,
-    },
-    { onConflict: "id" },
-  );
-
-  if (error) {
-    throw error;
-  }
-}
-
 export function createPlayerProfileSearchParams(playerProfile: PlayerProfile) {
   // The game reads identity from the URL because it runs inside a static export.
   const playerName = playerProfile.isGuest
@@ -813,35 +741,11 @@ export function createPlayerProfileSearchParams(playerProfile: PlayerProfile) {
   });
 }
 
-export async function isUsernameTaken(username: string, playerId: string) {
-  const normalizedUsername = normalizeUsername(username, "");
-
-  if (!normalizedUsername) {
-    return false;
-  }
-
-  const supabase = createSupabaseClient();
-  const { data, error } = await supabase
-    .from("profiles")
-    .select("id")
-    .ilike("username", normalizedUsername)
-    .neq("id", playerId)
-    .limit(1);
-
-  if (error) {
-    throw error;
-  }
-
-  return data.length > 0;
-}
-
 export async function saveAuthenticatedPlayerProfile({
   avatarUrl,
-  playerId,
   playerName,
 }: {
   avatarUrl?: string;
-  playerId: string;
   playerName: string;
 }) {
   const normalizedPlayerName = normalizeUsername(playerName, "");
@@ -850,16 +754,27 @@ export async function saveAuthenticatedPlayerProfile({
     throw new Error("USERNAME_REQUIRED");
   }
 
-  if (await isUsernameTaken(normalizedPlayerName, playerId)) {
-    // Surface a stable app error instead of leaking database details to the UI.
+  const response = await fetch("/api/profile", {
+    body: JSON.stringify({
+      avatarUrl: avatarUrl ?? null,
+      username: normalizedPlayerName,
+    }),
+    headers: {
+      "Content-Type": "application/json",
+    },
+    method: "PATCH",
+  });
+  const payload = (await response.json().catch(() => null)) as {
+    code?: string;
+  } | null;
+
+  if (response.status === 409 && payload?.code === USERNAME_TAKEN_ERROR) {
     throw new Error(USERNAME_TAKEN_ERROR);
   }
 
-  await upsertProfileDetails({
-    avatarUrl,
-    playerId,
-    playerName: normalizedPlayerName,
-  });
+  if (!response.ok) {
+    throw new Error(payload?.code ?? "PROFILE_SAVE_FAILED");
+  }
 }
 
 export async function deleteAuthenticatedPlayerAccount() {

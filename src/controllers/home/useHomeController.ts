@@ -13,8 +13,7 @@ import {
   deleteAuthenticatedPlayerAccount,
   loadAuthenticatedPlayerProfileDetails,
   loadPlayerProfile,
-  saveAuthenticatedMatchLog,
-  saveAuthenticatedMatchProgress,
+  saveAuthenticatedMatchResult,
   type MatchProgressUpdate,
   type PlayerProfile,
 } from "@/models/player/playerProfile.model";
@@ -28,6 +27,7 @@ const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 type HomeControllerOptions = {
+  initialPlayerProfile: PlayerProfile | null;
   language: string;
   onMatchComplete?: () => void;
 };
@@ -89,6 +89,7 @@ export type MatchProgressAnimation = MatchProgressUpdate & {
 };
 
 export function useHomeController({
+  initialPlayerProfile,
   language,
   onMatchComplete,
 }: HomeControllerOptions) {
@@ -102,14 +103,15 @@ export function useHomeController({
   const profileDetailsRequestIdRef = useRef(0);
   const loadedProfileDetailsKeyRef = useRef<string | null>(null);
   const progressAnimationIdRef = useRef(0);
-  const progressSaveQueueRef = useRef(Promise.resolve());
   const [activeGameUrl, setActiveGameUrl] = useState<string | null>(null);
   const [showGame, setShowGame] = useState(false);
-  const [isPlayerProfileLoading, setIsPlayerProfileLoading] = useState(true);
+  const [isPlayerProfileLoading, setIsPlayerProfileLoading] = useState(
+    initialPlayerProfile === null,
+  );
   const [matchProgressAnimation, setMatchProgressAnimation] =
     useState<MatchProgressAnimation | null>(null);
   const [playerProfile, setPlayerProfile] = useState<PlayerProfile | null>(
-    null,
+    initialPlayerProfile,
   );
 
   const clearMatchProgressAnimation = useCallback(() => {
@@ -236,6 +238,16 @@ export function useHomeController({
   useEffect(() => {
     isMountedRef.current = true;
 
+    if (initialPlayerProfile) {
+      cacheAuthenticatedPlayerProfile(initialPlayerProfile);
+
+      return () => {
+        isMountedRef.current = false;
+        profileRequestIdRef.current += 1;
+        clearPostMatchExitTimeout();
+      };
+    }
+
     const requestId = profileRequestIdRef.current + 1;
     profileRequestIdRef.current = requestId;
 
@@ -267,7 +279,11 @@ export function useHomeController({
       profileRequestIdRef.current += 1;
       clearPostMatchExitTimeout();
     };
-  }, [clearPostMatchExitTimeout, refreshPlayerProfile]);
+  }, [
+    clearPostMatchExitTimeout,
+    initialPlayerProfile,
+    refreshPlayerProfile,
+  ]);
 
   useEffect(() => {
     let supabase: ReturnType<typeof createSupabaseClient>;
@@ -294,26 +310,6 @@ export function useHomeController({
   }, [refreshPlayerProfile]);
 
   useEffect(() => {
-    function enqueueMatchProgressSave(
-      playerId: string,
-      progressUpdate: MatchProgressUpdate,
-    ) {
-      const nextSave = progressSaveQueueRef.current
-        .catch(() => {
-          // Keep later match saves running even when an earlier background save fails.
-        })
-        .then(() =>
-          saveAuthenticatedMatchProgress(playerId, progressUpdate),
-        );
-
-      progressSaveQueueRef.current = nextSave.then(
-        () => undefined,
-        () => undefined,
-      );
-
-      return nextSave;
-    }
-
     function handleGameMessage(event: MessageEvent<unknown>) {
       // Only trust messages from the iframe we opened.
       if (
@@ -377,50 +373,47 @@ export function useHomeController({
           setPlayerProfile(updatedProfile);
         }
 
-        void Promise.all([
-          saveAuthenticatedMatchLog(matchStats),
-          currentProfile && progressUpdate
-            ? enqueueMatchProgressSave(currentProfile.playerId, progressUpdate)
-            : Promise.resolve(null),
-        ])
-          .then(([savedMatch, savedProgress]) => {
-            if (!isMountedRef.current) {
-              return;
-            }
-
-            setPlayerProfile((currentProfile) => {
-              if (!currentProfile || currentProfile.isGuest) {
-                return currentProfile;
+        if (currentProfile && progressUpdate) {
+          void saveAuthenticatedMatchResult(matchStats)
+            .then(({ matchLog: savedMatch, progressUpdate: savedProgress }) => {
+              if (!isMountedRef.current) {
+                return;
               }
 
-              // Replace optimistic progress with the confirmed server save.
-              const updatedProfile = {
-                ...currentProfile,
-                ...(savedProgress
-                  ? {
-                      currentXp: savedProgress.currentXp,
-                      level: savedProgress.level,
-                      xpRequiredForNextLevel:
-                        savedProgress.xpRequiredForNextLevel,
-                    }
-                  : {}),
-                matchLogs: savedMatch
-                  ? [
-                      savedMatch,
-                      ...currentProfile.matchLogs.filter(
-                        (match) => match.id !== savedMatch.id,
-                      ),
-                    ]
-                  : currentProfile.matchLogs,
-              };
+              setPlayerProfile((currentProfile) => {
+                if (!currentProfile || currentProfile.isGuest) {
+                  return currentProfile;
+                }
 
-              cacheAuthenticatedPlayerProfile(updatedProfile);
-              return updatedProfile;
+                // Replace optimistic progress with the confirmed server save.
+                const updatedProfile = {
+                  ...currentProfile,
+                  ...(savedProgress
+                    ? {
+                        currentXp: savedProgress.currentXp,
+                        level: savedProgress.level,
+                        xpRequiredForNextLevel:
+                          savedProgress.xpRequiredForNextLevel,
+                      }
+                    : {}),
+                  matchLogs: savedMatch
+                    ? [
+                        savedMatch,
+                        ...currentProfile.matchLogs.filter(
+                          (match) => match.id !== savedMatch.id,
+                        ),
+                      ]
+                    : currentProfile.matchLogs,
+                };
+
+                cacheAuthenticatedPlayerProfile(updatedProfile);
+                return updatedProfile;
+              });
+            })
+            .catch(() => {
+              // Ignore background save failures; the optimistic UI keeps the flow responsive.
             });
-          })
-          .catch(() => {
-            // Ignore background save failures; the optimistic UI keeps the flow responsive.
-          });
+        }
       }
     }
 

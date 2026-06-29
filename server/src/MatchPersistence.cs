@@ -19,7 +19,7 @@ public interface IMatchRepository
 public sealed class SupabaseMatchRepository : IMatchRepository
 {
     private readonly IHttpClientFactory httpClientFactory;
-    private readonly string? publishableKey;
+    private readonly string? serviceRoleKey;
     private readonly string? supabaseUrl;
 
     public SupabaseMatchRepository(
@@ -31,9 +31,9 @@ public sealed class SupabaseMatchRepository : IMatchRepository
         supabaseUrl =
             configuration["Supabase:Url"] ??
             configuration["NEXT_PUBLIC_SUPABASE_URL"];
-        publishableKey =
-            configuration["Supabase:PublishableKey"] ??
-            configuration["NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY"];
+        serviceRoleKey =
+            configuration["Supabase:ServiceRoleKey"] ??
+            configuration["SUPABASE_SERVICE_ROLE_KEY"];
     }
 
     public async Task SaveAsync(
@@ -42,10 +42,10 @@ public sealed class SupabaseMatchRepository : IMatchRepository
     )
     {
         if (string.IsNullOrWhiteSpace(supabaseUrl) ||
-            string.IsNullOrWhiteSpace(publishableKey))
+            string.IsNullOrWhiteSpace(serviceRoleKey))
         {
             throw new InvalidOperationException(
-                "Supabase URL and publishable key are required."
+                "Supabase URL and service-role key are required."
             );
         }
 
@@ -54,14 +54,14 @@ public sealed class SupabaseMatchRepository : IMatchRepository
             "rest/v1/matches"
         );
         using var request = new HttpRequestMessage(HttpMethod.Post, endpoint);
-        request.Headers.Add("apikey", publishableKey);
+        request.Headers.Add("apikey", serviceRoleKey);
 
-        // Legacy anon keys are JWTs. New sb_publishable_* keys belong only in
-        // the apikey header; sending them as Bearer tokens causes a 401.
-        if (publishableKey.StartsWith("eyJ", StringComparison.Ordinal))
+        // Legacy service-role keys are JWTs. New sb_secret_* keys belong only
+        // in the apikey header; sending them as Bearer tokens causes a 401.
+        if (serviceRoleKey.StartsWith("eyJ", StringComparison.Ordinal))
         {
             request.Headers.Authorization =
-                new AuthenticationHeaderValue("Bearer", publishableKey);
+                new AuthenticationHeaderValue("Bearer", serviceRoleKey);
         }
 
         request.Headers.Add("Prefer", "return=minimal");

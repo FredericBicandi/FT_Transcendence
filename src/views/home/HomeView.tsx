@@ -23,6 +23,7 @@ import {
   homeTranslations,
   type HomeLanguage,
 } from "@/views/home/homeTranslations";
+import type { PlayerProfile } from "@/models/player/playerProfile.model";
 
 const LANGUAGE_STORAGE_KEY = "homeLanguage";
 const MODAL_CLOSE_ANIMATION_MS = 160;
@@ -66,7 +67,11 @@ function ChatIcon() {
   );
 }
 
-export function HomeView() {
+export function HomeView({
+  initialPlayerProfile,
+}: {
+  initialPlayerProfile: PlayerProfile | null;
+}) {
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [isAuthModalClosing, setIsAuthModalClosing] = useState(false);
   const [showMobileChat, setShowMobileChat] = useState(false);
@@ -101,6 +106,7 @@ export function HomeView() {
     showGame,
     playGame,
   } = useHomeController({
+    initialPlayerProfile,
     language,
     onMatchComplete: openProfileAfterMatch,
   });

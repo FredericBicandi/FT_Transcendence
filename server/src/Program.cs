@@ -5,16 +5,16 @@ var builder = WebApplication.CreateBuilder(args);
 var supabaseUrl =
     builder.Configuration["Supabase:Url"] ??
     builder.Configuration["NEXT_PUBLIC_SUPABASE_URL"];
-var supabasePublishableKey =
-    builder.Configuration["Supabase:PublishableKey"] ??
-    builder.Configuration["NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY"];
+var supabaseServiceRoleKey =
+    builder.Configuration["Supabase:ServiceRoleKey"] ??
+    builder.Configuration["SUPABASE_SERVICE_ROLE_KEY"];
 
 if (string.IsNullOrWhiteSpace(supabaseUrl) ||
-    string.IsNullOrWhiteSpace(supabasePublishableKey))
+    string.IsNullOrWhiteSpace(supabaseServiceRoleKey))
 {
     throw new InvalidOperationException(
         "Missing Supabase configuration. Set Supabase__Url and " +
-        "Supabase__PublishableKey."
+        "Supabase__ServiceRoleKey."
     );
 }
 
