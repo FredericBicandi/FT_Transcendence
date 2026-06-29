@@ -104,6 +104,7 @@ Open the editable game project with Godot from `game/project.godot`. The exporte
 - Work was split by component: web dashboard, WebSocket server, Godot gameplay, and deployment/export integration.
 - Git branches were used for parallel work: `web`, `server`, and `game`, then merged into `main` with preserved history.
 - Notion was used to organize the roadmap, assign tasks, and track progress.
+- Project roadmap and task tracking: [FT_TRANSCENDENCE Notion workspace](https://freddybicandy.notion.site/FT_TRANSCENDENCE-5ab4c72bfb668349a1a101a19ff19a99).
 - Git branches and commits connected implementation work to the tracked tasks.
 - Communication and coordination happened through Discord text/voice channels and regular face-to-face meetings.
 - Progress was reviewed through team discussions, iterative commits, local testing, and feature-focused branch updates.
